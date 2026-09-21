@@ -1,0 +1,85 @@
+uname -a
+Linux myimx6ek140 4.9.88_V1.0.1.200613_V0.1.3.200624 #673 SMP PREEMPT Tue Feb 11 15:33:59 CST 2025 armv7l GNU/Linux
+
+cat /etc/os-release
+NAME=Buildroot
+VERSION=2019.05-rc1
+ID=buildroot
+VERSION_ID=2019.05-rc1
+PRETTY_NAME="Buildroot 2019.05-rc1"
+
+cat /proc/cpuinfo
+processor       : 0
+model name      : ARMv7 Processor rev 5 (v7l)
+BogoMIPS        : 12.00
+Features        : half thumb fastmult vfp edsp neon vfpv3 tls vfpv4 idiva idivt vfpd32 lpae
+CPU implementer : 0x41
+CPU architecture: 7
+CPU variant     : 0x0
+CPU part        : 0xc07
+CPU revision    : 5
+Hardware        : Freescale i.MX6 UltraLite (Device Tree)
+Revision        : 0000
+Serial          : 0000000000000000
+
+cat /proc/meminfo
+MemTotal:         242976 kB
+MemFree:          153940 kB
+MemAvailable:     171580 kB
+Buffers:               0 kB
+Cached:            25376 kB
+SwapCached:            0 kB
+Active:            22540 kB
+Inactive:          23604 kB
+Active(anon):      20780 kB
+Inactive(anon):     2952 kB
+Active(file):       1760 kB
+Inactive(file):    20652 kB
+Unevictable:           0 kB
+Mlocked:               0 kB
+HighTotal:             0 kB
+HighFree:              0 kB
+LowTotal:         242976 kB
+LowFree:          153940 kB
+SwapTotal:             0 kB
+SwapFree:              0 kB
+Dirty:                 0 kB
+Writeback:             0 kB
+AnonPages:         20788 kB
+Mapped:            19812 kB
+Shmem:              2964 kB
+Slab:               6500 kB
+SReclaimable:       1752 kB
+SUnreclaim:       4748 kB
+KernelStack:         608 kB
+PageTables:          292 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:      121488 kB
+Committed_AS:      36060 kB
+VmallocTotal:    1818624 kB
+VmallocUsed:           0 kB
+VmallocChunk:          0 kB
+CmaTotal:              0 kB
+CmaFree:               0 kB
+
+ls -l /dev/fb*
+crw-rw----    1 root     root       29,   0 Jan  1  1970 /dev/fb0
+crw-rw----    1 root     root       29,   1 Jan  1  1970 /dev/fb1
+
+ls -l /dev/input/
+total 0
+crw-r-----    1 root     root       13,  64 Jan  1  1970 event0
+crw-r-----    1 root     root       13,  65 Jan 1  1970 event1
+crw-r-----    1 root     root       13,  63 Jan 1  1970 mice
+crw-r-----    1 root     root       13,  32 Jan 1  1970 mouse0
+
+fbset
+mode "1024x600-59"
+        # D: 50.000 MHz, H: 37.202 kHz, V: 58.586 Hz
+        geometry 1024 600 1024 600 32
+        timings 20000 160 100 13 12 60 10
+        accel false
+        rgba 8/16,8/8,8/0,0/0
+endmode

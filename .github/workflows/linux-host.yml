@@ -1,0 +1,48 @@
+name: Linux Host
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install pinned Rust and GNU baseline tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user patch
+          rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target armv7-unknown-linux-gnueabihf
+          rustup toolchain install nightly-2026-07-02 --profile minimal --component rust-src --target armv7-unknown-linux-gnueabihf
+      - name: Source and board admission gates
+        run: make check && make check-targets
+      - name: Fetch pinned real runtime sources
+        run: make fetch-runtime
+      - name: Native real core and host tests
+        run: make test-runtime
+      - name: ARMv7 Cortex-A7 real core and host tests
+        run: make test-runtime-arm
+      - name: Verify exact build and execution evidence
+        run: make verify-runtime
+      - name: Preserve results and failure logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: linux-host-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/runtime/acceptance.zip
+            out/runtime/*.log
+            out/runtime/verification.json
+            out/runtime/native/*.json
+            out/runtime/native/*.stdout
+            out/runtime/arm/*.json
+            out/runtime/arm/*.stdout
+          if-no-files-found: error
+          retention-days: 30

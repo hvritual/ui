@@ -1,0 +1,14 @@
+--- a/engine/ui-cabi/src/lib.rs
++++ b/engine/ui-cabi/src/lib.rs
+@@ -270,6 +270,11 @@
+         UI = None;
+     }
+     clear_framebuffer();
++    // A shutdown releases storage; viewport changes may still reuse capacity.
++    unsafe {
++        FRAMEBUFFER = Vec::new();
++        WRAP_BREAKS = Vec::new();
++    }
+ }
+ 
+ /// Set the host's logical viewport. Dynamic-window hosts update it whenever

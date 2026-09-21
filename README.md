@@ -2,17 +2,17 @@
 
 Coffee-machine UI port workspace for **1024×600** and **1024×800** Embedded Linux displays.
 
-**Current implementation scope: ARMv7 toolchain validation only.** This is not yet a PocketJS UI host. It does not draw a screen, read touch events, integrate the UI core, or certify compatibility with the deployed coffee-machine BSP.
+The repository contains an independent **P0 ARMv7 toolchain smoke** and a **P1 real PocketJS Linux headless host**. P1 executes QuickJS, the upstream C runtime, UI core/layout/DrawList and software rendering into memory. It does not access a physical display or touch device, implement an IME, or certify compatibility with the deployed coffee-machine BSP. Actual acceptance evidence lives in the issues and Actions results, not in this README.
 
 ## Roadmap
 
-[Master roadmap #1](https://github.com/hvritual/ui/issues/1) · [P0 acceptance #2](https://github.com/hvritual/ui/issues/2) · [Stage/dependency index](docs/roadmap.md)
+[Master roadmap #1](https://github.com/hvritual/ui/issues/1) · [P0 #2](https://github.com/hvritual/ui/issues/2) · [P1 #3](https://github.com/hvritual/ui/issues/3) · [Stage/dependency index](docs/roadmap.md)
 
-- MVP: P0 toolchain → P1 core/host → P2 display + P3 input → P4 real UI PoC.
-- Full Runtime: P5 measured rendering performance → P6 device-service integration.
-- Production: P7 lifecycle/release/rollback → P8 hardware reliability and release review.
+- MVP: P0 toolchain → P1 core/host → P2 display + P3 input → P4 multilingual resources/demo → P4A text editing/keyboard/offline IME.
+- Full Runtime: P5 measured rendering and IME performance → P6 device-service integration.
+- Production: P7 lifecycle/language-pack release/rollback → P8 hardware reliability and release review.
 
-## Run the P0 gates
+## P0 gates
 
 The supported **cloud development baseline** is Ubuntu 22.04 x86_64, GNU ARM hard-float GCC 11, Rust 1.90.0 and QEMU user mode. It is not the device root filesystem.
 
@@ -27,16 +27,28 @@ make smoke
 make verify
 ```
 
-Run from a **clean, committed checkout**. The GitHub Actions workflow runs these same gates on PRs and main. `make check` only requires Python 3 and Git; cross-build gates require the above native tools. Missing prerequisites fail rather than skip.
+Run from a **clean, committed checkout**. `make fetch` downloads the locked QuickJS source for P0. `make build` compiles five real QuickJS C files, a C ABI bridge and a Rust executable. `make smoke` runs ten real ARM/QEMU cases and checks an intentional failure. Missing prerequisites fail rather than skip.
 
-`make fetch` downloads only the locked QuickJS source, not the complete PocketJS UI stack. `make build` compiles five real QuickJS C translation units, a small C ABI bridge, and a Rust executable. `make smoke` executes it through `qemu-arm -cpu cortex-a7`, checks ten cases including a 100-runtime lifecycle loop, and confirms a deliberately wrong result exits nonzero.
+## P1 Linux Host
 
-`out/` contains the ARM ELF, QuickJS archive/license, command logs, ELF dependencies and GLIBC symbol floor, source/tool/package versions, smoke results and SHA256 checksums. The workflow uploads them as an artifact, including failure logs. Check the actual run result and evidence; the presence of this README is not proof of acceptance.
+See [build and acceptance](docs/linux-host.md), [observed board baseline](docs/board-baseline.md), and [text/IME capability audit](docs/text-input-audit.md). P1 uses the upstream-pinned `nightly-2026-07-02` standalone UI C ABI workspace, separately from P0's Rust compiler.
+
+```sh
+sudo apt-get install -y patch
+rustup toolchain install nightly-2026-07-02 --profile minimal --component rust-src --target armv7-unknown-linux-gnueabihf
+make check-targets
+make fetch-runtime
+make test-runtime
+make test-runtime-arm
+make verify-runtime
+```
+
+The host uses bounded trusted local assets, a single UI owner, monotonic time, 60 guest/core turns and one offscreen render per two turns. Tests validate actual pixels/layout, Promise ordering, pause/resume, errors and repeated cleanup. The test fixture uses native HostOps, not yet the component compiler. Output and evidence are in `out/runtime/`; an Actions artifact preserves successful results and failure logs.
 
 ## Important boundaries
 
-Hardware RAM, clock, BSP, kernel, libc, framebuffer details and input protocol remain **unknown** in `targets/imx6ul.json`. Both display dimensions are confirmed user requirements; 30 FPS is a proposed future measurement target. GNU builds may need a newer libc than the device has. QEMU validates basic execution, **not board ABI, display performance or stability**.
+User-provided measurements for the **1024×600** board are in `targets/boards/myimx6ek140-1024x600.json`: Linux 4.9.88, Buildroot 2019.05-rc1, Linux-visible RAM 242976 KiB, and 32-bpp display geometry. These observations do not establish libc/loader/SDK compatibility. The 1024×800 profile has no physical-board record. P0's historical `targets/imx6ul.json` remains unchanged; P1 profiles and observation records are separate.
 
-Existing device control, network middleware and OTA stay authoritative. No actuator control is exposed by this toolchain smoke.
+Read each binary's actual GLIBC requirements. Never upgrade device libc to accommodate a cloud baseline. QEMU execution is **not board ABI, screen performance, RSS or stability evidence**. Existing device control, network middleware and OTA stay authoritative; the UI does not access actuators. The headless CLI is a diagnostic for trusted bundles, not a production daemon or sandbox.
 
-See [toolchain operation and limitations](docs/toolchain.md) and [third-party sources](docs/third-party.md).
+See [P0 operation](docs/toolchain.md) and [third-party sources](docs/third-party.md).

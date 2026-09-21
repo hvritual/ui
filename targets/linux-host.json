@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "host_id": "linux-headless",
+  "host_abi": 1,
+  "upstream_registered": false,
+  "simulation_hz": 60,
+  "render_every_turns": 2,
+  "pixel_format": "BGRA8888-opaque",
+  "hardware_access": false,
+  "profiles": [
+    {
+      "id": "imx6ul-1024x600",
+      "width": 1024,
+      "height": 600,
+      "board_record": "targets/boards/myimx6ek140-1024x600.json"
+    },
+    {
+      "id": "imx6ul-1024x800",
+      "width": 1024,
+      "height": 800,
+      "board_record": null
+    }
+  ],
+  "text_capabilities": {
+    "node_text_mutation": "integration-tested-no-glyph-coverage-claim",
+    "focus_style": "api-present",
+    "editable_widget": "not-admitted",
+    "ime_composition": "not-admitted",
+    "offline_dictionary": "not-integrated",
+    "shaping_bidi": "not-admitted"
+  }
+}
