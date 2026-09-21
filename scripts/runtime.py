@@ -79,9 +79,21 @@ def validate_board(board):
     require(board["board_admission"] == "blocked-libc-loader-sdk-unverified", "board ABI has not been admitted")
 
 
+def validate_text_contract(contract):
+    require(contract["schema_version"] == 1 and contract["status"] == "contract-only-not-implemented", "text adapter is not implemented by P1")
+    require(contract["owner_issue"] == 12 and all(value is False for value in contract["admission"].values()), "text admission must await P4A")
+    require(contract["js_range_unit"] == "UTF-16-code-units" and contract["native_encoding"] == "UTF-8-valid-scalar-sequences", "text encoding/index boundary changed")
+    require(contract["physical_key_is_text"] is False and contract["preedit_is_business_value"] is False, "raw keys/preedit are not committed business text")
+    require(contract["identity_fields"] == ["field_id", "session_id", "focus_generation", "revision"], "missing input session identity")
+    queue = contract["queue_contract"]
+    require(queue["max_events"] == 64 and queue["max_total_bytes"] == 65536 and queue["max_text_utf8_bytes"] == 4096, "review text queue budget changes")
+    require(all(value is False for value in contract["sensitive_field_policy"].values()), "sensitive text must not be learned/logged/normalized")
+
+
 def config():
     data = read_json(LOCK); base = port.configs(); profiles = read_json(PROFILES)
     validate_profiles(profiles)
+    validate_text_contract(read_json(ROOT / "contracts/text-input.json"))
     validate_board(read_json(ROOT / "targets/boards/myimx6ek140-1024x600.json"))
     require(data["schema_version"] == 1 and data["upstream_revision"] == base["pocketjs"]["revision"], "upstream pins disagree")
     require(data["rust"] == "nightly-2026-07-02", "runtime compiler must match pinned upstream")
@@ -169,7 +181,7 @@ def build(data, base, profiles, mode):
     run(["cargo", "+" + data["rust"], "build", "--manifest-path", source / "engine/ui-cabi/Cargo.toml",
          "--locked", "--release", "--target", tool["triple"], "--features", ",".join(data["features"])], env=env, log=mode + "-build.log")
     core = OUT / "cargo" / tool["triple"] / "release/libpocketjs_symbian_core.a"
-    flags = ["-std=c11", "-O2", "-fno-strict-aliasing", "-fwrapv", "-D_GNU_SOURCE", "-ffunction-sections", "-fdata-sections", *tool["c_flags"],
+    flags = ["-std=gnu11", "-O2", "-fno-strict-aliasing", "-fwrapv", "-D_GNU_SOURCE", "-ffunction-sections", "-fdata-sections", *tool["c_flags"],
              '-DCONFIG_VERSION="' + base["quickjs"]["version"] + '"', '-DPOCKETJS_TARGET_ID="linux-headless"', "-DPOCKETJS_HOST_ABI=1"]
     includes = [ROOT / "hosts/linux", OUT / "include", quickjs, source / "engine/quickjs-c", source / "engine/ui-cabi/include", source / "contracts/generated"]
     for path in includes: flags += ["-I", str(path)]
@@ -180,14 +192,14 @@ def build(data, base, profiles, mode):
     objects = [compile_file(quickjs / name, "qjs-" + Path(name).stem) for name in base["quickjs"]["sources"]]
     archive = directory / "libquickjs.a"; archive.unlink(missing_ok=True)
     run([port.executable(tool["ar"]), "rcs", archive, *objects])
-    host_objects = [compile_file(ROOT / "hosts/linux" / (name + ".c"), name, ["-Wall", "-Wextra", "-Werror"]) for name in ["host", "platform"]]
+    host_objects = [compile_file(ROOT / "hosts/linux" / (name + ".c"), name, ["-std=c11", "-Wall", "-Wextra", "-Werror"]) for name in ["host", "platform"]]
     personality = compile_file(source / "engine/quickjs-c/rust_eh_personality.c", "personality")
     for test in [False, True]:
         suffix = "test" if test else "host"
         switches = ["-DPOCKET_RUNTIME_HARNESS", "-DPOCKET_RUNTIME_STAGE_HOOKS"] if test else []
         runtime = compile_file(source / "engine/quickjs-c/pocket_runtime.c", "runtime-" + suffix, switches)
         main = compile_file(ROOT / ("tests/runtime/test_host.c" if test else "hosts/linux/main.c"), "main-" + suffix,
-                            [*switches, "-Wall", "-Wextra", "-Werror"])
+                            [*switches, "-std=c11", "-Wall", "-Wextra", "-Werror"])
         binary = directory / ("runtime-test" if test else "ui-host")
         run([cc, *tool["c_flags"], "-o", binary, *host_objects, main, runtime, personality,
              archive, core, "-Wl,--gc-sections", "-lm", "-ldl", "-lpthread", "-lrt"], log=mode + "-build.log")
@@ -252,6 +264,38 @@ def test(data, mode):
                "returncode": 0, "negative_returncode": 1, "cases": sorted(TESTS), "hardware_tested": False})
 
 
+def distribution_files(data):
+    """Keep runnable fixtures and third-party notices with diagnostic binaries."""
+    licenses = OUT / "licenses"
+    licenses.mkdir(exist_ok=True)
+    source = source_check(data)
+    shutil.copy2(source / "LICENSE", licenses / "pocketjs-MIT.txt")
+    shutil.copy2(port.checked_sources(port.configs()) / "LICENSE", licenses / "quickjs-LICENSE.txt")
+    work = OUT / "source-native"
+    metadata = json.loads(run(["cargo", "+" + data["rust"], "metadata", "--locked", "--offline",
+                               "--format-version", "1", "--manifest-path", work / "engine/ui-cabi/Cargo.toml"], log="licenses.log"))
+    packages = []
+    for package in metadata["packages"]:
+        if package["source"] is None:
+            continue  # Both local crates inherit PocketJS's top-level MIT notice.
+        parent = Path(package["manifest_path"]).parent
+        copied = []
+        for candidate in sorted(parent.iterdir()):
+            if candidate.is_file() and candidate.name.upper().startswith(("LICENSE", "COPYING", "NOTICE")):
+                target = licenses / (package["name"] + "-" + package["version"] + "-" + candidate.name)
+                shutil.copy2(candidate, target)
+                copied.append(target.name)
+        require(copied, "missing third-party notice: " + package["name"])
+        packages.append({"name": package["name"], "version": package["version"],
+                         "license": package["license"], "notices": copied})
+    toolroot = Path(run(["rustc", "+" + data["rust"], "--print", "sysroot"]).strip())
+    for path in sorted((toolroot / "share/doc/rust").glob("*")):
+        if path.is_file() and path.name.upper().startswith(("LICENSE", "COPYRIGHT")):
+            shutil.copy2(path, licenses / ("rust-" + path.name))
+    write_json(licenses / "packages.json", {"packages": packages, "status": "diagnostic-notices-not-production-license-audit"})
+    return [*sorted(licenses.iterdir()), *sorted((OUT / "fixtures").iterdir())]
+
+
 def verify(data):
     commits = set()
     for mode in ["native", "arm"]:
@@ -259,14 +303,15 @@ def verify(data):
         require(result["commit"] == build["commit"] and result["mode"] == mode and result["build_sha256"] == digest(directory / "build.json"), "test not bound to build")
         require(result["returncode"] == 0 and result["negative_returncode"] == 1 and result["hardware_tested"] is False, "wrong execution status")
         require(set(result["outputs"]) == {"test.stdout", "negative.stdout", "cli.stdout"}, "missing execution output")
-        for name, sha in result["outputs"].items(): require(digest(directory / name) == sha, "execution log changed")
+        for name, sha in result["outputs"].items(): require(digest(OUT / mode / name) == sha, "execution log changed")
         validate_test((directory / "test.stdout").read_text(), mode)
         commits.add(build["commit"])
     require(len(commits) == 1, "native and ARM evidence from different commits")
     write_json(OUT / "verification.json", {"status": "passed", "commit": commits.pop(), "scope": "real-core-linux-headless",
                "cases_per_target": len(TESTS), "hardware_tested": False, "board_abi": "unverified", "ime": "not-integrated",
                "tests": {m: digest(OUT / m / "test.json") for m in ["native", "arm"]}})
-    entries = [p for p in OUT.glob("*.log")] + [OUT / "verification.json"]
+    distribution = distribution_files(data)
+    entries = [p for p in OUT.glob("*.log")] + [OUT / "verification.json", *distribution]
     for mode in ["native", "arm"]:
         entries += [p for p in (OUT / mode).iterdir() if p.suffix in {".json", ".stdout"} or p.name in {"ui-host", "runtime-test"}]
     sums = OUT / "SHA256SUMS"
@@ -295,6 +340,8 @@ def main():
         else: verify(data)
         return 0
     except (RuntimeError, KeyError, ValueError, OSError, subprocess.TimeoutExpired) as error:
+        for marker in ["verification.json", "SHA256SUMS", "acceptance.zip"]:
+            (OUT / marker).unlink(missing_ok=True)
         print(f"RUNTIME_FAILED: {error}", file=sys.stderr); return 1
 
 if __name__ == "__main__": sys.exit(main())

@@ -53,3 +53,19 @@ class RuntimeResultTests(unittest.TestCase):
         with self.assertRaises(RuntimeError): runtime.validate_test(self.output() + "TEST_FAILED synthetic\n", "arm")
     def test_missing_summary(self):
         with self.assertRaises(RuntimeError): runtime.validate_test(self.output().replace("RUNTIME_OK", "FAKE_OK"), "arm")
+
+
+class TextContractTests(unittest.TestCase):
+    def setUp(self): self.contract = runtime.read_json(ROOT / "contracts/text-input.json")
+    def test_no_false_ime_admission(self):
+        self.contract["admission"]["offline_ime"] = True
+        with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
+    def test_encoding_boundary(self):
+        self.contract["js_range_unit"] = "bytes"
+        with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
+    def test_sensitive_logging(self):
+        self.contract["sensitive_field_policy"]["log_text"] = True
+        with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
+    def test_bounded_queue(self):
+        self.contract["queue_contract"]["max_events"] = 0
+        with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
