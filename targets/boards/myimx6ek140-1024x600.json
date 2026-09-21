@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "id": "myimx6ek140-1024x600",
+  "profile": "imx6ul-1024x600",
+  "provenance": {
+    "kind": "user-provided-command-output",
+    "received_date": "2026-09-21",
+    "capture_time": null,
+    "raw_file": "docs/evidence/myimx6ek140-user-snapshot.txt",
+    "sha256": "14d055233ceece1b052604ea41a7f19181b542ff32af49193c47204eb2c128a2",
+    "runtime_executed_on_board": false
+  },
+  "observed": {
+    "hostname": "myimx6ek140",
+    "kernel_release": "4.9.88_V1.0.1.200613_V0.1.3.200624",
+    "kernel_version_text": "#673 SMP PREEMPT Tue Feb 11 15:33:59 CST 2025",
+    "architecture": "armv7l",
+    "os_id": "buildroot",
+    "os_version": "2019.05-rc1",
+    "cpu_implementer": "0x41",
+    "cpu_part": "0xc07",
+    "reported_processors": [
+      0
+    ],
+    "cpu_features": [
+      "half",
+      "thumb",
+      "fastmult",
+      "vfp",
+      "edsp",
+      "neon",
+      "vfpv3",
+      "tls",
+      "vfpv4",
+      "idiva",
+      "idivt",
+      "vfpd32",
+      "lpae"
+    ],
+    "bogomips": 12.0,
+    "mem_total_kib": 242976,
+    "mem_available_snapshot_kib": 171580,
+    "swap_total_kib": 0,
+    "cma_total_kib": 0,
+    "framebuffer_nodes": [
+      "/dev/fb0",
+      "/dev/fb1"
+    ],
+    "input_nodes": [
+      "event0",
+      "event1",
+      "mice",
+      "mouse0"
+    ],
+    "fbset": {
+      "queried_node": null,
+      "geometry": [
+        1024,
+        600,
+        1024,
+        600,
+        32
+      ],
+      "rgba": {
+        "red": [
+          8,
+          16
+        ],
+        "green": [
+          8,
+          8
+        ],
+        "blue": [
+          8,
+          0
+        ],
+        "alpha": [
+          0,
+          0
+        ]
+      },
+      "pixel_clock_mhz": 50.0,
+      "refresh_hz": 58.586,
+      "accel_flag": false,
+      "timings": [
+        20000,
+        160,
+        100,
+        13,
+        12,
+        60,
+        10
+      ]
+    }
+  },
+  "unknown": {
+    "physical_ram_mib": null,
+    "cpu_mhz": null,
+    "libc_family": null,
+    "libc_version": null,
+    "userland_float_abi": null,
+    "dynamic_loader": null,
+    "bsp_sdk": null,
+    "framebuffer_stride_bytes": null,
+    "framebuffer_smem_len": null,
+    "framebuffer_offsets": null,
+    "fb1_role": null,
+    "page_flip": null,
+    "vsync_ioctl": null,
+    "touch_protocol": null,
+    "storage_free_bytes": null
+  },
+  "board_admission": "blocked-libc-loader-sdk-unverified"
+}

@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "upstream_revision": "53a17f6416c3333f1171141bf996695720101ed2",
+  "rust": "nightly-2026-07-02",
+  "features": [
+    "bare-platform",
+    "software-only",
+    "host-allocator"
+  ],
+  "patches": [
+    {
+      "path": "patches/pocketjs/release-shutdown-buffers.patch",
+      "sha256": "5794f95896725530913229a4949ef4a3a825bd6b03c78648859970603d427990"
+    }
+  ],
+  "upstream_files": {
+    "engine/ui-cabi/Cargo.toml": "44d13560a342b76cf7c009a1ef2be12837cc1c42bc60273fddb07bf1ade814bf",
+    "engine/ui-cabi/Cargo.lock": "443ac5d4f9a830cb35047d6ab6b5caecffdd3047c7b5f99f6c5649ae4f1be823",
+    "engine/ui-cabi/rust-toolchain.toml": "168e94d0b8fbbdabeb76b6c659553ac01d4989fcc944529dea9f131e1c4ac910",
+    "engine/ui-cabi/src/lib.rs": "75729366aee66f5845949d9cf349303897380ad6f938c8d01bc61d83d07f7146",
+    "engine/quickjs-c/pocket_runtime.c": "9a264b5a16cf58114d50af29ae843ec4188b844a8889e09a4314b795de51e6c8",
+    "engine/quickjs-c/pocket_runtime.h": "d362583030df440e8de9cf577368f246f706fd6b21b4b579913607f7e077cf70",
+    "engine/ui-cabi/include/pocket_ui_cabi.h": "9b46238a03218abe113a795d3f8ffd9966300327807fb9f7dbe9786c6b5c6823",
+    "engine/core/src/spec.rs": "565ce4dcb4bb2ba7b2ed72b927594c4a7c43bf2a258ed02eddf6b1251e8963f7",
+    "contracts/spec/ime.ts": "489f214fa71ada99598480a6bfab382df6fcc297701a1c40eada0febd0c56531",
+    "framework/src/ime.ts": "f2c073906bf2f4e28115839393138f66bc0529b108c065fa17f83819f1313ae5",
+    "framework/src/host.ts": "4dc80a12901185d91b6e2f0c649ae0fe5376b1ff469638e0e5bf39f16964c179",
+    "framework/src/keyboard-touch.ts": "8c3daa5cd80ddb9a8f105e40892bf0bc988d40b6ebd92e330e3e545ad146c9fe"
+  },
+  "targets": {
+    "native": {
+      "triple": "x86_64-unknown-linux-gnu",
+      "cc": "gcc",
+      "ar": "ar",
+      "readelf": "readelf",
+      "c_flags": [],
+      "rust_flags": [],
+      "runner": []
+    },
+    "arm": {
+      "triple": "armv7-unknown-linux-gnueabihf",
+      "cc": "arm-linux-gnueabihf-gcc",
+      "ar": "arm-linux-gnueabihf-ar",
+      "readelf": "arm-linux-gnueabihf-readelf",
+      "c_flags": [
+        "-mcpu=cortex-a7",
+        "-mfpu=neon-vfpv4",
+        "-mfloat-abi=hard"
+      ],
+      "rust_flags": [
+        "-C",
+        "target-cpu=cortex-a7"
+      ],
+      "runner": [
+        "qemu-arm",
+        "-cpu",
+        "cortex-a7",
+        "-L",
+        "/usr/arm-linux-gnueabihf"
+      ]
+    }
+  }
+}

@@ -1,0 +1,55 @@
+"""Parser/contract negative tests. They do not replace real QuickJS/core execution."""
+import copy
+import importlib.util
+from pathlib import Path
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location("runtime", ROOT / "scripts/runtime.py")
+runtime = importlib.util.module_from_spec(spec); spec.loader.exec_module(runtime)
+
+class RuntimeConfigTests(unittest.TestCase):
+    def setUp(self):
+        self.profiles = runtime.read_json(runtime.PROFILES)
+        self.board = runtime.read_json(ROOT / "targets/boards/myimx6ek140-1024x600.json")
+    def test_real_configs(self): runtime.config()
+    def reject_profile(self, mutation):
+        mutation(self.profiles)
+        with self.assertRaises(RuntimeError): runtime.validate_profiles(self.profiles)
+    def test_missing_viewport(self): self.reject_profile(lambda p: p["profiles"].pop())
+    def test_wrong_viewport(self): self.reject_profile(lambda p: p["profiles"][1].update(height=768))
+    def test_unverified_800_board(self): self.reject_profile(lambda p: p["profiles"][1].update(board_record="targets/boards/myimx6ek140-1024x600.json"))
+    def test_unregistered_platform_claim(self): self.reject_profile(lambda p: p.update(upstream_registered=True))
+    def test_clock_changed(self): self.reject_profile(lambda p: p.update(simulation_hz=30))
+    def test_wrong_pixel_format(self): self.reject_profile(lambda p: p.update(pixel_format="RGB565"))
+    def test_ime_claim(self): self.reject_profile(lambda p: p["text_capabilities"].update(ime_composition="supported"))
+    def test_guessed_libc(self):
+        self.board["unknown"]["libc_version"] = "2.28"
+        with self.assertRaises(RuntimeError): runtime.validate_board(self.board)
+    def test_wrong_observed_ram(self):
+        self.board["observed"]["mem_total_kib"] = 256 * 1024
+        with self.assertRaises(RuntimeError): runtime.validate_board(self.board)
+    def test_wrong_observed_bpp(self):
+        self.board["observed"]["fbset"]["geometry"][-1] = 16
+        with self.assertRaises(RuntimeError): runtime.validate_board(self.board)
+    def test_changed_evidence(self):
+        self.board["provenance"]["sha256"] = "0" * 64
+        with self.assertRaises(RuntimeError): runtime.validate_board(self.board)
+    def test_false_board_execution(self):
+        self.board["provenance"]["runtime_executed_on_board"] = True
+        with self.assertRaises(RuntimeError): runtime.validate_board(self.board)
+
+class RuntimeResultTests(unittest.TestCase):
+    def output(self):
+        return "".join("PASS " + s + "\n" for s in sorted(runtime.TESTS)) + "RUNTIME_OK pointer_bits=32 hardware_tested=false\n"
+    def test_complete(self): runtime.validate_test(self.output(), "arm")
+    def test_missing_case(self):
+        with self.assertRaises(RuntimeError): runtime.validate_test(self.output().replace("PASS pause-resume\n", ""), "arm")
+    def test_duplicate_case(self):
+        with self.assertRaises(RuntimeError): runtime.validate_test(self.output() + "PASS pause-resume\n", "arm")
+    def test_wrong_architecture(self):
+        with self.assertRaises(RuntimeError): runtime.validate_test(self.output(), "native")
+    def test_contradictory_failure(self):
+        with self.assertRaises(RuntimeError): runtime.validate_test(self.output() + "TEST_FAILED synthetic\n", "arm")
+    def test_missing_summary(self):
+        with self.assertRaises(RuntimeError): runtime.validate_test(self.output().replace("RUNTIME_OK", "FAKE_OK"), "arm")
