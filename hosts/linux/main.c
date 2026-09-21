@@ -7,6 +7,7 @@
 #include <string.h>
 
 int main(int argc, char **argv) {
+    if (argc > 1 && !strcmp(argv[1], "--probe-vsync")) return vsync_cli(argc, argv);
     if (argc > 1 && (!strcmp(argv[1], "--probe-display") || !strcmp(argv[1], "--display-test")))
         return display_cli(argc, argv);
     LinuxHost host = {0};
