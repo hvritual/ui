@@ -39,3 +39,13 @@ verify-display:
 .PHONY: build-device-package
 build-device-package: test-display-arm
 	python3 scripts/device_package.py
+
+.PHONY: test-vsync-unit test-vsync test-vsync-arm verify-vsync
+test-vsync-unit:
+	python3 scripts/vsync.py unit
+test-vsync: test-runtime
+	python3 scripts/vsync.py test native
+test-vsync-arm: test-runtime-arm
+	python3 scripts/vsync.py test arm
+verify-vsync:
+	python3 scripts/vsync.py verify
