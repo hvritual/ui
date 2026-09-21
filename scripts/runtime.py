@@ -284,6 +284,10 @@ def distribution_files(data):
         if package["source"] is None:
             continue  # Both local crates inherit PocketJS's top-level MIT notice.
         parent = Path(package["manifest_path"]).parent
+        if package["name"] == "taffy" and package["version"] == "0.11.0":
+            # Published crate omits the notice; use its exact upstream version.
+            parent = ROOT / "docs/licenses/taffy-0.11.0"
+            require(digest(parent / "LICENSE.md") == "a7083ef3dd41a65eeb2162c2c091b0082e2724fb4c6ed029b363c7840d244ecd", "taffy notice changed")
         copied = []
         for candidate in sorted(parent.iterdir()):
             if candidate.is_file() and candidate.name.upper().startswith(("LICENSE", "COPYING", "NOTICE")):
