@@ -50,11 +50,10 @@ def build_test(mode):
     production=rt.OUT/mode/"ui-host"
     nm=rt.port.executable("arm-linux-gnueabihf-nm" if mode=="arm" else "nm")
     symbols=run([nm,production],directory/"symbols.log")
-    for symbol in ("vsync_cli","vsync_probe_fd","FBIO_WAITFORVSYNC"):
-        if symbol=="FBIO_WAITFORVSYNC": continue
+    for symbol in ("vsync_cli","vsync_probe_fd"):
         require(symbol in symbols,f"missing production symbol {symbol}")
     report=directory/"null-vsync.json"
-    cli=run([*runner,production,"--probe-vsync","--fbdev","/dev/null","--count","2","--timeout-ms","20","--output",report],directory/"cli.log",expected=1)
+    run([*runner,production,"--probe-vsync","--fbdev","/dev/null","--count","2","--timeout-ms","20","--output",report],directory/"cli.log",expected=1)
     evidence=read_json(report)
     require(evidence["operation"]=="vsync-probe" and evidence["status"]=="error" and evidence["writes_framebuffer"] is False,"production CLI scope mismatch")
     write_json(directory/"test.json",{**rt.project_state(),"mode":mode,"cases":sorted(CASES),"binary_sha256":digest(binary),
@@ -77,34 +76,28 @@ def verify():
         require(result["commit"]==state["commit"] and result["source_files"]==state["source_files"],"stale vsync evidence")
         require(result["runtime_build_sha256"]==digest(rt.OUT/mode/"build.json"),"runtime changed after vsync test")
         require(set(result["cases"])==CASES and result["fixture_only"] is True and result["physical_panel_validated"] is False,"wrong vsync evidence scope")
-        require(result["binary_sha256"]==digest(OUT/mode/"vsync-test") and result["report_sha256"]==digest(OUUÛ[ÙKÈ[]Þ[ËÛÛKÞ[È\YXÝYBÜ]WÚÛÛÕUÈ\YXØ][ÛÛÛÈÝ]\È\ÜÙYÛÛ[Z]Ý]VÈÛÛ[Z]KØÛÜHÝ[Y]Þ[ËY^\K\ØH[ØÝS×ÕÐRUÔÖSÈ\Ø\WÜ\Ý[[[Ë\X[Y]XÙH[Ù[XY[ÙK[ÙWÜÙ][È[ÙK\ÝÈÛNYÙ\Ý
-ÕUÛKÈ\ÝÛÛHÜH[
-]]H\H__JB[Y\ÏVÓÕUÈ\YXØ][ÛÛÛBÜ[ÙH[
-]]H\HN[Y\È
-ÏHÜÜ[
-ÕUÛ[ÙJK]\\
-HY\×Ù[J
-WB[Y\È
-ÏHÜÜ[
-ÕUÈ[]K]\\
-HY\×Ù[J
-WBÝ[\ÏSÕUÈÒLMÕSTÈÈÝ[\ËÜ]WÝ^
-	ÉËÚ[ÞÙYÙ\Ý
-
-_HÜ[]]WÝÊÕU
-_WÈÜ[ÛÜY
-[Y\ÊJJBÚ]\[K\[JÕUÈXØÙ\[ÙK\È\[KTÑQUQ
-H\ÈÜ[Ê[Y\ËÝ[\×NÜ]JÝ[]]WÝÊÕU
-JJB[
-ÖS×ÑUQSÑWÓÒÈ^\HÝ\ÜYÝ[Ý\ÜYÝ[Y[Ý]
-È]]KÐTNÈ\Ø\H[[ÈBYXZ[
-NNÕUZÙ\\[ÏUYK^\ÝÛÚÏUYJBY[Þ\Ë\ÝOZ\ÙH[[YQ\ÜÞ[ËH[]\Ý]]_\H\YHBYÞ\Ë\ÝÌWOOH[][[Þ\Ë\ÝOOL[]
+        require(result["binary_sha256"]==digest(OUT/mode/"vsync-test") and result["report_sha256"]==digest(OUT/mode/"null-vsync.json"),"vsync artifact drift")
+    write_json(OUT/"verification.json",{"status":"passed","commit":state["commit"],"scope":"bounded-vsync-fixture-probe",
+               "ioctl":"FBIO_WAITFORVSYNC","hardware_result":"pending-real-device","pan_enabled":False,"mode_setting":False,
+               "tests":{m:digest(OUT/m/"test.json") for m in ("native","arm")}})
+    entries=[OUT/"verification.json"]
+    for mode in ("native","arm"):
+        entries += [p for p in (OUT/mode).iterdir() if p.is_file()]
+    entries += [p for p in (OUT/"unit").iterdir() if p.is_file()]
+    sums=OUT/"SHA256SUMS"; sums.write_text(''.join(f'{digest(p)}  {p.relative_to(OUT)}\n' for p in sorted(entries)))
+    with zipfile.ZipFile(OUT/"acceptance.zip","w",zipfile.ZIP_DEFLATED) as z:
+        for p in [*entries,sums]: z.write(p,str(p.relative_to(OUT)))
+    print("VSYNC_EVIDENCE_OK fixture supported/unsupported/timeout + native/ARM; hardware pending")
 
-B[YÞ\Ë\ÝÌWOOH\Ý[[Þ\Ë\ÝOOLÈ[Þ\Ë\ÝÌH[È]]H\HNZ[Ý\Ý
-Þ\Ë\ÝÌJB[YÞ\Ë\ÝÌWOOH\YH[[Þ\Ë\ÝOOL\YJ
-B[ÙNZ\ÙH[[YQ\Ü[[YÞ[ÈÛÛ[X[B]\^Ù\
-[[YQ\ÜÙ^Q\Ü[YQ\ÜÔÑ\ÜÝXØÙ\ÜË[Y[Ý]^\Y
-H\ÈN[
-ÖS×ÑRSQÙ_H[O\Þ\ËÝ\NÈ]\BY×Û[YW×ÏOH×ÛXZ[×ÈÞ\Ë^]
-XZ[
-JB
+def main():
+    try:
+        OUT.mkdir(parents=True,exist_ok=True)
+        if len(sys.argv)<2: raise RuntimeError("vsync.py unit | test native|arm | verify")
+        if sys.argv[1]=="unit" and len(sys.argv)==2: unit()
+        elif sys.argv[1]=="test" and len(sys.argv)==3 and sys.argv[2] in {"native","arm"}: build_test(sys.argv[2])
+        elif sys.argv[1]=="verify" and len(sys.argv)==2: verify()
+        else: raise RuntimeError("invalid vsync command")
+        return 0
+    except (RuntimeError,KeyError,ValueError,OSError,subprocess.TimeoutExpired) as e:
+        print(f"VSYNC_FAILED: {e}",file=sys.stderr); return 1
+if __name__=="__main__": sys.exit(main())
