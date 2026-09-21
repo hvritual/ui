@@ -1,0 +1,52 @@
+name: Linux Host
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Prepare pinned source audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/runtime .cache
+          git archive --format=tar -o out/runtime/project-source.tar HEAD
+          git init -q .cache/pocketjs
+          git -C .cache/pocketjs remote add origin https://github.com/pocket-stack/pocketjs.git
+          git -C .cache/pocketjs fetch --depth 1 origin 53a17f6416c3333f1171141bf996695720101ed2
+          git -C .cache/pocketjs checkout --detach FETCH_HEAD
+          test "$(git -C .cache/pocketjs rev-parse HEAD)" = 53a17f6416c3333f1171141bf996695720101ed2
+          git -C .cache/pocketjs archive --format=tar -o "$PWD/out/runtime/upstream-source.tar" HEAD engine/ui-cabi engine/core engine/quickjs-c contracts framework/src docs/RUNTIMES.md
+      - name: Install native and ARM build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user
+          rustup toolchain install nightly-2026-07-02 --profile minimal --component rust-src --target armv7-unknown-linux-gnueabihf
+      - name: Check real standalone core cross build
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CARGO_TARGET_DIR="$PWD/out/runtime/cargo"
+          export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
+          cargo +nightly-2026-07-02 build --manifest-path .cache/pocketjs/engine/ui-cabi/Cargo.toml --release --locked --features bare-platform,software-only,host-allocator --target armv7-unknown-linux-gnueabihf 2>&1 | tee out/runtime/core-build.log
+          echo 'Core build only. Linux Host/runtime acceptance is not yet implemented.'
+      - name: Preserve source audit and build logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: linux-host-audit-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/runtime/*.tar
+            out/runtime/*.log
+          if-no-files-found: error
+          retention-days: 7
