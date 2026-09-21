@@ -1,0 +1,51 @@
+name: P2B VSync Probe
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  vsync:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install pinned runtime and ARM tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user patch
+          rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target armv7-unknown-linux-gnueabihf
+          rustup toolchain install nightly-2026-07-02 --profile minimal --component rust-src --target armv7-unknown-linux-gnueabihf
+      - name: Bounded native fixture gates
+        run: make check && make check-targets && make test-vsync-unit
+      - name: Fetch exact upstream
+        run: make fetch-runtime
+      - name: Native runtime and VSync probe
+        run: make test-vsync
+      - name: ARMv7 Cortex-A7 runtime and VSync probe
+        run: make test-vsync-arm
+      - name: Verify VSync evidence
+        run: make verify-vsync
+      - name: Build static i.MX6UL device package
+        run: make build-device-package
+      - name: Upload P2B evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p2b-vsync-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/vsync/acceptance.zip
+            out/vsync/verification.json
+            out/vsync/**/*.log
+            out/vsync/**/*.json
+            out/device/imx6ul-device-test.tar.gz
+            out/device/imx6ul/manifest.json
+            out/device/imx6ul/SHA256SUMS
+            out/device/imx6ul/elf.log
+          if-no-files-found: error
+          retention-days: 30

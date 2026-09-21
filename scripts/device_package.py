@@ -158,7 +158,7 @@ def main() -> int:
         if shutil.which(exe) is None:
             fail(f"missing tool: {exe}")
 
-    names = ["host.o", "platform.o", "display-presenter.o", "display-fbdev.o", "display-cli.o",
+    names = ["host.o", "platform.o", "display-presenter.o", "display-fbdev.o", "display-cli.o", "display-vsync.o",
              "main-host.o", "runtime-host.o", "personality.o", "libquickjs.a"]
     inputs = [need(RUNTIME / name) for name in names] + [need(CORE)]
     binary = OUT / "ui-host-imx6ul-static"
@@ -175,7 +175,7 @@ def main() -> int:
         fail("device package unexpectedly has a dynamic loader/dependency")
 
     symbols = run([NM, binary], OUT / "symbols.log")
-    for name in ["JS_Eval", "pocket_runtime_tick", "fbdev_present", "display_cli"]:
+    for name in ["JS_Eval", "pocket_runtime_tick", "fbdev_present", "display_cli", "vsync_probe_fd", "vsync_cli"]:
         if name not in symbols:
             fail(f"missing runtime/display symbol: {name}")
     if "fake_fb" in symbols or "__wrap_" in symbols:
@@ -188,6 +188,15 @@ def main() -> int:
                    OUT / "qemu-probe-negative.log", expected=1)
     if "FB_NOT_FRAMEBUFFER" not in rejected:
         fail("probe failure did not emit the expected framebuffer rejection")
+    vsync_report = OUT / "qemu-vsync-null.json"
+    vsync_rejected = run([QEMU, "-cpu", "cortex-a7", binary, "--probe-vsync", "--fbdev", "/dev/null",
+                          "--count", "2", "--timeout-ms", "20", "--output", vsync_report],
+                         OUT / "qemu-vsync-negative.log", expected=1)
+    if "VSYNC_PROBE_ERROR" not in vsync_rejected:
+        fail("vsync CLI failure did not emit the expected diagnostic")
+    vsync_json = json.loads(vsync_report.read_text())
+    if vsync_json["operation"] != "vsync-probe" or vsync_json["writes_framebuffer"] is not False:
+        fail("vsync device probe scope mismatch")
 
     assets = OUT / "assets"; assets.mkdir()
     for name in ["display-scene.js", "display-font.bin"]:
@@ -197,22 +206,26 @@ def main() -> int:
         path = OUT / name
         path.write_text(body, encoding="utf-8")
         path.chmod(0o755)
+    vsync_script = OUT / "run-vsync-probe.sh"
+    shutil.copy2(ROOT / "scripts/device/run-vsync-probe.sh", vsync_script)
+    vsync_script.chmod(0o755)
     binary.chmod(0o755)
 
     readme = OUT / "README.txt"
     readme.write_text(
         "i.MX6UL P2 framebuffer device test package\n\n"
-        "1) Safe read-only probe:\n   ./run-probe.sh /dev/fb0\n\n"
+        "1) Safe read-only framebuffer probe:\n   ./run-probe.sh /dev/fb0\n\n"
+        "1b) Safe read-only VSync probe:\n   ./run-vsync-probe.sh 20 100 /dev/fb0\n\n"
         "2) Review the probe log/JSON and stop any existing framebuffer writer.\n\n"
         "3) Explicit display write (1024x600 default):\n"
         "   ./run-display-test.sh I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER /dev/fb0 imx6ul-1024x600 300\n\n"
         "The display test leaves the final diagnostic pattern on screen. It does not restore the old pixels or restart an existing UI.\n"
         "Send back the generated logs/ directory plus a screen photo/video.\n", encoding="utf-8")
 
-    tracked = [binary, readme, OUT / "run-probe.sh", OUT / "run-display-test.sh",
+    tracked = [binary, readme, OUT / "run-probe.sh", OUT / "run-display-test.sh", OUT / "run-vsync-probe.sh",
                assets / "display-scene.js", assets / "display-font.bin",
                OUT / "build.log", OUT / "elf.log", OUT / "symbols.log",
-               OUT / "qemu-headless.log", OUT / "qemu-probe-negative.log"]
+               OUT / "qemu-headless.log", OUT / "qemu-probe-negative.log", OUT / "qemu-vsync-negative.log", OUT / "qemu-vsync-null.json"]
     sums = OUT / "SHA256SUMS"
     sums.write_text("".join(f"{sha256(p)}  {p.relative_to(OUT)}\n" for p in tracked), encoding="utf-8")
     manifest = {
@@ -225,6 +238,7 @@ def main() -> int:
         "shared_libraries": [],
         "profiles": ["imx6ul-1024x600", "imx6ul-1024x800"],
         "physical_panel_validated": False,
+        "vsync_probe": "read-only-bounded",
         "warning": "display-test writes the framebuffer and leaves the final image on screen",
     }
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
