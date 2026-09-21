@@ -272,8 +272,13 @@ def distribution_files(data):
     shutil.copy2(source / "LICENSE", licenses / "pocketjs-MIT.txt")
     shutil.copy2(port.checked_sources(port.configs()) / "LICENSE", licenses / "quickjs-LICENSE.txt")
     work = OUT / "source-native"
+    # Cargo metadata may name locked packages not compiled by this feature set.
+    # Fetch their source notices explicitly; --locked forbids dependency drift.
+    manifest = work / "engine/ui-cabi/Cargo.toml"
+    run(["cargo", "+" + data["rust"], "fetch", "--locked", "--manifest-path", manifest], log="licenses.log")
     metadata = json.loads(run(["cargo", "+" + data["rust"], "metadata", "--locked", "--offline",
-                               "--format-version", "1", "--manifest-path", work / "engine/ui-cabi/Cargo.toml"], log="licenses.log"))
+                               "--features", ",".join(data["features"]),
+                               "--format-version", "1", "--manifest-path", manifest], log="licenses.log"))
     packages = []
     for package in metadata["packages"]:
         if package["source"] is None:
@@ -342,6 +347,9 @@ def main():
     except (RuntimeError, KeyError, ValueError, OSError, subprocess.TimeoutExpired) as error:
         for marker in ["verification.json", "SHA256SUMS", "acceptance.zip"]:
             (OUT / marker).unlink(missing_ok=True)
+        if OUT.is_dir():
+            with (OUT / "failures.log").open("a", encoding="utf-8") as log:
+                log.write(f"RUNTIME_FAILED: {error}\n")
         print(f"RUNTIME_FAILED: {error}", file=sys.stderr); return 1
 
 if __name__ == "__main__": sys.exit(main())
