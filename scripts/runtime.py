@@ -176,7 +176,7 @@ def build(data, base, profiles, mode):
     require(run([cc, "-dumpfullversion"]).strip().split(".")[0] == "11", "GNU baseline requires GCC 11")
     env = os.environ.copy()
     env.pop("RUSTFLAGS", None)
-    env.update({"CARGO_TARGET_DIR": str(OUT / "cargo"), "CARGO_ENCODED_RUSTFLAGS": "\x1f".join(tool["rust_flags"]),
+    env.update({"CARGO_TARGET_DIR": str(OUT / "cargo"), "CARGO_ENCODED_RUSTFLAGS": "\u001f".join(tool["rust_flags"]),
                 "CARGO_TARGET_" + tool["triple"].upper().replace("-", "_") + "_LINKER": cc})
     run(["cargo", "+" + data["rust"], "build", "--manifest-path", source / "engine/ui-cabi/Cargo.toml",
          "--locked", "--release", "--target", tool["triple"], "--features", ",".join(data["features"])], env=env, log=mode + "-build.log")
@@ -193,6 +193,9 @@ def build(data, base, profiles, mode):
     archive = directory / "libquickjs.a"; archive.unlink(missing_ok=True)
     run([port.executable(tool["ar"]), "rcs", archive, *objects])
     host_objects = [compile_file(ROOT / "hosts/linux" / (name + ".c"), name, ["-std=c11", "-Wall", "-Wextra", "-Werror"]) for name in ["host", "platform"]]
+    host_objects += [compile_file(ROOT / "hosts/linux/display" / (name + ".c"), "display-" + name,
+                                  ["-std=c11", "-Wall", "-Wextra", "-Werror"])
+                     for name in ["presenter", "fbdev", "cli"]]
     personality = compile_file(source / "engine/quickjs-c/rust_eh_personality.c", "personality")
     for test in [False, True]:
         suffix = "test" if test else "host"

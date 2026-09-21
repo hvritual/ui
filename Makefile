@@ -25,3 +25,13 @@ test-runtime-arm: build-runtime-arm
 	python3 scripts/runtime.py test arm
 verify-runtime:
 	python3 scripts/runtime.py verify
+
+.PHONY: test-display-unit test-display test-display-arm verify-display
+test-display-unit:
+	python3 scripts/display.py unit
+test-display: test-runtime
+	python3 scripts/display.py test native
+test-display-arm: test-runtime-arm
+	python3 scripts/display.py test arm
+verify-display:
+	python3 scripts/display.py verify
