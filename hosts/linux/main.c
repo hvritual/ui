@@ -1,5 +1,6 @@
 #include "host.h"
 #include "display/cli.h"
+#include "display/vsync.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
