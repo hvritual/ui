@@ -1,0 +1,25 @@
+name: Framebuffer Presenter
+on:
+  push:
+    branches: [main, build/framebuffer-presenter]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  source-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Preserve exact source for cloud implementation
+        run: |
+          mkdir -p /tmp/display-source
+          git archive --format=tar HEAD > /tmp/display-source/project-source.tar
+          git rev-parse HEAD > /tmp/display-source/commit.txt
+          sha256sum /tmp/display-source/project-source.tar > /tmp/display-source/SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: display-source-${{ github.sha }}
+          path: /tmp/display-source/
+          if-no-files-found: error
+          retention-days: 30
