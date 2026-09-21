@@ -1,0 +1,43 @@
+name: i.MX6UL Device Test Package
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install pinned ARM and runtime tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user patch
+          rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target armv7-unknown-linux-gnueabihf
+          rustup toolchain install nightly-2026-07-02 --profile minimal --component rust-src --target armv7-unknown-linux-gnueabihf
+      - name: Build and test static device package
+        run: make check && make check-targets && make fetch-runtime && make build-device-package
+      - name: Verify no dynamic loader or shared-library dependency
+        run: |
+          test -f out/device/imx6ul/ui-host-imx6ul-static
+          ! arm-linux-gnueabihf-readelf -l out/device/imx6ul/ui-host-imx6ul-static | grep -q 'Requesting program interpreter'
+          ! arm-linux-gnueabihf-readelf -d out/device/imx6ul/ui-host-imx6ul-static | grep -q NEEDED
+          qemu-arm -cpu cortex-a7 out/device/imx6ul/ui-host-imx6ul-static --profile imx6ul-1024x600 --asset-root out/runtime/fixtures --bundle scene.js --pack scene.pak --ticks 6
+      - name: Upload device test package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: imx6ul-device-test-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/device/imx6ul-device-test.tar.gz
+            out/device/imx6ul/manifest.json
+            out/device/imx6ul/SHA256SUMS
+            out/device/imx6ul/elf.log
+            out/device/imx6ul/qemu-headless.log
+          if-no-files-found: error
+          retention-days: 30
