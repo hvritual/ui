@@ -35,3 +35,7 @@ test-display-arm: test-runtime-arm
 	python3 scripts/display.py test arm
 verify-display:
 	python3 scripts/display.py verify
+
+.PHONY: build-device-package
+build-device-package: test-display-arm
+	python3 scripts/device_package.py
