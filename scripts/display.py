@@ -20,7 +20,7 @@ def load(name, path):
 rt = load("runtime", ROOT / "scripts/runtime.py")
 assets = load("display_assets", ROOT / "tests/display/assets.py")
 require, digest, read_json, write_json = rt.require, rt.digest, rt.read_json, rt.write_json
-WRAPS = ["open", "fstat", "flock", "ioctl", "mmap", "munmap", "close", "sysconf"]
+WRAPS = ["open", "__open_2", "fstat", "flock", "ioctl", "mmap", "munmap", "close", "sysconf"]
 UNIT_CASES = set("""xrgb8888-padding-offset-canaries all-32bit-byte-orders-opaque-alpha
  offset-grid-preserves-hidden-pixels rgb565-exact-quantization reject-24bpp reject-directcolor
  reject-planar reject-grayscale-fourcc reject-nonstandard reject-overlapping-channels reject-msb-right
@@ -93,7 +93,7 @@ def unit():
     config(); directory=OUT / "unit"; directory.mkdir(parents=True,exist_ok=True)
     run([sys.executable,"-m","unittest","discover","-s","tests","-p","test_display.py","-v"],directory/"python.log")
     cc=rt.port.executable("gcc")
-    flags=["-std=c11","-Wall","-Wextra","-Werror","-Wpedantic","-O1","-g","-fsanitize=address,undefined",
+    flags=["-D_FORTIFY_SOURCE=2","-std=c11","-Wall","-Wextra","-Werror","-Wpedantic","-O1","-g","-fsanitize=address,undefined",
            "-Ihosts/linux","-Itests/display"]
     sources=["hosts/linux/display/presenter.c","hosts/linux/display/fbdev.c","tests/display/fake_fbdev.c","tests/display/test_presenter.c"]
     binary=directory/"presenter-sanitized"

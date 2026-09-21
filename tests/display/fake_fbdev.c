@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 int __real_open(const char *, int, ...);
+int __real___open_2(const char *, int);
 int __real_fstat(int, struct stat *);
 int __real_flock(int, int);
 int __real_ioctl(int, unsigned long, ...);
@@ -50,6 +51,12 @@ int __wrap_open(const char *path, int flags, ...) {
     fake_fb.opens++; fake_fb.last_flags = flags;
     if (fake_fb.open_error) { errno = fake_fb.open_error; return -1; }
     return 0; /* Exercise ownership of descriptor zero, not just positive fds. */
+}
+/* Fortified glibc lowers non-constant two-argument open to __open_2.
+   Keep that protection in production and intercept only the fixture here. */
+int __wrap___open_2(const char *path, int flags) {
+    if (!strcmp(path, "/dev/fb-fixture")) return __wrap_open(path, flags);
+    return __real___open_2(path, flags);
 }
 int __wrap_fstat(int fd, struct stat *st) {
     if (fd != 0) return __real_fstat(fd, st);
