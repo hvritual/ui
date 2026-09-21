@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "status": "probe-pending-real-device",
+  "device_selection": "capability-based-not-event-index",
+  "event_clock": "kernel-input-event-time",
+  "delivery_boundary": "SYN_REPORT",
+  "on_syn_dropped": "cancel-active-pointers-resync-before-new-press",
+  "physical_key_is_text": false,
+  "trace_contains_committed_text": false,
+  "profiles": [
+    {
+      "id": "imx6ul-1024x600",
+      "width": 1024,
+      "height": 600,
+      "display_rotation_degrees": 0,
+      "input_device": null,
+      "protocol": null,
+      "abs_x": null,
+      "abs_y": null,
+      "mt_slot": null,
+      "mt_tracking_id": null,
+      "mt_position_x": null,
+      "mt_position_y": null
+    },
+    {
+      "id": "imx6ul-1024x800",
+      "width": 1024,
+      "height": 800,
+      "display_rotation_degrees": null,
+      "input_device": null,
+      "protocol": null,
+      "abs_x": null,
+      "abs_y": null,
+      "mt_slot": null,
+      "mt_tracking_id": null,
+      "mt_position_x": null,
+      "mt_position_y": null
+    }
+  ],
+  "admission": {
+    "single_touch": false,
+    "mt_protocol_b": false,
+    "physical_keyboard": false,
+    "disconnect_recovery": false,
+    "replay": false
+  }
+}

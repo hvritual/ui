@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hvritual/ui/contracts/input-trace.schema.json",
+  "title": "P3 evdev input trace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source", "device", "events"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "source": {"enum": ["synthetic-fixture", "real-device-redacted"]},
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "event_path", "capability_hash"],
+      "properties": {
+        "name": {"type": ["string", "null"], "maxLength": 256},
+        "event_path": {"type": "string", "pattern": "^/dev/input/event[0-9]+$"},
+        "capability_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "events": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["seq", "monotonic_ns", "type", "code", "value"],
+        "properties": {
+          "seq": {"type": "integer", "minimum": 0},
+          "monotonic_ns": {"type": "integer", "minimum": 0},
+          "type": {"type": "integer", "minimum": 0, "maximum": 65535},
+          "code": {"type": "integer", "minimum": 0, "maximum": 65535},
+          "value": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647}
+        }
+      }
+    }
+  }
+}
