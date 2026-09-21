@@ -186,8 +186,8 @@ def main() -> int:
          "--asset-root", fixtures, "--bundle", "scene.js", "--pack", "scene.pak", "--ticks", "6"], OUT / "qemu-headless.log")
     rejected = run([QEMU, "-cpu", "cortex-a7", binary, "--probe-display", "--fbdev", "/dev/null"],
                    OUT / "qemu-probe-negative.log", expected=1)
-    if "DISPLAY_" not in rejected:
-        fail("probe failure did not emit a display diagnostic")
+    if "FB_NOT_FRAMEBUFFER" not in rejected:
+        fail("probe failure did not emit the expected framebuffer rejection")
 
     assets = OUT / "assets"; assets.mkdir()
     for name in ["display-scene.js", "display-font.bin"]:
