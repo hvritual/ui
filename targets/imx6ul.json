@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "soc": "i.MX6UL",
+  "architecture": "armv7",
+  "float_abi": "hard",
+  "profiles": [
+    {"id": "imx6ul-1024x600", "width": 1024, "height": 600},
+    {"id": "imx6ul-1024x800", "width": 1024, "height": 800}
+  ],
+  "rendering": {"preferred_format": "RGB565", "presentation_fps_target": 30, "hardware_verified": false},
+  "device_evidence": {
+    "ram_mib": null,
+    "cpu_mhz": null,
+    "kernel": null,
+    "libc": null,
+    "bsp_sdk": null,
+    "framebuffer_format": null,
+    "framebuffer_stride": null,
+    "touch_protocol": null,
+    "panel_refresh_hz": null
+  }
+}

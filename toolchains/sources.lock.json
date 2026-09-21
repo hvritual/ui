@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "pocketjs": {
+    "repository": "https://github.com/pocket-stack/pocketjs.git",
+    "revision": "53a17f6416c3333f1171141bf996695720101ed2",
+    "usage": "reference-only in P0; core integration is P1"
+  },
+  "quickjs": {
+    "repository": "https://github.com/pocket-stack/quickjs-rs.git",
+    "revision": "ba5bdd0dc013518768e76cd9e05cd30ed53dd35b",
+    "version": "2026-06-04",
+    "source_dir": "libquickjs-sys/embed/quickjs",
+    "sources": ["quickjs.c", "cutils.c", "dtoa.c", "libregexp.c", "libunicode.c"]
+  },
+  "toolchain": {
+    "rust": "1.90.0",
+    "rust_target": "armv7-unknown-linux-gnueabihf",
+    "c_prefix": "arm-linux-gnueabihf-",
+    "gcc_major": 11,
+    "qemu_cpu": "cortex-a7",
+    "qemu_sysroot": "/usr/arm-linux-gnueabihf",
+    "c_flags": ["-std=c11", "-O2", "-mcpu=cortex-a7", "-mfpu=neon-vfpv4", "-mfloat-abi=hard", "-fno-strict-aliasing", "-fwrapv", "-D_GNU_SOURCE"],
+    "rust_flags": ["-C", "target-cpu=cortex-a7"]
+  }
+}
