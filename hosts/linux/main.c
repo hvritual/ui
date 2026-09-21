@@ -1,10 +1,13 @@
 #include "host.h"
+#include "display/cli.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 int main(int argc, char **argv) {
+    if (argc > 1 && (!strcmp(argv[1], "--probe-display") || !strcmp(argv[1], "--display-test")))
+        return display_cli(argc, argv);
     LinuxHost host = {0};
     const char *profile = NULL, *root = NULL, *bundle = NULL, *pack = NULL;
     unsigned long limit = 60;

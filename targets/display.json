@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "renderer_format": "BGRA8888-opaque",
+  "presenter": "fbdev-mmap-row-copy",
+  "supported_formats": ["32bit-byte-aligned-RGB888-X-or-A8", "RGB565-little-endian"],
+  "logical_scale": 1,
+  "rotation_degrees": 0,
+  "maximum_mapping_bytes": 67108864,
+  "set_display_mode": false,
+  "pan_enabled": false,
+  "vsync_enabled": false,
+  "hardware_admission": "blocked-pending-device-ABI-and-display-evidence",
+  "profiles": [
+    {"id": "imx6ul-1024x600", "width": 1024, "height": 600, "board_record": "targets/boards/myimx6ek140-1024x600.json", "display_probe": null},
+    {"id": "imx6ul-1024x800", "width": 1024, "height": 800, "board_record": null, "display_probe": null}
+  ]
+}

@@ -1,0 +1,54 @@
+name: Framebuffer Presenter
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  display:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install pinned runtime and ARM tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user patch
+          rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target armv7-unknown-linux-gnueabihf
+          rustup toolchain install nightly-2026-07-02 --profile minimal --component rust-src --target armv7-unknown-linux-gnueabihf
+      - name: Configuration and sanitizer negative gates
+        run: make check && make check-targets && make test-display-unit
+      - name: Fetch exact upstream
+        run: make fetch-runtime
+      - name: Native real renderer and framebuffer fixtures
+        run: make test-display
+      - name: ARMv7 real renderer and framebuffer fixtures
+        run: make test-display-arm
+      - name: Verify P1 regression and display evidence
+        run: make verify-runtime && make verify-display
+      - name: Preserve exact artifacts and failure evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: framebuffer-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/display/acceptance.zip
+            out/display/*.log
+            out/display/verification.json
+            out/display/unit/*.log
+            out/display/native/*.log
+            out/display/native/*.json
+            out/display/native/*.stdout
+            out/display/native/*.ppm
+            out/display/arm/*.log
+            out/display/arm/*.json
+            out/display/arm/*.stdout
+            out/display/arm/*.ppm
+            out/runtime/*.log
+          if-no-files-found: error
+          retention-days: 30

@@ -2,11 +2,11 @@
 
 Coffee-machine UI port workspace for **1024×600** and **1024×800** Embedded Linux displays.
 
-The repository contains an independent **P0 ARMv7 toolchain smoke** and a **P1 real PocketJS Linux headless host**. P1 executes QuickJS, the upstream C runtime, UI core/layout/DrawList and software rendering into memory. It does not access a physical display or touch device, implement an IME, or certify compatibility with the deployed coffee-machine BSP. Actual acceptance evidence lives in the issues and Actions results, not in this README.
+The repository contains an independent **P0 ARMv7 toolchain smoke** and a **P1 real PocketJS Linux headless host**. P1 executes QuickJS, the upstream C runtime, UI core/layout/DrawList and software rendering into memory. P2 adds an explicit fbdev Presenter/probe/display-test path; physical panels remain untested. Input devices, IME and compatibility with the deployed coffee-machine BSP are not certified. Actual acceptance evidence lives in the issues and Actions results, not in this README.
 
 ## Roadmap
 
-[Master roadmap #1](https://github.com/hvritual/ui/issues/1) · [P0 #2](https://github.com/hvritual/ui/issues/2) · [P1 #3](https://github.com/hvritual/ui/issues/3) · [Stage/dependency index](docs/roadmap.md)
+[Master roadmap #1](https://github.com/hvritual/ui/issues/1) · [P0 #2](https://github.com/hvritual/ui/issues/2) · [P1 #3](https://github.com/hvritual/ui/issues/3) · [P2 #4](https://github.com/hvritual/ui/issues/4) · [Stage/dependency index](docs/roadmap.md)
 
 - MVP: P0 toolchain → P1 core/host → P2 display + P3 input → P4 multilingual resources/demo → P4A text editing/keyboard/offline IME.
 - Full Runtime: P5 measured rendering and IME performance → P6 device-service integration.
@@ -44,6 +44,20 @@ make verify-runtime
 ```
 
 The host uses bounded trusted local assets, a single UI owner, monotonic time, 60 guest/core turns and one offscreen render per two turns. Tests validate actual pixels/layout, Promise ordering, pause/resume, errors and repeated cleanup. The test fixture uses native HostOps, not yet the component compiler. Output and evidence are in `out/runtime/`; an Actions artifact preserves successful results and failure logs.
+
+## P2 framebuffer Presenter
+
+See [display contracts, gates and safe device operation](docs/display.md). The Presenter accepts validated 32-bit RGB888 bitfields or exact RGB565, using queried stride, offsets and mapping limits without changing display modes. Read-only probe and deliberate display-test are separate commands. The core-to-presenter tests use real PocketJS rendering and explicitly synthetic fbdev syscalls; independent full-frame goldens cover both viewports, text, images, clipping and animation.
+
+```sh
+make test-display-unit
+make test-display
+make test-display-arm
+make verify-runtime
+make verify-display
+```
+
+Display evidence is in `out/display/`. Pan remains disabled, vsync is not probed, and row copying may tear. **Device commands require prior BSP/ABI admission and exclusive display ownership; current cloud binaries are not a production install.**
 
 ## Important boundaries
 

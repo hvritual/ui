@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "pocket_runtime.h"
+#include "frame.h"
 
 /* One owning UI thread and one live runtime per process. Not a device driver. */
 typedef enum { HOST_STOPPED, HOST_RUNNING, HOST_PAUSED, HOST_FAILED } HostState;
@@ -20,11 +21,6 @@ typedef struct {
     uint64_t turns, renders;
     const char *error;
 } LinuxHost;
-typedef struct {
-    const uint8_t *pixels; /* Borrowed until render, close or next host mutation. */
-    uint32_t width, height, stride;
-    size_t length;
-} HostFrame;
 typedef struct { size_t live_bytes, peak_bytes, live_blocks; } HostAllocStats;
 
 int host_asset_read(const char *root, const char *name, size_t limit, HostAsset *out);
@@ -45,6 +41,7 @@ int host_open(LinuxHost *host, const char *profile, const char *root,
 int host_turn(LinuxHost *host, const PocketRuntimeInput *input);
 int host_pump(LinuxHost *host, uint64_t now); /* headless, no hardware input */
 int host_render(LinuxHost *host, HostFrame *frame);
+int host_pump_present(LinuxHost *host, uint64_t now, HostPresenter present, void *context);
 int host_pause(LinuxHost *host, int paused, uint64_t now);
 void host_close(LinuxHost *host);
 #endif

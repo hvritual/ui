@@ -54,7 +54,7 @@ int host_render(LinuxHost *h, HostFrame *frame) {
         return fail(h, "HOST_RENDER_CONTRACT_FAILED");
     ++h->renders; return 1;
 }
-int host_pump(LinuxHost *h, uint64_t now) {
+int host_pump_present(LinuxHost *h, uint64_t now, HostPresenter present, void *context) {
     HostFrame frame;
     int due;
     if (!h || owner != h || (h->state != HOST_RUNNING && h->state != HOST_PAUSED)) return -1;
@@ -63,9 +63,15 @@ int host_pump(LinuxHost *h, uint64_t now) {
     for (int i = 0; i < due; ++i) {
         if (!host_turn(h, NULL)) return -1;
         /* 60 guest/core turns; at most 30 offscreen renders per logical second. */
-        if ((h->turns % 2) == 0 && !host_render(h, &frame)) return -1;
+        if ((h->turns % 2) == 0) {
+            if (!host_render(h, &frame)) return -1;
+            if (present && !present(context, &frame)) { fail(h, "HOST_PRESENT_FAILED"); return -1; }
+        }
     }
     return due;
+}
+int host_pump(LinuxHost *h, uint64_t now) {
+    return host_pump_present(h, now, NULL, NULL);
 }
 int host_pause(LinuxHost *h, int paused, uint64_t now) {
     if (!h || owner != h || (h->state != HOST_RUNNING && h->state != HOST_PAUSED)) return 0;
