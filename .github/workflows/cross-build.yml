@@ -1,0 +1,43 @@
+name: ARMv7 toolchain
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  armv7:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install GNU ARM compiler and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user
+          rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target armv7-unknown-linux-gnueabihf
+      - name: Static checks and negative tests
+        run: make check
+      - name: Fetch pinned sources
+        run: make fetch
+      - name: Cross compile Rust and real QuickJS
+        run: make build
+      - name: Execute Cortex-A7 smoke tests
+        run: make smoke
+      - name: Verify evidence and package
+        run: make verify
+      - name: Preserve build logs and artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: imx6ul-toolchain-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
