@@ -1,0 +1,69 @@
+name: P3 Input Prep
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  input-prep:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Install ARM tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf qemu-user
+      - name: Validate JSON contracts
+        run: |
+          python3 -m json.tool targets/input.json >/dev/null
+          python3 -m json.tool contracts/input-trace.schema.json >/dev/null
+          python3 - <<'PY'
+          import json
+          p=json.load(open("targets/input.json"))
+          assert p["device_selection"]=="capability-based-not-event-index"
+          assert all(x["input_device"] is None and x["protocol"] is None for x in p["profiles"])
+          assert p["physical_key_is_text"] is False
+          PY
+      - name: Build native negative probe
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Wpedantic -O2 hosts/linux/input/probe_main.c -o /tmp/input-probe
+          set +e
+          /tmp/input-probe --probe /dev/null >/tmp/null.json 2>/tmp/null.err
+          rc=$?
+          set -e
+          test "$rc" -eq 1
+          grep -q '"error":"INPUT_NOT_EVDEV"' /tmp/null.json
+      - name: Build static ARMv7 probe
+        run: |
+          mkdir -p out/input-prep/package
+          arm-linux-gnueabihf-gcc -std=c11 -Wall -Wextra -Werror -Wpedantic -O2 -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -static hosts/linux/input/probe_main.c -o out/input-prep/package/input-probe-imx6ul-static
+          arm-linux-gnueabihf-readelf -h -A -l -d out/input-prep/package/input-probe-imx6ul-static >out/input-prep/elf.log
+          ! grep -q 'Requesting program interpreter' out/input-prep/elf.log
+          ! grep -q 'NEEDED' out/input-prep/elf.log
+          grep -q 'Tag_ABI_VFP_args: VFP registers' out/input-prep/elf.log
+          set +e
+          qemu-arm -cpu cortex-a7 out/input-prep/package/input-probe-imx6ul-static --probe /dev/null >out/input-prep/qemu-null.json 2>out/input-prep/qemu-null.stderr
+          rc=$?
+          set -e
+          test "$rc" -eq 1
+          grep -q '"error":"INPUT_NOT_EVDEV"' out/input-prep/qemu-null.json
+          cp scripts/device/run-input-probe.sh out/input-prep/package/
+          chmod +x out/input-prep/package/*
+          cp targets/input.json contracts/input-trace.schema.json docs/input.md out/input-prep/package/
+          (cd out/input-prep/package && sha256sum * >SHA256SUMS)
+          tar -C out/input-prep -czf out/input-prep/imx6ul-input-probe.tar.gz package
+      - name: Upload input prep package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3-input-prep-${{ github.event.pull_request.head.sha }}
+          path: |
+            out/input-prep/imx6ul-input-probe.tar.gz
+            out/input-prep/elf.log
+            out/input-prep/qemu-null.json
+            out/input-prep/qemu-null.stderr
+          if-no-files-found: error
+          retention-days: 30
