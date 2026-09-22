@@ -61,3 +61,13 @@ package-input:
 	python3 scripts/input.py package
 verify-input:
 	python3 scripts/input.py verify
+
+.PHONY: test-input-live-unit test-input-live test-input-live-arm verify-input-live
+test-input-live-unit: test-runtime
+	python3 scripts/input_live.py unit
+test-input-live: test-runtime
+	python3 scripts/input_live.py test native
+test-input-live-arm: test-runtime-arm
+	python3 scripts/input_live.py test arm
+verify-input-live:
+	python3 scripts/input_live.py verify
