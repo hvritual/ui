@@ -18,6 +18,7 @@ static int failures;
 #define PASS(x) printf("PASS %s\n",x)
 
 int __real_open(const char *, int, ...);
+int __real___open_2(const char *, int);
 int __real_fstat(int, struct stat *);
 int __real_ioctl(int, unsigned long, ...);
 ssize_t __real_read(int, void *, size_t);
@@ -50,6 +51,10 @@ int __wrap_open(const char *path,int flags,...) {
     if(!strcmp(path,"/dev/input/event0")) return 10;
     if(!strcmp(path,"/dev/input/event1")) return 11;
     errno=ENOENT;return -1;
+}
+int __wrap___open_2(const char *path,int flags) {
+    if(!strncmp(path,"/dev/input/event",16)) return __wrap_open(path,flags);
+    return __real___open_2(path,flags);
 }
 int __wrap_fstat(int fd,struct stat *st) {
     if(fd!=10&&fd!=11)return __real_fstat(fd,st);
