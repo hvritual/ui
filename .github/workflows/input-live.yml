@@ -33,6 +33,25 @@ jobs:
         run: make verify-runtime verify-input-live
       - name: Preserve static i.MX6UL touch package
         run: make test-display-arm build-device-package
+      - name: Preserve exact source and native diagnostic objects
+        if: always()
+        run: |
+          mkdir -p out/input-live/review
+          git archive --format=tar HEAD >out/input-live/review/source.tar
+          git rev-parse HEAD >out/input-live/review/commit.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import tarfile
+          paths = [Path('out/runtime/native'), Path('out/runtime/include'),
+                   Path('out/runtime/source-native/engine/quickjs-c/pocket_runtime.h'),
+                   Path('out/runtime/source-native/engine/ui-cabi/include/pocket_ui_cabi.h'),
+                   Path('out/runtime/cargo/x86_64-unknown-linux-gnu/release/libpocketjs_symbian_core.a')]
+          with tarfile.open('out/input-live/review/native-build.tar.gz', 'w:gz') as archive:
+              for path in paths:
+                  if path.exists():
+                      archive.add(path)
+          PY
+          (cd out/input-live/review && sha256sum source.tar commit.txt native-build.tar.gz >SHA256SUMS)
       - name: Upload P3-02 evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
