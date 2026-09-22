@@ -44,6 +44,9 @@ int host_pump(LinuxHost *host, uint64_t now); /* headless, no hardware input */
 int host_render(LinuxHost *host, HostFrame *frame);
 int host_pump_present(LinuxHost *host, uint64_t now, HostPresenter present, void *context);
 int host_pump_present_contacts(LinuxHost *host, uint64_t now,
+                               HostContactsSource source, void *source_context,
+                               HostPresenter present, void *present_context);
+int host_pump_present_contacts(LinuxHost *host, uint64_t now,
                                const PocketRuntimeContactsInput *input,
                                HostPresenter present, void *context);
 int host_pause(LinuxHost *host, int paused, uint64_t now);
