@@ -22,7 +22,9 @@ int __real___open_2(const char *, int);
 int __real_fstat(int, struct stat *);
 int __real_ioctl(int, unsigned long, ...);
 ssize_t __real_read(int, void *, size_t);
+ssize_t __real___read_chk(int, void *, size_t, size_t);
 int __real_poll(struct pollfd *, nfds_t, int);
+int __real___poll_chk(struct pollfd *, nfds_t, int, size_t);
 int __real_close(int);
 
 static struct input_event stream_events[128];
@@ -125,6 +127,11 @@ ssize_t __wrap_read(int fd,void *buf,size_t count) {
     if(read_eof)return 0;
     errno=EAGAIN;return -1;
 }
+ssize_t __wrap___read_chk(int fd,void *buf,size_t count,size_t buflen) {
+    if(fd!=11)return __real___read_chk(fd,buf,count,buflen);
+    if(count>buflen){errno=EOVERFLOW;return -1;}
+    return __wrap_read(fd,buf,count);
+}
 int __wrap_poll(struct pollfd *fds,nfds_t n,int timeout) {
     (void)timeout;
     if(n==1&&fds[0].fd==11) {
@@ -132,6 +139,13 @@ int __wrap_poll(struct pollfd *fds,nfds_t n,int timeout) {
         fds[0].revents=POLLIN;return 1;
     }
     return __real_poll(fds,n,timeout);
+}
+int __wrap___poll_chk(struct pollfd *fds,nfds_t n,int timeout,size_t fdslen) {
+    if(n==1&&fds&&fds[0].fd==11) {
+        if(n*sizeof(*fds)>fdslen){errno=EOVERFLOW;return -1;}
+        return __wrap_poll(fds,n,timeout);
+    }
+    return __real___poll_chk(fds,n,timeout,fdslen);
 }
 int __wrap_close(int fd) {
     if(fd==10||fd==11){close_count++;return 0;}
