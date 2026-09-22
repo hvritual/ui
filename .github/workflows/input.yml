@@ -1,0 +1,45 @@
+name: P3-01 Input State and Trace
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  input:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install ARM tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user
+      - name: Native sanitizer and fail-closed gates
+        run: make test-input-unit
+      - name: Native state and replay
+        run: make test-input
+      - name: ARMv7 Cortex-A7 state and replay
+        run: make test-input-arm
+      - name: Static real-device trace package
+        run: make package-input
+      - name: Verify exact evidence
+        run: make verify-input
+      - name: Upload P3-01 evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3-01-input-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/input/acceptance.zip
+            out/input/verification.json
+            out/input/SHA256SUMS
+            out/input/imx6ul-p3-01-trace-test.tar.gz
+            out/input/**/*.log
+            out/input/**/*.json
+          if-no-files-found: error
+          retention-days: 30
