@@ -51,6 +51,7 @@ typedef struct {
     int have_x;
     int have_y;
     int published;
+    int defer_publish;
 } InputSlot;
 
 typedef struct {
