@@ -27,15 +27,15 @@ int __real_poll(struct pollfd *, nfds_t, int);
 int __real___poll_chk(struct pollfd *, nfds_t, int, size_t);
 int __real_close(int);
 
-static struct input_event stream_events[128];
+static struct input_event stream_events[2048];
 static size_t stream_count, stream_pos;
 static int read_eof, poll_ready=1;
-static int close_count;
+static int close_count, touch_node=1, poll_fault, endless_read;
 static int mt_tracking[10], mt_x[10], mt_y[10], mt_current_slot;
 
 static void reset_fake(void) {
     memset(stream_events,0,sizeof(stream_events));
-    stream_count=stream_pos=0; read_eof=0; poll_ready=1; close_count=0;
+    stream_count=stream_pos=0; read_eof=0; poll_ready=1; close_count=0; touch_node=1; poll_fault=0; endless_read=0;
     for(int i=0;i<10;i++){mt_tracking[i]=-1;mt_x[i]=mt_y[i]=0;}
     mt_current_slot=0;
 }
@@ -51,7 +51,8 @@ static void push(unsigned type,unsigned code,int value,uint64_t ns) {
 int __wrap_open(const char *path,int flags,...) {
     (void)flags;
     if(!strcmp(path,"/dev/input/event0")) return 10;
-    if(!strcmp(path,"/dev/input/event1")) return 11;
+    if((touch_node==1&&!strcmp(path,"/dev/input/event1"))||
+       (touch_node==2&&!strcmp(path,"/dev/input/event2"))) return 11;
     errno=ENOENT;return -1;
 }
 int __wrap___open_2(const char *path,int flags) {
@@ -124,6 +125,7 @@ ssize_t __wrap_read(int fd,void *buf,size_t count) {
         memcpy(buf,&stream_events[stream_pos],n*sizeof(struct input_event));
         stream_pos+=n;return (ssize_t)(n*sizeof(struct input_event));
     }
+    if(endless_read){ memset(buf,0,count);return (ssize_t)count; }
     if(read_eof)return 0;
     errno=EAGAIN;return -1;
 }
@@ -135,6 +137,7 @@ ssize_t __wrap___read_chk(int fd,void *buf,size_t count,size_t buflen) {
 int __wrap_poll(struct pollfd *fds,nfds_t n,int timeout) {
     (void)timeout;
     if(n==1&&fds[0].fd==11) {
+        if(poll_fault){fds[0].revents=POLLHUP;return 1;}
         if(!poll_ready)return 0;
         fds[0].revents=POLLIN;return 1;
     }
@@ -209,7 +212,7 @@ static void dropped_resync_current_slot(void) {
     mt_tracking[5]=55;mt_x[5]=5000;mt_y[5]=6000;mt_current_slot=5;
     CHECK(input_live_drain(&live,sink,&s)==2);
     CHECK(s.count==2&&s.frames[1].cancelled_count==1&&s.frames[1].cancelled[0]==3&&
-          live.syn_dropped==1&&live.resyncs==1&&live.state.current_slot==5);
+          live.syn_dropped==1&&live.resyncs==2&&live.state.current_slot==5);
     stream_count=stream_pos=0;
     push(EV_ABS,ABS_MT_TRACKING_ID,-1,300);
     push(EV_SYN,SYN_REPORT,0,300);
@@ -247,8 +250,50 @@ static void wait_case(void) {
     PASS("live-poll-bounded-no-busy-loop");
 cleanup:input_live_close(&live);
 }
+
+static void startup_held(void) {
+    InputLive live={0};InputLiveConfig cfg=config();Sink s={0};reset_fake();
+    mt_current_slot=4;mt_tracking[4]=104;mt_x[4]=8192;mt_y[4]=8192;
+    CHECK(input_live_open_path(&live,"/dev/input/event1",&cfg));
+    CHECK(live.state.current_slot==4&&live.state.suppress_until_all_up);
+    push(EV_SYN,SYN_REPORT,0,1000000);
+    push(EV_ABS,ABS_MT_TRACKING_ID,-1,2000000);push(EV_SYN,SYN_REPORT,0,2000000);
+    push(EV_ABS,ABS_MT_TRACKING_ID,105,3000000);push(EV_SYN,SYN_REPORT,0,3000000);
+    CHECK(input_live_drain(&live,sink,&s)==3);
+    CHECK(!s.frames[0].contact_count&&s.frames[0].suppressed);
+    CHECK(!s.frames[1].suppressed);
+    CHECK(s.frames[2].contact_count==1&&s.frames[2].contacts[0].id==4&&s.frames[2].contacts[0].x==512);
+    PASS("live-open-snapshots-held-contact-until-all-up");
+cleanup:input_live_close(&live);
+}
+static void reconnect_changed_node(void) {
+    InputLive live={0};InputLiveConfig cfg=config();reset_fake();
+    CHECK(input_live_open_path(&live,"/dev/input/event1",&cfg));
+    live.events=17;input_live_close(&live);touch_node=2;
+    CHECK(input_live_reconnect(&live,"/dev/input"));
+    CHECK(live.reconnects==1&&live.reconnect_attempts==1&&live.events==17);
+    CHECK(!strcmp(live.path,"/dev/input/event2")&&live.resyncs==2);
+    PASS("live-reconnect-rediscovers-changed-event-node");
+cleanup:input_live_close(&live);
+}
+static void read_budget(void) {
+    InputLive live={0};InputLiveConfig cfg=config();reset_fake();
+    CHECK(input_live_open_path(&live,"/dev/input/event1",&cfg));endless_read=1;
+    CHECK(input_live_drain(&live,NULL,NULL)==(int)(INPUT_LIVE_READ_BUDGET*64));
+    CHECK(live.budget_yields==1&&live.events==INPUT_LIVE_READ_BUDGET*64);
+    PASS("live-continuous-stream-yields-to-guest-budget");
+cleanup:input_live_close(&live);
+}
+static void hup_error(void) {
+    InputLive live={0};InputLiveConfig cfg=config();reset_fake();
+    CHECK(input_live_open_path(&live,"/dev/input/event1",&cfg));poll_fault=1;
+    CHECK(input_live_wait(&live,1)==-1);
+    CHECK(live.error&&!strcmp(live.error,"INPUT_DEVICE_DISCONNECTED"));
+    PASS("live-hup-without-data-is-not-readable-spin");
+cleanup:input_live_close(&live);
+}
 int main(void) {
-    discovery();normal_frames();dropped_resync_current_slot();disconnect_case();wait_case();
+    startup_held();reconnect_changed_node();read_budget();hup_error();discovery();normal_frames();dropped_resync_current_slot();disconnect_case();wait_case();
     if(failures){fprintf(stderr,"INPUT_LIVE_FAILED failures=%d\n",failures);return 1;}
-    printf("INPUT_LIVE_OK cases=5\n");return 0;
+    printf("INPUT_LIVE_OK cases=9\n");return 0;
 }

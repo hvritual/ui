@@ -35,7 +35,8 @@ jobs:
           assert observed["mt_position_x"]["min"]==0 and observed["mt_position_x"]["max"]==16384
           assert observed["mt_position_y"]["min"]==0 and observed["mt_position_y"]["max"]==16384
           assert observed["transform"]=={
-              "status":"admitted-known-point-trace",
+              "status":"diagnostic-candidate-awaiting-asymmetric-check",
+              "axis_order_verified":False,
               "swap_xy":False,
               "invert_x":False,
               "invert_y":False,

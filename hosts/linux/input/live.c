@@ -58,6 +58,8 @@ static int copy_text(char *dst, size_t size, const char *src) {
     return 1;
 }
 
+static int resync_mt(InputLive *live);
+
 static int validate_candidate(InputLive *live, const InputLiveConfig *config) {
     unsigned long ev[NBITS(EV_MAX + 1)];
     unsigned long key[NBITS(KEY_MAX + 1)];
@@ -67,6 +69,7 @@ static int validate_candidate(InputLive *live, const InputLiveConfig *config) {
 
     if (ioctl(live->fd, EVIOCGNAME(sizeof(name)), name) < 0)
         return fail(live, "INPUT_NAME_QUERY_FAILED", errno);
+    name[sizeof(name) - 1] = 0;
     if (strcmp(name, config->expected_name))
         return fail(live, "INPUT_NAME_MISMATCH", 0);
 
@@ -92,7 +95,7 @@ static int validate_candidate(InputLive *live, const InputLiveConfig *config) {
         return fail(live, "INPUT_AXIS_QUERY_FAILED", errno);
 
     if (slot.minimum != 0 || slot.maximum < slot.minimum ||
-        (unsigned)(slot.maximum - slot.minimum + 1) != config->expected_slots ||
+        (uint64_t)((int64_t)slot.maximum - slot.minimum + 1) != config->expected_slots ||
         pos_x.minimum != config->expected_raw_min ||
         pos_x.maximum != config->expected_raw_max ||
         pos_y.minimum != config->expected_raw_min ||
@@ -134,7 +137,7 @@ void input_live_close(InputLive *live) {
         int fd = live->fd;
         live->opened = 0;
         live->fd = -1;
-        (void)close(fd);
+        if (close(fd)) live->cleanup_errno = errno; /* Never retry close(EINTR). */
     }
 }
 
@@ -165,7 +168,7 @@ int input_live_open_path(InputLive *live, const char *path, const InputLiveConfi
         fail(live, "INPUT_PATH_TOO_LONG", 0);
         goto rejected;
     }
-    if (!validate_candidate(live, config))
+    if (!validate_candidate(live, config) || !resync_mt(live))
         goto rejected;
     return 1;
 
@@ -195,6 +198,7 @@ int input_live_discover(InputLive *live, const char *input_dir, const InputLiveC
     }
     memset(live, 0, sizeof(*live));
     live->fd = -1;
+    live->config = *config;
     return fail(live, last_errno ? "INPUT_DEVICE_PERMISSION" : "INPUT_DEVICE_NOT_FOUND",
                 last_errno);
 }
@@ -208,9 +212,8 @@ int input_live_wait(InputLive *live, int timeout_ms) {
     pfd.fd = live->fd;
     pfd.events = POLLIN;
     pfd.revents = 0;
-    do {
-        rc = poll(&pfd, 1, timeout_ms);
-    } while (rc < 0 && errno == EINTR);
+    rc = poll(&pfd, 1, timeout_ms);
+    if (rc < 0 && errno == EINTR) return 0; /* Return to signal/deadline owner. */
 
     if (rc < 0) {
         fail(live, "INPUT_POLL_FAILED", errno);
@@ -221,7 +224,11 @@ int input_live_wait(InputLive *live, int timeout_ms) {
         fail(live, "INPUT_POLL_INVALID", 0);
         return -1;
     }
-    if (pfd.revents & (POLLIN | POLLERR | POLLHUP)) return 1;
+    if (pfd.revents & (POLLERR | POLLHUP)) {
+        if (!live->error) fail(live, "INPUT_DEVICE_DISCONNECTED", ENODEV);
+        return -1;
+    }
+    if (pfd.revents & POLLIN) return 1;
     return 0;
 }
 
@@ -255,7 +262,7 @@ static int resync_mt(InputLive *live) {
 
     snapshot.current_slot = current.value;
     for (unsigned i = 0; i < snapshot.slot_count; ++i)
-        snapshot.have_position[i] = snapshot.tracking_id[i] >= 0 ? 1U : 0U;
+        snapshot.have_position[i] = 1U; /* Includes inactive stateful axes. */
 
     if (!input_state_resync_mt(&live->state, &snapshot))
         return fail(live, "INPUT_MT_RESYNC_REJECTED", 0);
@@ -281,7 +288,7 @@ static int disconnect(InputLive *live, InputFrameSink sink, void *context) {
         if (!emit_frame(live, sink, context, live->last_event_ns))
             return 0;
     }
-    fail(live, "INPUT_DEVICE_DISCONNECTED", ENODEV);
+    if (!live->error) fail(live, "INPUT_DEVICE_DISCONNECTED", ENODEV);
     return 0;
 }
 
@@ -289,7 +296,7 @@ int input_live_drain(InputLive *live, InputFrameSink sink, void *context) {
     int emitted = 0;
     if (!live || !live->opened || live->fd < 0) return -1;
 
-    for (;;) {
+    for (unsigned batch = 0; batch < INPUT_LIVE_READ_BUDGET; ++batch) {
         struct input_event events[64];
         ssize_t bytes = read(live->fd, events, sizeof(events));
 
@@ -344,4 +351,25 @@ int input_live_drain(InputLive *live, InputFrameSink sink, void *context) {
             }
         }
     }
+    ++live->budget_yields;
+    return emitted;
+}
+
+int input_live_reconnect(InputLive *live, const char *input_dir) {
+    if (!live || live->opened || !input_dir || !live->config.expected_name) return 0;
+    ++live->reconnect_attempts;
+    InputLive next = {0};
+    if (!input_live_discover(&next, input_dir, &live->config)) return 0;
+    next.frames += live->frames;
+    next.events += live->events;
+    next.syn_dropped += live->syn_dropped;
+    next.resyncs += live->resyncs;
+    next.disconnects = live->disconnects;
+    next.reconnects = live->reconnects + 1;
+    next.reconnect_attempts = live->reconnect_attempts;
+    next.budget_yields = live->budget_yields;
+    next.last_event_ns = live->last_event_ns;
+    next.cleanup_errno = live->cleanup_errno;
+    *live = next;
+    return 1;
 }

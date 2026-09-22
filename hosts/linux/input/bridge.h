@@ -22,6 +22,8 @@ typedef struct {
     int y[INPUT_BRIDGE_MAX_IDS];
     int hit[INPUT_BRIDGE_MAX_IDS];
 
+    PocketRuntimeContactsInput delivered;
+    uint64_t resets;
     InputBridgeFrame queue[INPUT_BRIDGE_QUEUE];
     unsigned queue_head;
     unsigned queue_count;
@@ -39,6 +41,9 @@ typedef struct {
 } InputBridge;
 
 int input_bridge_init(InputBridge *bridge, InputHitTest hit_test, void *hit_context);
+/* Focus loss, disconnect and queue failure discard stale edges; only contacts
+   already delivered to the guest need terminal cancellation. */
+int input_bridge_cancel_all(InputBridge *bridge, uint64_t event_ns);
 
 /* Ingest one coherent InputFrame. Bounded queue preserves contact edges while
    coalescing move-only frames. Returns zero on a safety-budget violation. */

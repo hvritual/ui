@@ -114,11 +114,13 @@
     "swap_xy": false,
     "invert_x": false,
     "invert_y": false,
-    "status": "admitted"
+    "status": "diagnostic-candidate",
+    "axis_order_verified": false
   },
   "notes": [
     "First three single-contact known points establish monotonic left-to-right X and top-to-bottom Y.",
     "Drag also trends toward increasing X/Y; exact human drag start/end is not treated as calibration endpoints.",
-    "No SYN_DROPPED was observed in this capture; recovery remains covered by synthetic fault tests until explicit fault injection."
+    "No SYN_DROPPED was observed in this capture; recovery remains covered by synthetic fault tests until explicit fault injection.",
+    "Review correction: top-left/center/bottom-right are approximately diagonal and cannot uniquely distinguish swapped axes. A non-diagonal target test (top-right and bottom-left) must confirm the direct candidate before physical admission. The supplied drag is not a precisely specified calibration path."
   ]
 }

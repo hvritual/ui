@@ -16,8 +16,8 @@ mkdir -p "$OUT"
 LOG="$OUT/startup.log"
 (
   echo "P3_02_TOUCH_BEGIN fbdev=$FBDEV input_dir=$INPUT_DIR ticks=$TICKS"
-  echo "WARNING: this command writes the framebuffer. Stop the existing display owner first."
-  echo "Expected interaction: tap TOP LEFT, CENTER, BOTTOM RIGHT, then drag. Marker must follow and disappear after release."
+  echo "WARNING: test only while idle. Stop existing UI and input consumers; keep device-control services running. No dispense or actuator command is sent."
+  echo "Expected interaction: tap A top-left, B top-right, C center, D bottom-left, E bottom-right; then drag and hold. Each target must count once after release."
   echo "=== SYSTEM ==="
   uname -a || true
   cat /etc/os-release 2>/dev/null || true
@@ -41,7 +41,7 @@ LOG="$OUT/startup.log"
   fi
 
   echo "=== TOUCH TEST ==="
-  "$BIN" --touch-test --profile imx6ul-1024x600     --fbdev "$FBDEV" --input-dir "$INPUT_DIR"     --asset-root "$BASE/assets" --ticks "$TICKS"     --output "$OUT/touch-test.json"
+  "$BIN" --touch-test --profile imx6ul-1024x600     --fbdev "$FBDEV" --input-dir "$INPUT_DIR"     --asset-root "$BASE/assets" --ticks "$TICKS"     --output "$OUT/touch-test.json" --trace-output "$OUT/input-guest-present.csv"
   RC=$?
   echo "TOUCH_EXIT_CODE=$RC"
   if [ -f "$OUT/touch-test.json" ]; then
@@ -54,4 +54,5 @@ LOG="$OUT/startup.log"
 RC=$?
 cat "$LOG"
 echo "LOG_DIR=$OUT"
+if command -v sha256sum >/dev/null 2>&1; then (cd "$OUT" && sha256sum startup.log display-probe.json touch-test.json input-guest-present.csv >SHA256SUMS) || true; fi
 exit "$RC"

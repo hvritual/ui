@@ -1,6 +1,6 @@
 # P3 evdev input
 
-Status: 1024×600 `ilitek_ts` capability、Protocol B、坐标方向均已由真实设备证据准入；P3-02 正在完成 live evdev → PocketJS contacts → framebuffer 闭环。
+Status: 1024×600 `ilitek_ts` capability 和 Protocol B 已有实机证据；live evdev → PocketJS contacts → framebuffer 已具备软件测试，物理触摸闭环和非对角坐标校准仍待上板。
 
 ## 真实 1024×600 基线
 
@@ -18,7 +18,7 @@ event path 只作为证据，不作为运行时身份。生产发现使用 devic
 
 Capability 证据：`docs/evidence/myimx6ek140-input-20260922.json`。
 
-## 坐标 transform 已准入
+## 坐标 transform：诊断候选，等待非对角点确认
 
 真实 known-point trace 共 650 events、4 个 contact sessions：
 
@@ -27,7 +27,7 @@ Capability 证据：`docs/evidence/myimx6ek140-input-20260922.json`。
 - bottom-right raw `(15846,15956)` → logical 约 `(989,583)`；
 - drag tracking-id 131 从 raw `(2396,6905)` 运行到约 `(12911,14682)`，X/Y 整体随右下方向增长。
 
-因此 1024×600 transform 冻结为：
+下述 1024×600 transform 仅作为诊断候选；这三个近似对角点不足以唯一排除 XY swap：
 
 ```text
 swap_xy  = false
@@ -99,11 +99,11 @@ Bridge 会保留 down/up/cancel edge，move-only frame 可以 coalesce；若 bou
 
 约 20 秒内：
 
-1. 点击 TOP LEFT；
-2. 点击 CENTER；
-3. 点击 BOTTOM RIGHT；
-4. 拖动；
-5. 松手后确认 marker 立即隐藏，不存在 ghost press。
+1. 依次点击 A（左上）、B（右上）、C（中心）、D（左下）、E（右下）；
+2. 同一位置重复点击，计数应逐次增加；
+3. 长按后松手，只计一次点击；
+4. 从一个目标拖到另一个目标，不能误计点击；
+5. 松手后确认 marker 隐藏，且标记在整个过程中跟随真实手指。
 
 CLI 不写死 event1，而是在 `/dev/input` 中发现符合准入契约的 `ilitek_ts`。测试会生成 touch JSON 和 startup log，并将 input event、input frame、hit query、guest turn、render、present counter 绑定在同一运行记录中。
 
@@ -111,4 +111,16 @@ P3-02 当前不改变 framebuffer mode，不启用 PAN/page-flip。P2B 已证明
 
 ## P4A 边界
 
-物理 keycode 不是 Unicode 文本。P3 只交付 pointer/key primitive；键盘布局、preedit/composition、candidate、commit 与敏感字段策略归 P4A。
+物理 keycode 不是 Unicode 文本。本机 P3 交付 pointer primitive，外接键盘 keycode delivery 明确禁用；键盘布局、preedit/composition、candidate、commit 与敏感字段策略归 P4A。
+
+## Acceptance boundary (P3 closure review)
+
+The 650-event trace is preserved byte-for-byte (gzip/base64 plus SHA256) in `tests/input/fixtures/ilitek-trace.json`. Native and ARM gates replay all 249 SYN_REPORTs through InputState, InputBridge and the real PocketJS guest at both logical viewport sizes. This is not a physical 1024x800 test.
+
+**Calibration correction:** top-left/center/bottom-right are approximately collinear. They support positive axis directions but cannot uniquely exclude XY swap. The existing direct mapping remains an explicit diagnostic candidate. Physical admission requires A (top-left), B (top-right), C (center), D (bottom-left), E (bottom-right) on the new page, with the marker at the actual finger position. Do not claim pixel-accurate calibration from approximate touch locations.
+
+The live loop now snapshots kernel slots on open and after overflow, suppresses already-held contacts until all-up, limits each drain to eight 64-event batches, and rediscoveries after disconnect at a 500ms retry cadence. A terminal cancellation discards queued stale edges and reaches the guest before shutdown/reconnect. Move coalescing never changes the original DOWN coordinates. Normal release at unchanged raw coordinates is retained because Protocol B only sends changed axis values.
+
+`--trace-output NEW.csv` records input timestamp, guest begin/end and CPU presentation begin/end, with turn/sample ordinals. Present end does not establish LCD scanout time. Diagnostics store no text, but touch coordinates can reveal selections: only record the dedicated diagnostic screen, never password or business-entry screens. External keyboard keycode delivery remains disabled on this board (only the separate powerkey exists); text and IME belong to #12.
+
+P3 software acceptance consists of all current gates plus the dedicated touch scene and live-loop recovery tests. #22 and #5 remain open until the real 1024x600 touch page is accepted; the 1024x800 board still requires its own hardware profile and acceptance. No CI artifact may turn `physical_touch_validated` to true.

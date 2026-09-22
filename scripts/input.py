@@ -16,6 +16,9 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "out/input"
 CASES = {
+    "state-unchanged-axis-retained-across-lift",
+    "state-invalid-resync-atomic-and-disconnect-clears",
+    "state-1024x800-eight-orientation-mappings",
     "coordinate-map-round-clamp-invert-swap",
     "mtb-tap-drag-normal-release",
     "mtb-multi-slot-stable-id",
@@ -86,7 +89,7 @@ def tools(mode):
 def validate_state(text):
     actual=re.findall(r"^PASS ([a-z0-9-]+)$",text,re.MULTILINE)
     if len(actual)!=len(CASES) or set(actual)!=CASES: fail("missing/duplicate state cases")
-    if text.count("INPUT_STATE_OK cases=10 hardware_trace_required=true")!=1:
+    if text.count("INPUT_STATE_OK cases=13 hardware_trace_required=true")!=1:
         fail("invalid state summary")
 
 def synthetic_trace():

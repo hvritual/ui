@@ -25,11 +25,15 @@ static void move_coalesce(void) {
     InputFrame a=one(2,10,20), m=one(2,30,40);
     CHECK(input_bridge_ingest(&b,&a,100));
     CHECK(input_bridge_ingest(&b,&m,200));
-    CHECK(hit_calls==1 && b.queue_count==1 && b.coalesced_frames==1);
+    CHECK(hit_calls==1 && b.queue_count==2 && b.coalesced_frames==0);
     CHECK(input_bridge_next(&b,&out,&ns));
-    CHECK(ns==200 && out.contact_count==1 && out.contacts[0].id==2 &&
-          out.contacts[0].x==30 && out.contacts[0].y==40 &&
+    CHECK(ns==100 && out.contact_count==1 && out.contacts[0].id==2 &&
+          out.contacts[0].x==10 && out.contacts[0].y==20 &&
           out.contacts[0].hit==1030);
+    CHECK(input_bridge_next(&b,&out,&ns)&&ns==200&&out.contacts[0].x==30);
+    m.contacts[0].x=40; CHECK(input_bridge_ingest(&b,&m,300));
+    m.contacts[0].x=50; CHECK(input_bridge_ingest(&b,&m,400));
+    CHECK(b.queue_count==1&&b.coalesced_frames==1&&hit_calls==1);
     PASS("bridge-down-move-coalesce-hit-once");
 }
 static void fast_tap(void) {
@@ -90,9 +94,36 @@ static void queue_overflow_fail_closed(void) {
     CHECK(b.error && !strcmp(b.error,"INPUT_BRIDGE_QUEUE_OVERFLOW"));
     PASS("bridge-edge-queue-overflow-fail-closed");
 }
+
+static void priority_cancel(void) {
+    InputBridge b; PocketRuntimeContactsInput out; uint64_t ns;
+    CHECK(input_bridge_init(&b,hit,NULL));
+    InputFrame down=one(0,10,10),up=empty(),other=one(3,20,20);
+    CHECK(input_bridge_ingest(&b,&down,1)); CHECK(input_bridge_next(&b,&out,&ns));
+    CHECK(input_bridge_ingest(&b,&up,2)); CHECK(input_bridge_ingest(&b,&other,3));
+    CHECK(input_bridge_cancel_all(&b,4));
+    CHECK(b.queue_count==1); CHECK(input_bridge_next(&b,&out,&ns));
+    CHECK(ns==4&&out.contact_count==0&&out.cancelled_count==1&&out.cancelled[0]==0);
+    CHECK(input_bridge_next(&b,&out,&ns)&&!out.contact_count&&!out.cancelled_count);
+    PASS("bridge-emergency-cancel-discards-stale-clicks");
+}
+static void unsent_cancel(void) {
+    InputBridge b; PocketRuntimeContactsInput out; uint64_t ns;
+    CHECK(input_bridge_init(&b,hit,NULL)); InputFrame down=one(0,10,10);
+    CHECK(input_bridge_ingest(&b,&down,1));
+    CHECK(input_bridge_cancel_all(&b,2)); CHECK(input_bridge_next(&b,&out,&ns));
+    CHECK(!out.contact_count&&!out.cancelled_count);
+    PASS("bridge-unsent-down-never-becomes-click-after-cancel");
+}
+static void invalid_wire(void) {
+    InputBridge b; CHECK(input_bridge_init(&b,hit,NULL));
+    InputFrame f=one(0,1024,0); hit_calls=0;
+    CHECK(!input_bridge_ingest(&b,&f,1));CHECK(hit_calls==0&&b.queue_count==0);
+    PASS("bridge-coordinate-wire-range-fail-closed");
+}
 int main(void) {
-    move_coalesce(); fast_tap(); cancellation(); normal_release_no_cancel();
+    priority_cancel(); unsent_cancel(); invalid_wire(); move_coalesce(); fast_tap(); cancellation(); normal_release_no_cancel();
     multi_contact_hits(); queue_overflow_fail_closed();
     if(failures){fprintf(stderr,"BRIDGE_FAILED failures=%d\n",failures);return 1;}
-    printf("INPUT_BRIDGE_OK cases=6\n"); return 0;
+    printf("INPUT_BRIDGE_OK cases=9\n"); return 0;
 }

@@ -4,6 +4,8 @@
 #include "state.h"
 #include <stdint.h>
 
+#define INPUT_LIVE_READ_BUDGET 8U
+
 typedef struct {
     const char *expected_name;
     unsigned width;
@@ -30,6 +32,8 @@ typedef struct {
     uint64_t resyncs;
     uint64_t disconnects;
     uint64_t last_event_ns;
+    uint64_t reconnect_attempts, reconnects, budget_yields;
+    int cleanup_errno;
     const char *error;
     int system_errno;
 } InputLive;
@@ -46,10 +50,13 @@ int input_live_open_path(InputLive *live, const char *path, const InputLiveConfi
 /* 1 readable, 0 timeout, -1 error/disconnect. timeout_ms is 0..1000. */
 int input_live_wait(InputLive *live, int timeout_ms);
 
-/* Drain all currently available events. Emits each committed frame synchronously.
+/* Drain up to INPUT_LIVE_READ_BUDGET batches of 64 events. Emits each committed frame synchronously.
    Returns frame count, 0 when idle, -1 on fatal read/resync error. */
 int input_live_drain(InputLive *live, InputFrameSink sink, void *context);
 
+/* Caller schedules retries (e.g. every 500ms). Returns 1 after re-admission,
+   0 otherwise, and never sleeps or restarts unrelated services. */
+int input_live_reconnect(InputLive *live, const char *input_dir);
 void input_live_close(InputLive *live);
 
 #endif

@@ -56,7 +56,7 @@ static InputBridgeFrame *queue_last(InputBridge *bridge) {
 static int enqueue(InputBridge *bridge, const PocketRuntimeContactsInput *input,
                    uint64_t event_ns, int edge) {
     InputBridgeFrame *last = queue_last(bridge);
-    if (!edge && last && same_active_set(&last->input, input)) {
+    if (!edge && last && !last->edge && same_active_set(&last->input, input)) {
         int retained_edge = last->edge;
         last->input = *input;
         last->event_ns = event_ns;
@@ -88,6 +88,21 @@ int input_bridge_init(InputBridge *bridge, InputHitTest hit_test,
     return 1;
 }
 
+int input_bridge_cancel_all(InputBridge *bridge, uint64_t event_ns) {
+    if (!bridge || !bridge->hit_test) return 0;
+    PocketRuntimeContactsInput terminal = {0};
+    for (unsigned i = 0; i < bridge->delivered.contact_count; ++i)
+        terminal.cancelled[terminal.cancelled_count++] = bridge->delivered.contacts[i].id;
+    memset(bridge->active, 0, sizeof(bridge->active));
+    memset(bridge->hit, 0, sizeof(bridge->hit));
+    memset(bridge->queue, 0, sizeof(bridge->queue));
+    bridge->queue_head = bridge->queue_count = 0;
+    bridge->error = NULL;
+    bridge->last_event_ns = event_ns;
+    ++bridge->resets;
+    return enqueue(bridge, &terminal, event_ns, 1);
+}
+
 int input_bridge_ingest(InputBridge *bridge, const InputFrame *frame,
                         uint64_t event_ns) {
     unsigned seen[INPUT_BRIDGE_MAX_IDS] = {0};
@@ -99,6 +114,21 @@ int input_bridge_ingest(InputBridge *bridge, const InputFrame *frame,
         frame->cancelled_count > INPUT_RUNTIME_MAX_CONTACTS)
         return 0;
 
+    if (frame->syn_dropped || frame->suppressed) {
+        ++bridge->ingested_frames;
+        return input_bridge_cancel_all(bridge, event_ns);
+    }
+    /* Validate before changing the bridge or consulting the hit-test. */
+    for (unsigned i = 0; i < frame->contact_count; ++i) {
+        int id = frame->contacts[i].id;
+        if (id < 0 || id >= INPUT_BRIDGE_MAX_IDS || seen[id] ||
+            frame->contacts[i].x < 0 || frame->contacts[i].x > 1023 ||
+            frame->contacts[i].y < 0 || frame->contacts[i].y > 1023) {
+            bridge->error = "INPUT_BRIDGE_BAD_CONTACT"; return 0;
+        }
+        seen[id] = 1;
+    }
+    memset(seen, 0, sizeof(seen));
     before = active_mask(bridge);
     memset(&guest, 0, sizeof(guest));
 
@@ -175,6 +205,7 @@ int input_bridge_next(InputBridge *bridge, PocketRuntimeContactsInput *out,
         }
         if (event_ns) *event_ns = bridge->last_event_ns;
     }
+    bridge->delivered = *out;
     ++bridge->delivered_frames;
     return 1;
 }

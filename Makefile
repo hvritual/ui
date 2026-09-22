@@ -39,6 +39,7 @@ verify-display:
 .PHONY: build-device-package
 build-device-package: test-display-arm
 	python3 scripts/device_package.py
+	python3 scripts/seal_device_package.py
 
 .PHONY: test-vsync-unit test-vsync test-vsync-arm verify-vsync
 test-vsync-unit:
