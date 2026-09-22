@@ -49,3 +49,15 @@ test-vsync-arm: test-runtime-arm
 	python3 scripts/vsync.py test arm
 verify-vsync:
 	python3 scripts/vsync.py verify
+
+.PHONY: test-input-unit test-input test-input-arm package-input verify-input
+test-input-unit:
+	python3 scripts/input.py unit
+test-input:
+	python3 scripts/input.py test native
+test-input-arm:
+	python3 scripts/input.py test arm
+package-input:
+	python3 scripts/input.py package
+verify-input:
+	python3 scripts/input.py verify
