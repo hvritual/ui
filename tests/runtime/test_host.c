@@ -60,6 +60,25 @@ int main(int argc, char **argv) {
     }
     PASS("wide-touch-wire"); host_close(&h);
     EXPECT(open_scene(&h, root, "imx6ul-1024x600"));
+    {
+        PocketRuntimeContactsInput contacts = {0};
+        contacts.contact_count = 2;
+        contacts.contacts[0] = (PocketRuntimeContact){.id=3,.x=900,.y=500,.hit=inspect(3)};
+        contacts.contacts[1] = (PocketRuntimeContact){.id=7,.x=100,.y=200,.hit=0};
+        EXPECT(host_turn_contacts(&h, &contacts));
+        EXPECT(inspect(6) == 2 && inspect(7) == contacts.contacts[0].hit);
+        EXPECT((uint32_t)inspect(4) == pocket_runtime_pack_contact(&contacts.contacts[0]));
+        PASS("multi-contact-frame-hit-fact");
+        memset(&contacts, 0, sizeof(contacts));
+        contacts.cancelled_count = 1;
+        contacts.cancelled[0] = 3;
+        EXPECT(host_turn_contacts(&h, &contacts));
+        EXPECT(inspect(6) == 1);
+        EXPECT((uint32_t)inspect(4) == pocket_runtime_pack_cancel(3));
+        PASS("contact-cancel-wire");
+    }
+    host_close(&h);
+    EXPECT(open_scene(&h, root, "imx6ul-1024x600"));
     EXPECT(!host_open(&other, "imx6ul-1024x600", root, "scene.js", "scene.pak", 0));
     EXPECT(host_turn(&h, NULL)); PASS("exclusive-runtime"); host_close(&h);
     EXPECT(open_scene(&h, root, "imx6ul-1024x600"));
