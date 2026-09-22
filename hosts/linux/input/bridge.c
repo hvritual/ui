@@ -19,7 +19,11 @@ static int has_cancel(const PocketRuntimeContactsInput *input, int id) {
 
 static int build_current(const InputBridge *bridge,
                          PocketRuntimeContactsInput *out) {
-    memset(out, 0, sizeof(*out));
+    /* Active snapshot construction must not erase terminal cancellations
+       already attached to this guest frame. Callers that need a fresh
+       steady-state sample clear the whole structure before entering here. */
+    out->contact_count = 0;
+    memset(out->contacts, 0, sizeof(out->contacts));
     for (unsigned id = 0; id < INPUT_BRIDGE_MAX_IDS; ++id) {
         if (!bridge->active[id]) continue;
         if (out->contact_count >= POCKET_RUNTIME_MAX_CONTACTS) return 0;
@@ -164,6 +168,7 @@ int input_bridge_next(InputBridge *bridge, PocketRuntimeContactsInput *out,
         bridge->queue_head = (bridge->queue_head + 1U) % INPUT_BRIDGE_QUEUE;
         --bridge->queue_count;
     } else {
+        memset(out, 0, sizeof(*out));
         if (!build_current(bridge, out)) {
             bridge->error = "INPUT_BRIDGE_CONTACT_BUDGET";
             return 0;
