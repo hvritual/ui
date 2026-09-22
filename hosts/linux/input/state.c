@@ -265,10 +265,12 @@ int input_state_resync_mt(InputState *s, const InputMtSnapshot *snapshot) {
             }
         }
     }
+    if (snapshot->current_slot < 0 ||
+        (unsigned)snapshot->current_slot >= s->slot_count) return 0;
     s->drop_pending = 0;
     s->suppress_until_all_up = active_count(s) != 0;
     s->overflowed = active_count(s) > INPUT_RUNTIME_MAX_CONTACTS;
-    s->current_slot = 0;
+    s->current_slot = snapshot->current_slot;
     return 1;
 }
 
