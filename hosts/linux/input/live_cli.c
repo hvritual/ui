@@ -118,7 +118,7 @@ int input_live_cli(int argc, char **argv) {
     LinuxHost host = {0};
     FbDevice display = {0};
     InputLive input = {0};
-    InputBridge bridge;
+    InputBridge bridge = {0};
     BridgeSource source = {.bridge = &bridge};
     HostFrame frame;
     FILE *report_file = stdout;
