@@ -36,6 +36,13 @@ LIVE_CASES={
     "live-disconnect-emits-terminal-cancel",
     "live-poll-bounded-no-busy-loop",
 }
+DELIVERY_CASES={
+    "delivery-down-hit-fact-real-core",
+    "delivery-move-retains-down-hit",
+    "delivery-normal-release-empty-snapshot",
+    "delivery-terminal-cancel-wire",
+    "delivery-fast-tap-two-guest-turns",
+}
 WRAPS=["open","__open_2","fstat","ioctl","read","poll","close"]
 
 def run(args,log,expected=0,env=None,timeout=180):
@@ -101,6 +108,26 @@ def test(mode):
     text=run([*runner,live],directory/"live.log")
     validate(text,LIVE_CASES,"INPUT_LIVE_OK cases=5")
 
+    # Real PocketJS runtime/contact wire: link the harness runtime object built
+    # by scripts/runtime.py instead of substituting a fake guest.
+    tool=data["targets"][mode]
+    cc=rt.port.executable(tool["cc"])
+    prepared=rt.OUT/("source-"+mode)
+    core=rt.OUT/"cargo"/tool["triple"]/"release/libpocketjs_symbian_core.a"
+    delivery=directory/"delivery-test"
+    delivery_flags=["-std=c11","-Wall","-Wextra","-Werror","-Wpedantic","-O2",*tool["c_flags"],
+                    "-Ihosts/linux","-I"+str(prepared/"engine/quickjs-c")]
+    delivery_objects=[
+        rt.OUT/mode/"host.o",rt.OUT/mode/"platform.o",rt.OUT/mode/"input-bridge.o",
+        rt.OUT/mode/"runtime-test.o",rt.OUT/mode/"personality.o",
+        rt.OUT/mode/"libquickjs.a",core,
+    ]
+    run([cc,*delivery_flags,"tests/input/test_delivery.c",*delivery_objects,
+         "-Wl,--gc-sections","-lm","-ldl","-lpthread","-lrt","-o",delivery],
+        directory/"build.log")
+    text=run([*runner,delivery,ROOT/"tests/input"],directory/"delivery.log")
+    validate(text,DELIVERY_CASES,"INPUT_DELIVERY_OK cases=5 real_core=true")
+
     production=rt.OUT/mode/"ui-host"
     nm=rt.port.executable("arm-linux-gnueabihf-nm" if mode=="arm" else "nm")
     symbols=run([nm,production],directory/"symbols.log")
@@ -118,7 +145,9 @@ def test(mode):
     write_json(directory/"test.json",{**state,"mode":mode,
                "runtime_build_sha256":digest(rt.OUT/mode/"build.json"),
                "bridge_sha256":digest(bridge),"live_sha256":digest(live),
+               "delivery_sha256":digest(delivery),
                "bridge_cases":sorted(BRIDGE_CASES),"live_cases":sorted(LIVE_CASES),
+               "delivery_cases":sorted(DELIVERY_CASES),
                "production_sha256":digest(production),
                "physical_touch_validated":False})
 
@@ -131,7 +160,9 @@ def verify():
                 "stale input-live evidence")
         require(result["runtime_build_sha256"]==digest(rt.OUT/mode/"build.json"),
                 "runtime changed after input-live test")
-        require(set(result["bridge_cases"])==BRIDGE_CASES and set(result["live_cases"])==LIVE_CASES,
+        require(set(result["bridge_cases"])==BRIDGE_CASES and
+                set(result["live_cases"])==LIVE_CASES and
+                set(result["delivery_cases"])==DELIVERY_CASES,
                 "wrong input-live case set")
         require(result["physical_touch_validated"] is False,"cloud cannot validate physical touch")
         require(result["production_sha256"]==digest(rt.OUT/mode/"ui-host"),"production binary drift")
