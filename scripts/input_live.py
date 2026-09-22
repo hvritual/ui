@@ -43,7 +43,7 @@ DELIVERY_CASES={
     "delivery-terminal-cancel-wire",
     "delivery-fast-tap-two-guest-turns",
 }
-WRAPS=["open","__open_2","fstat","ioctl","read","poll","close"]
+WRAPS=["open","__open_2","fstat","ioctl","read","__read_chk","poll","__poll_chk","close"]
 
 def run(args,log,expected=0,env=None,timeout=180):
     args=list(map(str,args)); log.parent.mkdir(parents=True,exist_ok=True)
