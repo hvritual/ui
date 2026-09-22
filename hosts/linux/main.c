@@ -1,12 +1,14 @@
 #include "host.h"
 #include "display/cli.h"
 #include "display/vsync.h"
+#include "input/cli.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 int main(int argc, char **argv) {
+    if (argc > 1 && !strcmp(argv[1], "--touch-test")) return input_cli(argc, argv);
     if (argc > 1 && !strcmp(argv[1], "--probe-vsync")) return vsync_cli(argc, argv);
     if (argc > 1 && (!strcmp(argv[1], "--probe-display") || !strcmp(argv[1], "--display-test")))
         return display_cli(argc, argv);
