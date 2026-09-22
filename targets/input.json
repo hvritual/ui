@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "device-admitted-orientation-pending-trace",
+  "status": "device-and-transform-admitted-live-delivery-pending",
   "device_selection": "capability-based-not-event-index",
   "event_clock": "kernel-input-event-time",
   "delivery_boundary": "SYN_REPORT",
@@ -66,10 +66,11 @@
         "resolution": 0
       },
       "transform": {
-        "status": "pending-known-point-trace",
-        "swap_xy": null,
-        "invert_x": null,
-        "invert_y": null
+        "status": "admitted-known-point-trace",
+        "swap_xy": false,
+        "invert_x": false,
+        "invert_y": false,
+        "evidence": "docs/evidence/myimx6ek140-input-trace-20260922.json"
       }
     },
     {
@@ -99,9 +100,9 @@
     "single_touch": true,
     "mt_protocol_b": true,
     "physical_keyboard": false,
-    "coordinate_transform": false,
+    "coordinate_transform": true,
     "disconnect_recovery": false,
-    "replay": false,
+    "replay": true,
     "pocketjs_delivery": false
   },
   "evidence": "docs/evidence/myimx6ek140-input-20260922.json"
