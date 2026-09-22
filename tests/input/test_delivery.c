@@ -7,6 +7,10 @@
 #include <string.h>
 
 static int failures;
+/* runtime-test.o deliberately retains POCKET_RUNTIME_STAGE_HOOKS.
+   Supply the test-owned observer; never disable the hooks to hide link errors. */
+static unsigned stage_calls;
+void pocket_bench_stage(int stage) { (void)stage; ++stage_calls; }
 #define CHECK(x) do { if (!(x)) { fprintf(stderr,"FAIL line=%d %s\n",__LINE__,#x); ++failures; goto cleanup; } } while(0)
 #define PASS(x) printf("PASS %s\n",x)
 
@@ -38,7 +42,9 @@ int main(int argc,char **argv) {
         CHECK(input_bridge_next(&bridge,&guest,&ns)&&ns==100);
         CHECK(guest.contact_count==1&&guest.contacts[0].hit==box);
         uint32_t packed=pocket_runtime_pack_contact(&guest.contacts[0]);
+        stage_calls=0;
         CHECK(host_turn_contacts(&host,&guest));
+        CHECK(stage_calls>0);
         CHECK((uint32_t)inspect(1)==packed&&inspect(2)==box);
         CHECK(bridge.hit_queries==1);
         PASS("delivery-down-hit-fact-real-core");
