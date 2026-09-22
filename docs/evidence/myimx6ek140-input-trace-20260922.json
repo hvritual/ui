@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "kind": "user-provided-known-point-trace",
+    "collected_at": "2026-09-22",
+    "board": "myimx6ek140",
+    "device": "ilitek_ts",
+    "observed_path": "/dev/input/event1",
+    "capability_sha256": "70983b1e98ca53776a3c52482d9cbf5fa52a8ef4bd1e27a84ebe0d0a6c4ab053",
+    "trace_sha256": "475725a67849617e2fb664a64c11d9ebfc095f463d2be4b8c06540d7d1a5f1f1",
+    "event_count": 650,
+    "capture_exit_code": 0,
+    "timestamp_source": "kernel-monotonic"
+  },
+  "sessions": [
+    {
+      "tracking_id": 128,
+      "points": 1,
+      "raw_first": [
+        408,
+        789
+      ],
+      "raw_last": [
+        408,
+        789
+      ],
+      "logical_first": [
+        25,
+        29
+      ],
+      "logical_last": [
+        25,
+        29
+      ],
+      "label": "top-left"
+    },
+    {
+      "tracking_id": 129,
+      "points": 1,
+      "raw_first": [
+        7527,
+        7245
+      ],
+      "raw_last": [
+        7527,
+        7245
+      ],
+      "logical_first": [
+        470,
+        265
+      ],
+      "logical_last": [
+        470,
+        265
+      ],
+      "label": "center"
+    },
+    {
+      "tracking_id": 130,
+      "points": 1,
+      "raw_first": [
+        15846,
+        15956
+      ],
+      "raw_last": [
+        15846,
+        15956
+      ],
+      "logical_first": [
+        989,
+        583
+      ],
+      "logical_last": [
+        989,
+        583
+      ],
+      "label": "bottom-right"
+    },
+    {
+      "tracking_id": 131,
+      "points": 242,
+      "raw_first": [
+        2396,
+        6905
+      ],
+      "raw_last": [
+        12911,
+        14682
+      ],
+      "logical_first": [
+        150,
+        252
+      ],
+      "logical_last": [
+        806,
+        537
+      ],
+      "label": "drag"
+    }
+  ],
+  "transform": {
+    "raw_x": [
+      0,
+      16384
+    ],
+    "raw_y": [
+      0,
+      16384
+    ],
+    "logical_size": [
+      1024,
+      600
+    ],
+    "swap_xy": false,
+    "invert_x": false,
+    "invert_y": false,
+    "status": "admitted"
+  },
+  "notes": [
+    "First three single-contact known points establish monotonic left-to-right X and top-to-bottom Y.",
+    "Drag also trends toward increasing X/Y; exact human drag start/end is not treated as calibration endpoints.",
+    "No SYN_DROPPED was observed in this capture; recovery remains covered by synthetic fault tests until explicit fault injection."
+  ]
+}
