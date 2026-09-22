@@ -50,13 +50,6 @@ int host_turn_contacts(LinuxHost *h, const PocketRuntimeContactsInput *input) {
         return fail(h, "HOST_GUEST_TURN_FAILED");
     ++h->turns; return 1;
 }
-int host_turn_contacts(LinuxHost *h, const PocketRuntimeContactsInput *input) {
-    const PocketRuntimeContactsInput empty = {0};
-    if (!h || owner != h || h->state != HOST_RUNNING) return 0;
-    if (!pocket_runtime_tick_contacts(input ? input : &empty))
-        return fail(h, "HOST_GUEST_TURN_FAILED");
-    ++h->turns; return 1;
-}
 int host_render(LinuxHost *h, HostFrame *frame) {
     if (!h || owner != h || h->state != HOST_RUNNING || !frame) return 0;
     memset(frame, 0, sizeof(*frame));
