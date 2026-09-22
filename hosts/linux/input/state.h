@@ -83,6 +83,7 @@ typedef struct {
 
 typedef struct {
     unsigned slot_count;
+    int current_slot;
     int tracking_id[INPUT_HW_MAX_SLOTS];
     int raw_x[INPUT_HW_MAX_SLOTS];
     int raw_y[INPUT_HW_MAX_SLOTS];
