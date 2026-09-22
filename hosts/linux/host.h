@@ -40,6 +40,7 @@ int host_open(LinuxHost *host, const char *profile, const char *root,
               const char *bundle, const char *pack, uint64_t now);
 int host_turn(LinuxHost *host, const PocketRuntimeInput *input);
 int host_turn_contacts(LinuxHost *host, const PocketRuntimeContactsInput *input);
+typedef int (*HostContactsSource)(void *context, PocketRuntimeContactsInput *out);
 int host_pump(LinuxHost *host, uint64_t now); /* headless, no hardware input */
 int host_render(LinuxHost *host, HostFrame *frame);
 int host_pump_present(LinuxHost *host, uint64_t now, HostPresenter present, void *context);
