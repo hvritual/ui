@@ -37,6 +37,9 @@ static int runtime_hit(void *context, float x, float y) {
 static int bridge_sink(void *context, const InputFrame *frame, uint64_t event_ns) {
     return input_bridge_ingest((InputBridge *)context, frame, event_ns);
 }
+static int bridge_source(void *context, PocketRuntimeContactsInput *out) {
+    return input_bridge_next((InputBridge *)context, out, NULL);
+}
 
 static int open_report(const char *path, FILE **out, int *created) {
     if (!path) { *out = stdout; *created = 0; return 1; }
@@ -168,16 +171,13 @@ int input_cli(int argc, char **argv) {
 
         if (!host_monotonic_ns(&now)) { host.error = "HOST_CLOCK_FAILED"; goto cleanup; }
         if (now >= host.clock.next_ns) {
-            PocketRuntimeContactsInput guest = {0};
-            uint64_t event_ns = 0;
-            if (!input_bridge_next(&bridge, &guest, &event_ns)) {
-                host.error = bridge.error ? bridge.error : "INPUT_BRIDGE_FAILED"; goto cleanup;
-            }
-            int due = host_pump_present_contacts(&host, now, &guest, fbdev_present, &display);
+            int due = host_pump_present_contacts(&host, now,
+                                                 bridge_source, &bridge,
+                                                 fbdev_present, &display);
             if (due < 0) goto cleanup;
         }
     }
-    ok = !interrupted && host.turns >= ticks;
+    ok = !interrupted && host.turns >= ticks && bridge.ingested_frames > 0 && bridge.hit_queries > 0;
 
 cleanup:
     if (signals >= 1) sigaction(SIGINT, &old_int, NULL);
