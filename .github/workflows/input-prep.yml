@@ -25,8 +25,19 @@ jobs:
           import json
           p=json.load(open("targets/input.json"))
           assert p["device_selection"]=="capability-based-not-event-index"
-          assert all(x["input_device"] is None and x["protocol"] is None for x in p["profiles"])
+          profiles={x["id"]:x for x in p["profiles"]}
+          observed=profiles["imx6ul-1024x600"]
+          pending=profiles["imx6ul-1024x800"]
+          assert observed["input_device"]["name"]=="ilitek_ts"
+          assert observed["input_device"]["path_is_stable_identity"] is False
+          assert observed["protocol"]=="mt-protocol-b-preferred"
+          assert observed["mt_slot"]["min"]==0 and observed["mt_slot"]["max"]==9
+          assert observed["mt_position_x"]["min"]==0 and observed["mt_position_x"]["max"]==16384
+          assert observed["mt_position_y"]["min"]==0 and observed["mt_position_y"]["max"]==16384
+          assert observed["transform"]["status"]=="pending-known-point-trace"
+          assert pending["input_device"] is None and pending["protocol"] is None
           assert p["physical_key_is_text"] is False
+          assert p["evidence"]=="docs/evidence/myimx6ek140-input-20260922.json"
           PY
       - name: Build native negative probe
         run: |

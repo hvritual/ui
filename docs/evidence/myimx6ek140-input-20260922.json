@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "kind": "user-provided-device-probe",
+    "collected_at": "2026-09-22",
+    "board": "myimx6ek140",
+    "source_files": [
+      "event0.json",
+      "event1.json"
+    ],
+    "sha256": {
+      "event0": "1f12a6b8b78bca0fa8e3952b63c9af6816cb074cb4a9bd4c0f10a9072bfe6ab3",
+      "event1": "70983b1e98ca53776a3c52482d9cbf5fa52a8ef4bd1e27a84ebe0d0a6c4ab053"
+    }
+  },
+  "devices": [
+    {
+      "device": "/dev/input/event0",
+      "name": "20cc000.snvs:snvs-powerkey",
+      "input_version": 65537,
+      "id": {
+        "bustype": 25,
+        "vendor": 0,
+        "product": 0,
+        "version": 0
+      },
+      "capabilities": {
+        "ev_key": true,
+        "ev_abs": false,
+        "btn_touch": false,
+        "single_touch_candidate": false,
+        "mt_protocol_b_candidate": false
+      }
+    },
+    {
+      "device": "/dev/input/event1",
+      "name": "ilitek_ts",
+      "input_version": 65537,
+      "id": {
+        "bustype": 24,
+        "vendor": 0,
+        "product": 0,
+        "version": 0
+      },
+      "capabilities": {
+        "ev_key": true,
+        "ev_abs": true,
+        "btn_touch": true,
+        "single_touch_candidate": true,
+        "mt_protocol_b_candidate": true
+      },
+      "axes": {
+        "abs_x": {
+          "min": 0,
+          "max": 16384,
+          "fuzz": 0,
+          "flat": 0,
+          "resolution": 0
+        },
+        "abs_y": {
+          "min": 0,
+          "max": 16384,
+          "fuzz": 0,
+          "flat": 0,
+          "resolution": 0
+        },
+        "mt_slot": {
+          "min": 0,
+          "max": 9,
+          "fuzz": 0,
+          "flat": 0,
+          "resolution": 0
+        },
+        "mt_tracking_id": {
+          "min": 0,
+          "max": 65535,
+          "fuzz": 0,
+          "flat": 0,
+          "resolution": 0
+        },
+        "mt_position_x": {
+          "min": 0,
+          "max": 16384,
+          "fuzz": 0,
+          "flat": 0,
+          "resolution": 0
+        },
+        "mt_position_y": {
+          "min": 0,
+          "max": 16384,
+          "fuzz": 0,
+          "flat": 0,
+          "resolution": 0
+        }
+      }
+    }
+  ],
+  "admission": {
+    "touch_device_selector": {
+      "preferred_name": "ilitek_ts",
+      "required": [
+        "EV_ABS",
+        "BTN_TOUCH",
+        "ABS_MT_SLOT",
+        "ABS_MT_TRACKING_ID",
+        "ABS_MT_POSITION_X",
+        "ABS_MT_POSITION_Y"
+      ],
+      "observed_path": "/dev/input/event1",
+      "path_is_stable_identity": false
+    },
+    "protocol": "mt-protocol-b-preferred",
+    "legacy_fallback": "abs-x-y-btn-touch",
+    "coordinate_transform": "pending-known-point-trace"
+  }
+}
