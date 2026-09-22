@@ -85,31 +85,6 @@ int host_pump_present(LinuxHost *h, uint64_t now, HostPresenter present, void *c
     return due;
 }
 int host_pump_present_contacts(LinuxHost *h, uint64_t now,
-                               const PocketRuntimeContactsInput *input,
-                               HostPresenter present, void *context) {
-    HostFrame frame;
-    PocketRuntimeContactsInput current = {0};
-    int due;
-    if (!h || owner != h || (h->state != HOST_RUNNING && h->state != HOST_PAUSED))
-        return -1;
-    if (input) current = *input;
-    due = host_clock_due(&h->clock, now);
-    if (due < 0) { fail(h, "HOST_CLOCK_REVERSED"); return -1; }
-    for (int i = 0; i < due; ++i) {
-        if (!host_turn_contacts(h, &current)) return -1;
-        /* Terminal cancellations are edge facts and are delivered only once
-           even when bounded catch-up advances several turns. */
-        current.cancelled_count = 0;
-        if ((h->turns % 2) == 0) {
-            if (!host_render(h, &frame)) return -1;
-            if (present && !present(context, &frame)) {
-                fail(h, "HOST_PRESENT_FAILED"); return -1;
-            }
-        }
-    }
-    return due;
-}
-int host_pump_present_contacts(LinuxHost *h, uint64_t now,
                                HostContactsSource source, void *source_context,
                                HostPresenter present, void *present_context) {
     HostFrame frame;
