@@ -196,6 +196,9 @@ def build(data, base, profiles, mode):
     host_objects += [compile_file(ROOT / "hosts/linux/display" / (name + ".c"), "display-" + name,
                                   ["-std=c11", "-Wall", "-Wextra", "-Werror"])
                      for name in ["presenter", "fbdev", "cli", "vsync"]]
+    host_objects += [compile_file(ROOT / "hosts/linux/input" / (name + ".c"), "input-" + name,
+                                  ["-std=c11", "-Wall", "-Wextra", "-Werror"])
+                     for name in ["state", "live", "bridge", "cli"]]
     personality = compile_file(source / "engine/quickjs-c/rust_eh_personality.c", "personality")
     for test in [False, True]:
         suffix = "test" if test else "host"
