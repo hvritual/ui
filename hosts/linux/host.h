@@ -39,9 +39,14 @@ void pocket_host_free(void *ptr);
 int host_open(LinuxHost *host, const char *profile, const char *root,
               const char *bundle, const char *pack, uint64_t now);
 int host_turn(LinuxHost *host, const PocketRuntimeInput *input);
+int host_turn_contacts(LinuxHost *host, const PocketRuntimeContactsInput *input);
+typedef int (*HostContactsSource)(void *context, PocketRuntimeContactsInput *out);
 int host_pump(LinuxHost *host, uint64_t now); /* headless, no hardware input */
 int host_render(LinuxHost *host, HostFrame *frame);
 int host_pump_present(LinuxHost *host, uint64_t now, HostPresenter present, void *context);
+int host_pump_present_contacts(LinuxHost *host, uint64_t now,
+                               HostContactsSource source, void *source_context,
+                               HostPresenter present, void *present_context);
 int host_pause(LinuxHost *host, int paused, uint64_t now);
 void host_close(LinuxHost *host);
 #endif

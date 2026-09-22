@@ -158,9 +158,41 @@ static void invalids(void) {
     CHECK(!feed(&s,EV_ABS,ABS_MT_SLOT,-1));
     PASS("invalid-config-and-slot-fail-closed");
 }
+
+static void unchanged_axes(void) {
+    InputState s; InputTransform t=tf(1024,600);
+    CHECK(input_state_init(&s,INPUT_PROTOCOL_MT_B,10,&t));
+    down(&s,0,100,8192,8192); report(&s); up(&s,0); report(&s);
+    CHECK(feed(&s,EV_ABS,ABS_MT_TRACKING_ID,101)); report(&s);
+    const InputFrame *f=input_state_frame(&s);
+    CHECK(f->contact_count==1&&f->contacts[0].x==512&&f->contacts[0].y==300);
+    PASS("state-unchanged-axis-retained-across-lift");
+}
+static void atomic_resync(void) {
+    InputState s; InputTransform t=tf(1024,800);
+    CHECK(input_state_init(&s,INPUT_PROTOCOL_MT_B,10,&t));
+    down(&s,2,12,1000,2000); report(&s); InputState before=s;
+    InputMtSnapshot snap={.slot_count=10,.current_slot=99};
+    CHECK(!input_state_resync_mt(&s,&snap)); CHECK(!memcmp(&s,&before,sizeof(s)));
+    CHECK(!feed(&s,EV_ABS,ABS_MT_TRACKING_ID,-2));
+    input_state_disconnect(&s);
+    for(unsigned i=0;i<s.slot_count;i++) CHECK(!s.slots[i].active&&!s.slots[i].published);
+    PASS("state-invalid-resync-atomic-and-disconnect-clears");
+}
+static void mapping_800(void) {
+    InputTransform t=tf(1024,800); int x,y;
+    CHECK(input_map_point(&t,16384,0,&x,&y)&&x==1023&&y==0);
+    CHECK(input_map_point(&t,0,16384,&x,&y)&&x==0&&y==799);
+    for(int swap=0;swap<2;swap++)for(int ix=0;ix<2;ix++)for(int iy=0;iy<2;iy++) {
+        t.swap_xy=swap;t.invert_x=ix;t.invert_y=iy;
+        CHECK(input_map_point(&t,16384,0,&x,&y));
+        CHECK(x==((swap^ix)?0:1023));CHECK(y==((swap^iy)?799:0));
+    }
+    PASS("state-1024x800-eight-orientation-mappings");
+}
 int main(void) {
-    mapping(); tap_drag_release(); multi_slot(); overflow(); dropped_resync();
+    unchanged_axes(); atomic_resync(); mapping_800(); mapping(); tap_drag_release(); multi_slot(); overflow(); dropped_resync();
     disconnect_case(); legacy(); pending_release_drop(); tracking_replacement(); invalids();
     if(failures){fprintf(stderr,"INPUT_STATE_FAILED failures=%d\n",failures);return 1;}
-    printf("INPUT_STATE_OK cases=10 hardware_trace_required=true\n");return 0;
+    printf("INPUT_STATE_OK cases=13 hardware_trace_required=true\n");return 0;
 }

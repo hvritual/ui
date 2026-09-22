@@ -159,6 +159,7 @@ def main() -> int:
             fail(f"missing tool: {exe}")
 
     names = ["host.o", "platform.o", "display-presenter.o", "display-fbdev.o", "display-cli.o", "display-vsync.o",
+             "input-state.o", "input-live.o", "input-bridge.o", "input-cli.o",
              "main-host.o", "runtime-host.o", "personality.o", "libquickjs.a"]
     inputs = [need(RUNTIME / name) for name in names] + [need(CORE)]
     binary = OUT / "ui-host-imx6ul-static"
@@ -175,7 +176,9 @@ def main() -> int:
         fail("device package unexpectedly has a dynamic loader/dependency")
 
     symbols = run([NM, binary], OUT / "symbols.log")
-    for name in ["JS_Eval", "pocket_runtime_tick", "fbdev_present", "display_cli", "vsync_probe_fd", "vsync_cli"]:
+    for name in ["JS_Eval", "pocket_runtime_tick", "pocket_runtime_tick_contacts",
+                 "fbdev_present", "display_cli", "vsync_probe_fd", "vsync_cli",
+                 "input_cli", "input_live_discover", "input_bridge_ingest", "host_turn_contacts"]:
         if name not in symbols:
             fail(f"missing runtime/display symbol: {name}")
     if "fake_fb" in symbols or "__wrap_" in symbols:
@@ -201,6 +204,7 @@ def main() -> int:
     assets = OUT / "assets"; assets.mkdir()
     for name in ["display-scene.js", "display-font.bin"]:
         shutil.copy2(need(DISPLAY_ASSETS / name), assets / name)
+    shutil.copy2(need(ROOT / "tests/input/touch-scene.js"), assets / "touch-scene.js")
 
     for name, body in shell_scripts(binary.name).items():
         path = OUT / name
@@ -209,6 +213,9 @@ def main() -> int:
     vsync_script = OUT / "run-vsync-probe.sh"
     shutil.copy2(ROOT / "scripts/device/run-vsync-probe.sh", vsync_script)
     vsync_script.chmod(0o755)
+    touch_script = OUT / "run-touch-test.sh"
+    shutil.copy2(ROOT / "scripts/device/run-touch-test.sh", touch_script)
+    touch_script.chmod(0o755)
     binary.chmod(0o755)
 
     readme = OUT / "README.txt"
@@ -219,11 +226,14 @@ def main() -> int:
         "2) Review the probe log/JSON and stop any existing framebuffer writer.\n\n"
         "3) Explicit display write (1024x600 default):\n"
         "   ./run-display-test.sh I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER /dev/fb0 imx6ul-1024x600 300\n\n"
-        "The display test leaves the final diagnostic pattern on screen. It does not restore the old pixels or restart an existing UI.\n"
+        "4) Explicit live touch + display test (1024x600 only):\n"
+        "   ./run-touch-test.sh I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER /dev/fb0 /dev/input 1200\n\n"
+        "The display/touch tests leave the final diagnostic frame on screen. They do not restore old pixels or restart an existing UI.\n"
         "Send back the generated logs/ directory plus a screen photo/video.\n", encoding="utf-8")
 
-    tracked = [binary, readme, OUT / "run-probe.sh", OUT / "run-display-test.sh", OUT / "run-vsync-probe.sh",
-               assets / "display-scene.js", assets / "display-font.bin",
+    tracked = [binary, readme, OUT / "run-probe.sh", OUT / "run-display-test.sh",
+               OUT / "run-vsync-probe.sh", OUT / "run-touch-test.sh",
+               assets / "display-scene.js", assets / "display-font.bin", assets / "touch-scene.js",
                OUT / "build.log", OUT / "elf.log", OUT / "symbols.log",
                OUT / "qemu-headless.log", OUT / "qemu-probe-negative.log", OUT / "qemu-vsync-negative.log", OUT / "qemu-vsync-null.json"]
     sums = OUT / "SHA256SUMS"
@@ -239,6 +249,12 @@ def main() -> int:
         "profiles": ["imx6ul-1024x600", "imx6ul-1024x800"],
         "physical_panel_validated": False,
         "vsync_probe": "read-only-bounded",
+        "touch_test": {
+            "profile": "imx6ul-1024x600",
+            "device_selector": "ilitek_ts+protocol-b-capabilities",
+            "transform": {"swap_xy": False, "invert_x": False, "invert_y": False},
+            "physical_touch_validated": False,
+        },
         "warning": "display-test writes the framebuffer and leaves the final image on screen",
     }
     (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

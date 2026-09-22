@@ -24,7 +24,7 @@ require, read_json, write_json, digest = port.require, port.read_json, port.writ
 LOCK = ROOT / "toolchains/runtime.lock.json"
 PROFILES = ROOT / "targets/linux-host.json"
 TESTS = {"render-1024x600", "render-1024x800", "incremental-idle", "frame-stage-order",
-         "promise-layout-update", "node-remove-destroy", "wide-touch-wire", "exclusive-runtime",
+         "promise-layout-update", "node-remove-destroy", "wide-touch-wire", "multi-contact-frame-hit-fact", "contact-cancel-wire", "exclusive-runtime",
          "clock-60-turns-30-renders", "pause-resume", "bounded-catchup", "backwards-clock",
          "guest-error-cleanup", "unknown-profile", "syntax-error-cleanup", "missing-frame-cleanup",
          "lifecycle-100-zero-core-allocations", "bounded-assets-and-paths", "allocator-alignment-overflow"}
@@ -196,6 +196,9 @@ def build(data, base, profiles, mode):
     host_objects += [compile_file(ROOT / "hosts/linux/display" / (name + ".c"), "display-" + name,
                                   ["-std=c11", "-Wall", "-Wextra", "-Werror"])
                      for name in ["presenter", "fbdev", "cli", "vsync"]]
+    host_objects += [compile_file(ROOT / "hosts/linux/input" / (name + ".c"), "input-" + name,
+                                  ["-std=c11", "-Wall", "-Wextra", "-Werror"])
+                     for name in ["state", "live", "bridge", "cli"]]
     personality = compile_file(source / "engine/quickjs-c/rust_eh_personality.c", "personality")
     for test in [False, True]:
         suffix = "test" if test else "host"

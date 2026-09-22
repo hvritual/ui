@@ -1,0 +1,67 @@
+name: P3-02 Live Input Runtime
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  input-live:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install pinned runtime and ARM tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user patch
+          rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target armv7-unknown-linux-gnueabihf
+          rustup toolchain install nightly-2026-07-02 --profile minimal --component rust-src --target armv7-unknown-linux-gnueabihf
+      - name: Static and admission gates
+        run: make check && make check-targets
+      - name: Fetch exact upstream
+        run: make fetch-runtime
+      - name: Native runtime plus live-input sanitizers
+        run: make test-runtime test-input-live-unit test-input-live
+      - name: ARMv7 Cortex-A7 runtime plus live-input fixtures
+        run: make test-runtime-arm test-input-live-arm
+      - name: Verify live-input evidence
+        run: make verify-runtime verify-input-live
+      - name: Preserve static i.MX6UL touch package
+        run: make test-display-arm build-device-package
+      - name: Preserve exact source and native diagnostic objects
+        if: always()
+        run: |
+          mkdir -p out/input-live/review
+          git archive --format=tar HEAD >out/input-live/review/source.tar
+          git rev-parse HEAD >out/input-live/review/commit.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import tarfile
+          paths = [Path('out/runtime/native'), Path('out/runtime/include'),
+                   Path('out/runtime/source-native/engine/quickjs-c/pocket_runtime.h'),
+                   Path('out/runtime/source-native/engine/ui-cabi/include/pocket_ui_cabi.h'),
+                   Path('out/runtime/cargo/x86_64-unknown-linux-gnu/release/libpocketjs_symbian_core.a')]
+          with tarfile.open('out/input-live/review/native-build.tar.gz', 'w:gz') as archive:
+              for path in paths:
+                  if path.exists():
+                      archive.add(path)
+          PY
+          (cd out/input-live/review && sha256sum source.tar commit.txt native-build.tar.gz >SHA256SUMS)
+      - name: Upload P3-02 evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p3-02-live-input-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/input-live/
+            out/device/imx6ul-device-test.tar.gz
+            out/device/imx6ul/manifest.json
+            out/device/imx6ul/SHA256SUMS
+            out/device/imx6ul/elf.log
+          if-no-files-found: error
+          retention-days: 30

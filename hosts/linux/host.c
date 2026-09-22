@@ -43,6 +43,13 @@ int host_turn(LinuxHost *h, const PocketRuntimeInput *input) {
     if (!pocket_runtime_tick(input ? input : &empty)) return fail(h, "HOST_GUEST_TURN_FAILED");
     ++h->turns; return 1;
 }
+int host_turn_contacts(LinuxHost *h, const PocketRuntimeContactsInput *input) {
+    const PocketRuntimeContactsInput empty = {0};
+    if (!h || owner != h || h->state != HOST_RUNNING) return 0;
+    if (!pocket_runtime_tick_contacts(input ? input : &empty))
+        return fail(h, "HOST_GUEST_TURN_FAILED");
+    ++h->turns; return 1;
+}
 int host_render(LinuxHost *h, HostFrame *frame) {
     if (!h || owner != h || h->state != HOST_RUNNING || !frame) return 0;
     memset(frame, 0, sizeof(*frame));
@@ -66,6 +73,31 @@ int host_pump_present(LinuxHost *h, uint64_t now, HostPresenter present, void *c
         if ((h->turns % 2) == 0) {
             if (!host_render(h, &frame)) return -1;
             if (present && !present(context, &frame)) { fail(h, "HOST_PRESENT_FAILED"); return -1; }
+        }
+    }
+    return due;
+}
+int host_pump_present_contacts(LinuxHost *h, uint64_t now,
+                               HostContactsSource source, void *source_context,
+                               HostPresenter present, void *present_context) {
+    HostFrame frame;
+    int due;
+    if (!h || owner != h || (h->state != HOST_RUNNING && h->state != HOST_PAUSED)) return -1;
+    due = host_clock_due(&h->clock, now);
+    if (due < 0) { fail(h, "HOST_CLOCK_REVERSED"); return -1; }
+    for (int i = 0; i < due; ++i) {
+        PocketRuntimeContactsInput input = {0};
+        if (source && !source(source_context, &input)) {
+            fail(h, "HOST_INPUT_SAMPLE_FAILED");
+            return -1;
+        }
+        if (!host_turn_contacts(h, &input)) return -1;
+        if ((h->turns % 2) == 0) {
+            if (!host_render(h, &frame)) return -1;
+            if (present && !present(present_context, &frame)) {
+                fail(h, "HOST_PRESENT_FAILED");
+                return -1;
+            }
         }
     }
     return due;

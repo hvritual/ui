@@ -16,6 +16,9 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "out/input"
 CASES = {
+    "state-unchanged-axis-retained-across-lift",
+    "state-invalid-resync-atomic-and-disconnect-clears",
+    "state-1024x800-eight-orientation-mappings",
     "coordinate-map-round-clamp-invert-swap",
     "mtb-tap-drag-normal-release",
     "mtb-multi-slot-stable-id",
@@ -86,7 +89,7 @@ def tools(mode):
 def validate_state(text):
     actual=re.findall(r"^PASS ([a-z0-9-]+)$",text,re.MULTILINE)
     if len(actual)!=len(CASES) or set(actual)!=CASES: fail("missing/duplicate state cases")
-    if text.count("INPUT_STATE_OK cases=10 hardware_trace_required=true")!=1:
+    if text.count("INPUT_STATE_OK cases=13 hardware_trace_required=true")!=1:
         fail("invalid state summary")
 
 def synthetic_trace():
@@ -236,6 +239,8 @@ def package():
     for name in ("run-input-probe.sh","run-input-trace.sh"):
         (directory/name).chmod(0o755)
 
+    input_config=json.loads((ROOT/"targets/input.json").read_text())
+    transform=input_config["profiles"][0]["transform"]
     manifest={
         "schema_version":1,
         **project_state(),
@@ -247,7 +252,8 @@ def package():
         "axis_range":[0,16384],
         "hardware_slots":10,
         "runtime_contact_budget":8,
-        "coordinate_transform":"pending-known-point-trace",
+        "coordinate_transform":transform["status"],
+        "transform":{"swap_xy":transform["swap_xy"],"invert_x":transform["invert_x"],"invert_y":transform["invert_y"]},
         "binaries":{name:digest(path) for name,path in binaries.items()},
     }
     (directory/"manifest.json").write_text(json.dumps(manifest,indent=2)+"\n")
@@ -276,8 +282,11 @@ def verify():
     manifest=json.loads((OUT/"device/manifest.json").read_text())
     if manifest["commit"]!=state["commit"] or manifest["source_files"]!=state["source_files"]:
         fail("stale device package")
+    input_config=json.loads((ROOT/"targets/input.json").read_text())
+    transform=input_config["profiles"][0]["transform"]
     verification={"status":"passed","commit":state["commit"],"scope":"p3-01-state-trace-replay",
-                  "real_capability":"ilitek_ts-protocol-b","coordinate_transform":"pending-known-point-trace",
+                  "real_capability":"ilitek_ts-protocol-b","coordinate_transform":transform["status"],
+                  "transform":{"swap_xy":transform["swap_xy"],"invert_x":transform["invert_x"],"invert_y":transform["invert_y"]},
                   "pocketjs_delivery":False,
                   "tests":{m:digest(OUT/m/"test.json") for m in ("native","arm")},
                   "device_manifest_sha256":digest(OUT/"device/manifest.json")}
@@ -290,7 +299,7 @@ def verify():
     sums.write_text("".join(f"{digest(p)}  {p.relative_to(OUT)}\n" for p in sorted(entries)))
     with zipfile.ZipFile(OUT/"acceptance.zip","w",zipfile.ZIP_DEFLATED) as z:
         for p in [*entries,sums]: z.write(p,str(p.relative_to(OUT)))
-    print("INPUT_EVIDENCE_OK native/ARM state+replay; real known-point trace pending")
+    print("INPUT_EVIDENCE_OK native/ARM state+replay; coordinate transform bound to targets/input.json")
 
 def main():
     try:

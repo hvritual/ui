@@ -3,7 +3,7 @@
 #include <string.h>
 
 static int map_axis(int raw, InputAxisRange range, unsigned extent, int invert, int *out) {
-    if (!out || extent == 0 || range.maximum <= range.minimum) return 0;
+    if (!out || extent == 0 || extent > 1024 || range.maximum <= range.minimum) return 0;
     int64_t value = raw;
     if (value < range.minimum) value = range.minimum;
     if (value > range.maximum) value = range.maximum;
@@ -27,14 +27,18 @@ int input_map_point(const InputTransform *t, int raw_x, int raw_y, int *x, int *
 }
 
 static int valid_transform(const InputTransform *t) {
-    return t && t->width > 0 && t->height > 0 &&
+    return t && t->width > 0 && t->width <= 1024 &&
+           t->height > 0 && t->height <= 1024 &&
+           (t->swap_xy == 0 || t->swap_xy == 1) &&
+           (t->invert_x == 0 || t->invert_x == 1) &&
+           (t->invert_y == 0 || t->invert_y == 1) &&
            t->x.maximum > t->x.minimum && t->y.maximum > t->y.minimum;
 }
 
 static void clear_slots(InputState *s) {
-    for (unsigned i = 0; i < INPUT_HW_MAX_SLOTS; ++i) {
+    memset(s->slots, 0, sizeof(s->slots));
+    for (unsigned i = 0; i < INPUT_HW_MAX_SLOTS; ++i)
         s->slots[i].tracking_id = -1;
-    }
     s->current_slot = 0;
     s->legacy_down = 0;
     s->legacy_have_x = 0;
@@ -196,11 +200,12 @@ int input_state_feed(InputState *s, uint16_t type, uint16_t code, int32_t value)
                 s->current_slot = value;
             } else if (code == ABS_MT_TRACKING_ID) {
                 InputSlot *slot = &s->slots[s->current_slot];
-                if (value < 0) {
+                if (value < -1) return 0;
+                if (value == -1) {
                     slot->active = 0;
                     slot->tracking_id = -1;
-                    slot->have_x = 0;
-                    slot->have_y = 0;
+                    /* Protocol B axes are stateful: an unchanged coordinate
+                       need not be sent again on the next tracking id. */
                     /* Keep published until SYN_REPORT: the guest still sees
                        the previous contact until the report commits. */
                 } else {
@@ -208,10 +213,6 @@ int input_state_feed(InputState *s, uint16_t type, uint16_t code, int32_t value)
                         (!slot->active || slot->tracking_id != value)) {
                         queue_cancel(s, s->current_slot);
                         slot->defer_publish = 1;
-                    }
-                    if (!slot->active || slot->tracking_id != value) {
-                        slot->have_x = 0;
-                        slot->have_y = 0;
                     }
                     slot->active = 1;
                     slot->tracking_id = value;
@@ -248,27 +249,30 @@ int input_state_feed(InputState *s, uint16_t type, uint16_t code, int32_t value)
 int input_state_resync_mt(InputState *s, const InputMtSnapshot *snapshot) {
     if (!s || s->protocol != INPUT_PROTOCOL_MT_B || !snapshot ||
         snapshot->slot_count != s->slot_count ||
-        snapshot->slot_count > INPUT_HW_MAX_SLOTS)
+        snapshot->slot_count > INPUT_HW_MAX_SLOTS ||
+        snapshot->current_slot < 0 ||
+        (unsigned)snapshot->current_slot >= s->slot_count)
         return 0;
+    for (unsigned i = 0; i < snapshot->slot_count; ++i)
+        if (snapshot->tracking_id[i] < -1 || snapshot->have_position[i] > 1)
+            return 0;
 
     for (unsigned i = 0; i < s->slot_count; ++i) {
         InputSlot *slot = &s->slots[i];
         memset(slot, 0, sizeof(*slot));
         slot->tracking_id = snapshot->tracking_id[i];
-        if (snapshot->tracking_id[i] >= 0) {
-            slot->active = 1;
-            if (snapshot->have_position[i]) {
-                slot->raw_x = snapshot->raw_x[i];
-                slot->raw_y = snapshot->raw_y[i];
-                slot->have_x = 1;
-                slot->have_y = 1;
-            }
+        slot->active = snapshot->tracking_id[i] >= 0;
+        if (snapshot->have_position[i]) {
+            slot->raw_x = snapshot->raw_x[i];
+            slot->raw_y = snapshot->raw_y[i];
+            slot->have_x = 1;
+            slot->have_y = 1;
         }
     }
     s->drop_pending = 0;
     s->suppress_until_all_up = active_count(s) != 0;
     s->overflowed = active_count(s) > INPUT_RUNTIME_MAX_CONTACTS;
-    s->current_slot = 0;
+    s->current_slot = snapshot->current_slot;
     return 1;
 }
 
