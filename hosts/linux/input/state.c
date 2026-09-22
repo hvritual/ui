@@ -138,6 +138,15 @@ static int commit_mt(InputState *s) {
         InputSlot *slot = &s->slots[i];
         if (!slot->active) {
             slot->published = 0;
+            slot->defer_publish = 0;
+            continue;
+        }
+        if (slot->defer_publish) {
+            /* A new tracking id replaced a contact that the guest still saw
+               in the previous frame. Emit only the cancellation this report;
+               the replacement may enter on the next coherent report. */
+            slot->published = 0;
+            slot->defer_publish = 0;
             continue;
         }
         if (!slot->have_x || !slot->have_y) {
@@ -192,12 +201,17 @@ int input_state_feed(InputState *s, uint16_t type, uint16_t code, int32_t value)
                     slot->tracking_id = -1;
                     slot->have_x = 0;
                     slot->have_y = 0;
-                    slot->published = 0;
+                    /* Keep published until SYN_REPORT: the guest still sees
+                       the previous contact until the report commits. */
                 } else {
+                    if (slot->published &&
+                        (!slot->active || slot->tracking_id != value)) {
+                        queue_cancel(s, s->current_slot);
+                        slot->defer_publish = 1;
+                    }
                     if (!slot->active || slot->tracking_id != value) {
                         slot->have_x = 0;
                         slot->have_y = 0;
-                        slot->published = 0;
                     }
                     slot->active = 1;
                     slot->tracking_id = value;
