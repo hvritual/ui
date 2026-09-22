@@ -34,7 +34,13 @@ jobs:
           assert observed["mt_slot"]["min"]==0 and observed["mt_slot"]["max"]==9
           assert observed["mt_position_x"]["min"]==0 and observed["mt_position_x"]["max"]==16384
           assert observed["mt_position_y"]["min"]==0 and observed["mt_position_y"]["max"]==16384
-          assert observed["transform"]["status"]=="pending-known-point-trace"
+          assert observed["transform"]=={
+              "status":"admitted-known-point-trace",
+              "swap_xy":False,
+              "invert_x":False,
+              "invert_y":False,
+              "evidence":"docs/evidence/myimx6ek140-input-trace-20260922.json",
+          }
           assert pending["input_device"] is None and pending["protocol"] is None
           assert p["physical_key_is_text"] is False
           assert p["evidence"]=="docs/evidence/myimx6ek140-input-20260922.json"
