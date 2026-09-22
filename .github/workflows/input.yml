@@ -35,11 +35,6 @@ jobs:
         with:
           name: p3-01-input-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
-            out/input/acceptance.zip
-            out/input/verification.json
-            out/input/SHA256SUMS
-            out/input/imx6ul-p3-01-trace-test.tar.gz
-            out/input/**/*.log
-            out/input/**/*.json
+            out/input/
           if-no-files-found: error
           retention-days: 30
