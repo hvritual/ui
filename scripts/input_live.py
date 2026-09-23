@@ -162,7 +162,7 @@ def test(mode):
                     "touch-terminal-cancel-never-commits-click"},"TOUCH_SCENE_OK cases=3 real_core=true")
 
     loop_binary=directory/"touch-loop-test"
-    loop_objects=[*delivery_objects[:-2],rt.OUT/mode/"input-live.o",rt.OUT/mode/"input-cli.o",
+    loop_objects=[*delivery_objects[:-2],rt.OUT/mode/"input-live.o",rt.OUT/mode/"input-cli.o",rt.OUT/mode/"media-store.o",
                   rt.OUT/mode/"display-fbdev.o",rt.OUT/mode/"display-presenter.o",*delivery_objects[-2:]]
     loop_wraps=["input_live_discover","input_live_reconnect","input_live_wait","input_live_drain",
                 "input_live_close","fbdev_open","fbdev_close","fbdev_present","host_monotonic_ns","poll"]

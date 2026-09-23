@@ -4,6 +4,7 @@
 #include "live.h"
 #include "../display/fbdev.h"
 #include "../host.h"
+#include "../media/store.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -21,6 +22,7 @@ typedef struct {
     uint64_t rows, guest_begin_ns, guest_end_ns, present_begin_ns, present_end_ns;
     unsigned long action_sequence;
     unsigned target_mask;
+    int coffee; MediaStore media;
 } TouchEvidence;
 
 static int unsigned_arg(const char *text, unsigned long *out) {
@@ -63,6 +65,8 @@ static int turn(LinuxHost *host, InputBridge *bridge, FbDevice *display,
     if (!input_bridge_next(bridge, &guest, &event_ns) ||
         !host_monotonic_ns(&e->guest_begin_ns) || !host_turn_contacts(host, &guest) ||
         !host_monotonic_ns(&e->guest_end_ns)) return 0;
+    if(e->coffee && host->turns%30==0 && !guest.contact_count && !guest.cancelled_count)
+        (void)media_store_poll(&e->media);
     e->present_begin_ns = e->present_end_ns = 0;
     if (force_present || host->turns % 2 == 0) {
         if (!host_render(host, &frame) || !host_monotonic_ns(&e->present_begin_ns) ||
@@ -98,8 +102,10 @@ static int cancel_guest(LinuxHost *host, InputBridge *bridge, FbDevice *display,
 static int report_json(FILE *out, const char *fbpath, const InputLive *in,
                        const InputBridge *b, const LinuxHost *h, const FbDevice *d,
                        const TouchEvidence *e, int ok, const char *error) {
-    fputs("{\"schema_version\":2,\"operation\":\"touch-test\",\"ok\":", out);
-    fputs(ok ? "true" : "false", out); fputs(",\"error\":", out);
+    fputs(e->coffee ? "{\"schema_version\":2,\"operation\":\"coffee-demo\",\"ok\":" : "{\"schema_version\":2,\"operation\":\"touch-test\",\"ok\":", out);
+    fputs(ok ? "true" : "false", out);
+    if(e->coffee)fprintf(out,",\"media_applied\":%lu,\"media_rejected\":%lu,\"media_deferred\":%lu",e->media.applied_count,e->media.rejected_count,e->media.deferred_count);
+    fputs(",\"error\":", out);
     if (error) json_string(out, error); else fputs("null", out);
     fputs(",\"profile\":\"imx6ul-1024x600\",\"fbdev\":", out); json_string(out, fbpath);
     fputs(",\"input\":{\"path\":", out); json_string(out, in->path);
@@ -132,6 +138,7 @@ static int report_json(FILE *out, const char *fbpath, const InputLive *in,
 int input_cli(int argc, char **argv) {
     const char *fbpath = "/dev/fb0", *input_dir = "/dev/input", *profile = NULL;
     const char *root = "assets", *output = NULL, *trace_path = NULL, *error = NULL;
+    const char *app = NULL, *media_root = NULL;
     unsigned long ticks = 1200; unsigned seen = 0;
     int ok = 0, created = 0, trace_created = 0, signals = 0, shown = 0;
     FILE *report = stdout; TouchEvidence evidence = {0};
@@ -148,11 +155,14 @@ int input_cli(int argc, char **argv) {
         else if (!strcmp(argv[i], "--ticks")) { if (!unsigned_arg(argv[i+1], &ticks)) goto arguments; bit = 16; }
         else if (!strcmp(argv[i], "--output")) { output = argv[i+1]; bit = 32; }
         else if (!strcmp(argv[i], "--trace-output")) { trace_path = argv[i+1]; bit = 64; }
+        else if (!strcmp(argv[i], "--app")) { app=argv[i+1]; bit=128; }
+        else if (!strcmp(argv[i], "--media-store")) { media_root=argv[i+1]; bit=256; }
         else goto arguments;
         if ((seen & bit) || !argv[i+1][0]) goto arguments;
         seen |= bit;
     }
-    if (!profile || strcmp(profile, "imx6ul-1024x600")) goto arguments;
+    if (!profile || strcmp(profile, "imx6ul-1024x600") || (app && strcmp(app,"coffee-demo"))) goto arguments;
+    evidence.coffee = app != NULL; evidence.media.root = media_root;
     if (!open_report(output, &report, &created)) {
         fprintf(stderr, "TOUCH_REPORT_OPEN_FAILED errno=%d\n", errno); return 1;
     }
@@ -165,8 +175,10 @@ int input_cli(int argc, char **argv) {
     if (!input_live_discover(&input, input_dir, &config)) { error = input.error; goto cleanup; }
     if (!fbdev_open(&display, fbpath, 1)) { error = display.error; goto cleanup; }
     if (!host_monotonic_ns(&now)) { error = "HOST_CLOCK_FAILED"; goto cleanup; }
-    if (!host_open(&host, profile, root, "touch-scene.js", "display-font.bin", now) ||
+    if (!host_open(&host, profile, root, app ? "coffee.js" : "touch-scene.js", app ? "labels.atlas" : "display-font.bin", now) ||
         !input_bridge_init(&bridge, runtime_hit, NULL)) { error = "TOUCH_BOOT_FAILED"; goto cleanup; }
+    if(app && !media_builtin(root)) {error="COFFEE_BUILTIN_ASSETS_FAILED";goto cleanup;}
+    if(app)(void)media_store_poll(&evidence.media);
     if (!host_render(&host, &frame) || !fbdev_present(&display, &frame)) { error = "TOUCH_PRESENT_FAILED"; goto cleanup; }
     shown = 1;
     if (!host_monotonic_ns(&now)) { error = "HOST_CLOCK_FAILED"; goto cleanup; }
@@ -206,7 +218,7 @@ int input_cli(int argc, char **argv) {
         for (int i = 0; i < due && host.turns < ticks; ++i)
             if (!turn(&host, &bridge, &display, &evidence, 0)) { error = "TOUCH_TURN_FAILED"; goto cleanup; }
     }
-    ok = !interrupted && input.opened && bridge.hit_queries > 0;
+    ok = !interrupted && input.opened && (app || bridge.hit_queries > 0);
     if (!ok) error = interrupted ? "TOUCH_INTERRUPTED" : (input.opened ? "TOUCH_NO_INTERACTION" : "TOUCH_INPUT_OFFLINE");
 cleanup:
     if (shown && !cancel_guest(&host, &bridge, &display, &evidence)) { ok = 0; error = "TOUCH_FINAL_CANCEL_FAILED"; }
@@ -226,12 +238,12 @@ cleanup:
     if (created && fclose(report)) report_ok = 0;
     if (!report_ok) { fprintf(stderr, "TOUCH_REPORT_WRITE_FAILED\n"); return 1; }
     fprintf(stderr, "%s events=%llu input_frames=%llu guest_turns=%llu presents=%llu targets=%u reconnects=%llu physical_touch_validated=false\n",
-            ok ? "TOUCH_TEST_OK" : (error ? error : "TOUCH_TEST_FAILED"),
+            ok ? (app?"COFFEE_DEMO_OK":"TOUCH_TEST_OK") : (error ? error : "TOUCH_TEST_FAILED"),
             (unsigned long long)input.events, (unsigned long long)input.frames,
             (unsigned long long)host.turns, (unsigned long long)display.presents,
             evidence.target_mask, (unsigned long long)input.reconnects);
     return ok ? 0 : (interrupted ? 128 + interrupted : 1);
 arguments:
-    fprintf(stderr, "TOUCH_ARGUMENT_INVALID: --touch-test --profile imx6ul-1024x600 [--fbdev PATH] [--input-dir DIR] [--asset-root DIR] [--ticks 1..3600] [--output NEW.json] [--trace-output NEW.csv]\n");
+    fprintf(stderr, "TOUCH_ARGUMENT_INVALID: --touch-test --profile imx6ul-1024x600 [--fbdev PATH] [--input-dir DIR] [--asset-root DIR] [--ticks 1..3600] [--output NEW.json] [--trace-output NEW.csv] [--app coffee-demo --media-store DIR]\n");
     return 2;
 }

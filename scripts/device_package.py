@@ -158,7 +158,7 @@ def main() -> int:
         if shutil.which(exe) is None:
             fail(f"missing tool: {exe}")
 
-    names = ["host.o", "platform.o", "display-presenter.o", "display-fbdev.o", "display-cli.o", "display-vsync.o",
+    names = ["host.o", "platform.o", "display-presenter.o", "display-fbdev.o", "display-cli.o", "display-vsync.o", "media-store.o",
              "input-state.o", "input-live.o", "input-bridge.o", "input-cli.o",
              "main-host.o", "runtime-host.o", "personality.o", "libquickjs.a"]
     inputs = [need(RUNTIME / name) for name in names] + [need(CORE)]
