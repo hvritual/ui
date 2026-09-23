@@ -17,7 +17,7 @@ static uint32_t crc(const unsigned char *data,size_t size) {
 }
 int media_packet_valid(const unsigned char *p,size_t n) {
  return p && n==MEDIA_PACKET_BYTES && !memcmp(p,"PUIIMG1\0",8) && word(p+8)==1 &&
- word(p+12)==8 && word(p+16)==256 && word(p+20)==144 && word(p+24)==n-64 && word(p+28)==crc(p+64,n-64);
+ word(p+12)==8 && word(p+16)==256 && word(p+20)==128 && word(p+24)==n-64 && word(p+28)==crc(p+64,n-64);
 }
 static int digest(const unsigned char *p) {
  for(unsigned i=0;i<64;++i) if(!((p[i]>='0'&&p[i]<='9')||(p[i]>='a'&&p[i]<='f')))return 0;

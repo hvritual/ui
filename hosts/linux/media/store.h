@@ -1,7 +1,7 @@
 #ifndef COFFEE_MEDIA_STORE_H
 #define COFFEE_MEDIA_STORE_H
 #include "host.h"
-#define MEDIA_PACKET_BYTES (64U+8U*256U*144U*4U)
+#define MEDIA_PACKET_BYTES (64U+8U*256U*128U*4U)
 typedef struct {
  const char *root;
  char applied[65], rejected[65];

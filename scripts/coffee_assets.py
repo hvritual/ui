@@ -68,7 +68,7 @@ def main():
     script='const COFFEE_LOCALES='+json.dumps(locales,ensure_ascii=False,separators=(',',':'))+';\n'
     script+=(ROOT/'apps/coffee-demo/app.js').read_text()
     (assets/'coffee.js').write_text(script)
-    media=OUT/'mediactl';
+    media=OUT/'mediactl'
     subprocess.run(['go','build','-trimpath','-o',str(media),'.'],cwd=ROOT/'tools/media',check=True,env={**os.environ,'CGO_ENABLED':'0'})
     updates=OUT/'updates'; updates.mkdir(exist_ok=True)
     # Ephemeral fixture signing key is never copied into output artifacts.
@@ -90,10 +90,10 @@ def main():
             shutil.copy2(store/(generation+'.rgba'),packet)
             packets.append({'variant':name,'generation':generation,'packet_sha256':sha(packet),'bundle_sha256':sha(bundle)})
     if license_file: shutil.copy2(license_file,assets/'Noto-LICENSE.txt')
-    (assets/'IMAGE-LICENSE.txt').write_text('The supplied cup silhouettes are original diagnostic fixtures authored in tools/media/media.go. They are not production product photography. Replacement material must be supplied with authorization.\n')
+    (assets/'IMAGE-LICENSE.txt').write_text('Original diagnostic coffee illustrations authored in tools/media/fixture.go. Not approved manufacturer photographs. Replacement material must be supplied with authorization.\n')
     max_names={k:max(sum(widths[c] for c in s) for s in v['names']) for k,v in locales.items()}
     if max(max_names.values())>270: raise RuntimeError('drink label exceeds layout budget')
-    manifest={'schema':1,'application':'coffee-demo','font_source':{'repository':'notofonts/noto-cjk','revision':FONT_REV,'path':FONT_PATH,'git_blob':FONT_BLOB,'sha256':sha(font),'debug_only':bool(a.debug_font)},'atlas':{'glyph_count':len(widths),'bytes':len(atlas),'sha256':sha(assets/'labels.atlas'),'pixel_size':22,'cell':[32,36],'static_labels_only':True},'locale_max_drink_label_px':max_names,'ui_locales':list(locales),'input_locale':None,'keyboard_layout':None,'shaping':False,'bidi':False,'image_decoders':['PNG','JPEG'],'image_texture':[256,144],'image_slots':8,'image_fixture_only':True,'updates':packets,'files':{p.name:sha(p) for p in sorted(assets.iterdir()) if p.is_file()}}
+    manifest={'schema':1,'application':'coffee-demo','font_source':{'repository':'notofonts/noto-cjk','revision':FONT_REV,'path':FONT_PATH,'git_blob':FONT_BLOB,'sha256':sha(font),'debug_only':bool(a.debug_font)},'atlas':{'glyph_count':len(widths),'bytes':len(atlas),'sha256':sha(assets/'labels.atlas'),'pixel_size':22,'cell':[32,36],'static_labels_only':True},'locale_max_drink_label_px':max_names,'ui_locales':list(locales),'input_locale':None,'keyboard_layout':None,'shaping':False,'bidi':False,'image_decoders':['PNG','JPEG'],'image_texture':[256,128],'image_slots':8,'image_fixture_only':True,'updates':packets,'files':{p.name:sha(p) for p in sorted(assets.iterdir()) if p.is_file()}}
     (OUT/'assets.json').write_text(json.dumps(manifest,indent=2,ensure_ascii=False)+'\n')
     print('COFFEE_ASSETS_OK glyphs='+str(len(widths))+' atlas_bytes='+str(len(atlas)))
 if __name__=='__main__': main()

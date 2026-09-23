@@ -31,7 +31,8 @@ import (
 
 const MaxBundle = 16 << 20
 const MaxImage = 2 << 20
-const Width, Height = 256, 144
+// Both axes must be powers of two in the pinned PocketJS texture ABI.
+const Width, Height = 256, 128
 var Slots = []string{"espresso", "americano", "latte", "cappuccino", "flatwhite", "mocha", "tea", "water"}
 var hexID = regexp.MustCompile(`^[a-f0-9]{64}$`)
 var versionID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,47}$`)
@@ -122,9 +123,10 @@ func Pack(dir,version string,key ed25519.PrivateKey)([]byte,error){
 func publicKey(path string)(ed25519.PublicKey,error){b,e:=regular(path,256);if e!=nil{return nil,e};k,e:=hex.DecodeString(strings.TrimSpace(string(b)));if e!=nil||len(k)!=32{return nil,errors.New("invalid public key")};return ed25519.PublicKey(k),nil}
 func privateKey(path string)(ed25519.PrivateKey,error){b,e:=regular(path,256);if e!=nil{return nil,e};k,e:=hex.DecodeString(strings.TrimSpace(string(b)));if e!=nil||len(k)!=ed25519.SeedSize{return nil,errors.New("invalid private seed")};return ed25519.NewKeyFromSeed(k),nil}
 func writeNew(path string,b []byte)error{f,e:=os.OpenFile(path,os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600);if e!=nil{return e};_,we:=f.Write(b);ce:=f.Close();if we!=nil{return we};return ce}
-// Original schematic test illustrations, not approved production product photographs.
 func fixture(dir string,variant int)error{
- if e:=os.MkdirAll(dir,0700);e!=nil{return e};for i,id:=range Slots{im:=image.NewNRGBA(image.Rect(0,0,Width,Height));for y:=0;y<Height;y++{for x:=0;x<Width;x++{p:=im.PixOffset(x,y);cup:=(x-128)*(x-128)/3+(y-88)*(y-88)<1600&&y>35;if cup{im.Pix[p]=byte(120+variant*45);im.Pix[p+1]=byte(60+i*10);im.Pix[p+2]=byte(30+variant*25);im.Pix[p+3]=255}}};var b bytes.Buffer;if e:=png.Encode(&b,im);e!=nil{return e};if e:=os.WriteFile(filepath.Join(dir,id+".png"),b.Bytes(),0600);e!=nil{return e}};return nil
+ if e:=os.MkdirAll(dir,0700);e!=nil{return e}
+ for i,id:=range Slots {var b bytes.Buffer;if e:=png.Encode(&b,fixtureImage(i,variant));e!=nil{return e};if e:=os.WriteFile(filepath.Join(dir,id+".png"),b.Bytes(),0600);e!=nil{return e}}
+ return nil
 }
 func keygen(prefix string)error{pub,priv,e:=ed25519.GenerateKey(rand.Reader);if e!=nil{return e};if e=writeNew(prefix+".private",[]byte(hex.EncodeToString(priv.Seed())+"\n"));e!=nil{return e};return writeNew(prefix+".public",[]byte(hex.EncodeToString(pub)+"\n"))}
 func main(){debug.SetMemoryLimit(64<<20);if e:=command(os.Args[1:]);e!=nil{fmt.Fprintln(os.Stderr,"MEDIA_ERROR:",e);os.Exit(1)}}
