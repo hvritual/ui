@@ -23,7 +23,7 @@ def test(mode):
  objs=[rt.OUT/mode/n for n in ('host.o','platform.o','media-store.o','runtime-test.o','personality.o','libquickjs.a')]
  run([tool['cc'],'-std=c11','-Wall','-Wextra','-Werror','-Wpedantic','-O2',*tool['c_flags'],'-Ihosts/linux','-I'+str(prepared/'engine/quickjs-c'),'-I'+str(prepared/'engine/ui-cabi/include'),'tests/coffee/test_demo.c',*objs,core,'-Wl,--gc-sections','-lm','-ldl','-lpthread','-lrt','-o',binary],d/'build.log')
  text=run([*tool['runner'],binary,OUT/'assets',d],d/'test.log')
- if 'COFFEE_OK checks=18' not in text or text.count('PASS coffee-')!=2:raise RuntimeError('incomplete scenario suite')
+ if 'COFFEE_OK checks=20' not in text or text.count('PASS coffee-')!=2:raise RuntimeError('incomplete scenario suite')
  neg=d/'negative';neg.mkdir(exist_ok=True)
  text=run([*tool['runner'],binary,OUT/'assets',neg,'--intentional-failure'],d/'negative.log',expected=1)
  if 'COFFEE_OK' in text or 'COFFEE_FAIL' not in text:raise RuntimeError('negative test failed open')
@@ -34,9 +34,16 @@ def media_test():
  run(['go','test','-race','-count=1','-v','./...'],d/'go-native.log',cwd=ROOT/'tools/media')
  run(['go','test','-c','-o',d/'media-arm-test','.'],d/'go-arm-build.log',cwd=ROOT/'tools/media',env={**os.environ,'CGO_ENABLED':'0','GOOS':'linux','GOARCH':'arm','GOARM':'7'})
  run(['qemu-arm','-cpu','cortex-a7',d/'media-arm-test','-test.v','-test.run','TestValidate|TestInstall|TestRollback'],d/'go-arm.log',timeout=300)
+ rt.write_json(d/'test.json',{**rt.project_state(),'logs':{p.name:rt.digest(p) for p in sorted(d.glob('*.log'))},'arm_binary_sha256':rt.digest(d/'media-arm-test')})
 
 def verify():
  state=rt.project_state(); native=rt.read_json(OUT/'native/test.json');arm=rt.read_json(OUT/'arm/test.json')
+ media=rt.read_json(OUT/'media-tests/test.json')
+ if media['commit']!=state['commit'] or media['source_files']!=state['source_files']:raise RuntimeError('stale media evidence')
+ if set(media['logs'])!={'go-native.log','go-arm-build.log','go-arm.log'}:raise RuntimeError('missing media test evidence')
+ for name,digest in media['logs'].items():
+  if rt.digest(OUT/'media-tests'/name)!=digest:raise RuntimeError('media log drift')
+ if media['arm_binary_sha256']!=rt.digest(OUT/'media-tests/media-arm-test'):raise RuntimeError('media test binary drift')
  for mode,result in [('native',native),('arm',arm)]:
   if result['commit']!=state['commit'] or result['source_files']!=state['source_files']:raise RuntimeError('stale source evidence')
   if result['runtime_build_sha256']!=rt.digest(rt.OUT/mode/'build.json') or result['assets_sha256']!=rt.digest(OUT/'assets.json'):raise RuntimeError('stale runtime or assets')
