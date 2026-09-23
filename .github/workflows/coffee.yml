@@ -7,7 +7,34 @@ on:
 permissions:
   contents: read
 jobs:
+  emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare modern static ARM emulator for the Go runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user-static
+          mkdir emulator
+          cp /usr/bin/qemu-arm-static emulator/qemu-arm
+          qemu-arm-static --version | tee emulator/version.txt
+          dpkg-query -W qemu-user-static | tee emulator/package.txt
+          readelf -l emulator/qemu-arm > emulator/elf.txt
+          ! grep -q INTERP emulator/elf.txt
+          python3 - <<'PY'
+          import re,pathlib
+          v=tuple(map(int,re.search(r'version (\d+)\.(\d+)\.(\d+)',pathlib.Path('emulator/version.txt').read_text()).groups()))
+          assert v >= (8,2,2)
+          PY
+          cp /usr/share/doc/qemu-user-static/copyright emulator/COPYRIGHT
+          (cd emulator && sha256sum qemu-arm version.txt package.txt elf.txt COPYRIGHT > SHA256SUMS)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: coffee-emulator-${{ github.run_id }}
+          path: emulator/
+          retention-days: 30
   coffee:
+    needs: emulator
     runs-on: ubuntu-22.04
     timeout-minutes: 40
     steps:
@@ -15,6 +42,15 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: coffee-emulator-${{ github.run_id }}
+          path: out/coffee/emulator
+      - name: Verify emulator and select it without changing the ARM compiler baseline
+        run: |
+          (cd out/coffee/emulator && sha256sum -c SHA256SUMS)
+          chmod +x out/coffee/emulator/qemu-arm
+          echo "$GITHUB_WORKSPACE/out/coffee/emulator" >> "$GITHUB_PATH"
       - name: Install pinned build tools
         run: |
           sudo apt-get update
@@ -27,16 +63,17 @@ jobs:
           tar xzf /tmp/go.tar.gz -C "$RUNNER_TEMP/coffee-go"
           echo "$RUNNER_TEMP/coffee-go/go/bin" >> "$GITHUB_PATH"
           python3 -m pip install Pillow==11.3.0 fonttools==4.59.0
+          qemu-arm --version
       - name: Static gates and exact upstream
         run: make check check-targets fetch-runtime
       - name: Build licensed static glyphs and signed image fixtures
         run: make build-demo
-      - name: Media installer native and ARM tests
-        run: make test-assets
       - name: Native real Coffee runtime
         run: make test-demo-native
       - name: ARM real Coffee runtime
         run: make test-demo-arm
+      - name: Media installer native and ARM tests
+        run: make test-assets
       - name: Verify cross-architecture scene evidence
         run: make verify-demo
       - name: Preserve validated ARM device package
