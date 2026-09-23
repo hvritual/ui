@@ -19,6 +19,22 @@ int media_packet_valid(const unsigned char *p,size_t n) {
  return p && n==MEDIA_PACKET_BYTES && !memcmp(p,"PUIIMG1\0",8) && word(p+8)==1 &&
  word(p+12)==8 && word(p+16)==256 && word(p+20)==128 && word(p+24)==n-64 && word(p+28)==crc(p+64,n-64);
 }
+int media_scene_valid(const unsigned char *p,size_t n) {
+ if(!p||n<32||n>2U*1024U*1024U||memcmp(p,"PUISCNE1",8)||word(p+8)!=1||word(p+24)||word(p+28))return 0;
+ uint32_t meta=word(p+12),pixels=word(p+16);
+ return meta>0&&meta<=32768&&pixels<=1792U*1024U&&n==32U+meta+pixels&&word(p+20)==crc(p+32,n-32);
+}
+int media_scene_clock(uint64_t ns) {
+ unsigned char packet[16]="PUITICK1";uint64_t ms=ns/1000000ULL;
+ for(unsigned i=0;i<8;++i)packet[8+i]=(unsigned char)(ms>>(i*8));
+ return pocket_runtime_resource_pack(packet,sizeof(packet))==1;
+}
+int media_scene_builtin(const char *assets) {
+ HostAsset a={0};int ok=0;
+ if(host_asset_read(assets,"scene.packet",2U*1024U*1024U,&a)&&media_scene_valid(a.data,a.length))
+  ok=pocket_runtime_resource_pack(a.data,a.length)==1;
+ host_asset_free(&a);return ok;
+}
 static int digest(const unsigned char *p) {
  for(unsigned i=0;i<64;++i) if(!((p[i]>='0'&&p[i]<='9')||(p[i]>='a'&&p[i]<='f')))return 0;
  return 1;
@@ -42,7 +58,7 @@ int media_store_poll(MediaStore *s) {
  if(!strcmp(id,s->applied)||!strcmp(id,s->rejected))goto done;
  if(pocket_runtime_resource_pack(NULL,0)!=1){++s->deferred_count;goto done;}
  snprintf(name,sizeof(name),"%s.rgba",id);
- if(!host_asset_read(s->root,name,MEDIA_PACKET_BYTES,&packet)||!media_packet_valid(packet.data,packet.length)){
+ if(!host_asset_read(s->root,name,s->scene?2U*1024U*1024U:MEDIA_PACKET_BYTES,&packet)||!(s->scene?media_scene_valid(packet.data,packet.length):media_packet_valid(packet.data,packet.length))){
   memcpy(s->rejected,id,65);++s->rejected_count;fprintf(stderr,"MEDIA_REJECTED generation=%s reason=packet-integrity old-retained=true\n",id);result=-1;goto done;
  }
  result=pocket_runtime_resource_pack(packet.data,packet.length);

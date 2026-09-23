@@ -86,3 +86,15 @@ verify-demo:
 	python3 scripts/coffee.py verify
 package-demo:
 	python3 scripts/coffee.py package
+
+.PHONY: build-scene test-scene-native test-scene-arm verify-scene package-scene
+build-scene:
+	python3 scripts/scene.py build
+test-scene-native:
+	python3 scripts/scene.py test native
+test-scene-arm:
+	python3 scripts/scene.py test arm
+verify-scene:
+	python3 scripts/scene.py verify
+package-scene:
+	python3 scripts/scene.py package

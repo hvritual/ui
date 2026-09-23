@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Signed dynamic image scene authoring input",
+  "description": "Pack fills asset hashes. Cross-reference, rectangle and aggregate-budget validation also runs in mediactl. No script, video or business actions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "app",
+    "version",
+    "assets",
+    "elements"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "app": {
+      "const": "media-scene"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,47}$"
+    },
+    "assets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "file",
+          "license",
+          "width",
+          "height"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+          },
+          "file": {
+            "type": "string",
+            "pattern": "^images/[a-z][a-z0-9_-]{0,31}\\.(png|jpg)$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^([a-f0-9]{64})?$"
+          },
+          "license": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "width": {
+            "enum": [
+              16,
+              32,
+              64,
+              128,
+              256,
+              512
+            ]
+          },
+          "height": {
+            "enum": [
+              16,
+              32,
+              64,
+              128,
+              256,
+              512
+            ]
+          }
+        }
+      }
+    },
+    "elements": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "x",
+          "y",
+          "width",
+          "height",
+          "z",
+          "visible",
+          "fit",
+          "loop",
+          "items"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+          },
+          "kind": {
+            "enum": [
+              "image",
+              "carousel"
+            ]
+          },
+          "x": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1023
+          },
+          "y": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 415
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1024
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 416
+          },
+          "z": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "fit": {
+            "enum": [
+              "contain",
+              "stretch"
+            ]
+          },
+          "loop": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "asset",
+                "hold_ms"
+              ],
+              "properties": {
+                "asset": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+                },
+                "hold_ms": {
+                  "type": "integer",
+                  "minimum": 500,
+                  "maximum": 60000
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

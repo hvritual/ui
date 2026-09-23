@@ -8,6 +8,9 @@ import (
 // fixtureImage draws original coffee cup illustrations for diagnostic bundles.
 // These are clearly marked test assets, not photographs of the user's products.
 func fixtureImage(drink, variant int) *image.NRGBA {
+ return fixtureImageSize(drink, variant, Width, Height)
+}
+func fixtureImageSize(drink, variant, width, height int) *image.NRGBA {
  // Four-times coverage bake is temporary; deployed textures remain 256x128.
  const scale = 4
  im := image.NewNRGBA(image.Rect(0,0,Width*scale,Height*scale))
@@ -53,5 +56,5 @@ func fixtureImage(drink, variant int) *image.NRGBA {
  if drink==5 {ellipse(124,42,12,4,color.NRGBA{208,167,116,255})}
  for k:=0;k<3;k++ {for y:=8*scale;y<27*scale;y++ {x:=(109+k*17)*scale+(y%(10*scale)-5*scale)/3;for dx:=0;dx<2*scale;dx++ {im.SetNRGBA(x+dx,y,color.NRGBA{126,139,130,80})}}}
  if drink<6 {ellipse(66,99,8,5,color.NRGBA{101,68,45,255});ellipse(57,107,7,4,color.NRGBA{118,79,48,255})}
- return fitImage(im,Width,Height)
+ return fitImage(im,width,height)
 }
