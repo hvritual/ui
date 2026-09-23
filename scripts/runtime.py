@@ -101,9 +101,9 @@ def config():
     require(set(data["targets"]) == {"native", "arm"}, "both execution targets required")
     require(data["targets"]["arm"]["triple"] == base["toolchain"]["rust_target"], "ARM ABI mismatch")
     require(data["targets"]["arm"]["runner"] == ["qemu-arm", "-cpu", "cortex-a7", "-L", "/usr/arm-linux-gnueabihf"], "wrong ARM execution attribution")
-    require(len(data["patches"]) == 1, "review source patches explicitly")
+    require([p["path"] for p in data["patches"]] == ["patches/pocketjs/release-shutdown-buffers.patch", "patches/pocketjs/resource-event.patch"], "review source patches explicitly")
     for item in data["patches"]:
-        require(item["path"] == "patches/pocketjs/release-shutdown-buffers.patch", "unexpected patch path")
+        require(item["path"] in {"patches/pocketjs/release-shutdown-buffers.patch", "patches/pocketjs/resource-event.patch"}, "unexpected patch path")
         require(digest(ROOT / item["path"]) == item["sha256"], "patch hash mismatch")
     return data, base, profiles
 
@@ -199,6 +199,7 @@ def build(data, base, profiles, mode):
     host_objects += [compile_file(ROOT / "hosts/linux/input" / (name + ".c"), "input-" + name,
                                   ["-std=c11", "-Wall", "-Wextra", "-Werror"])
                      for name in ["state", "live", "bridge", "cli"]]
+    host_objects += [compile_file(ROOT / "hosts/linux/media/store.c", "media-store", ["-std=c11", "-Wall", "-Wextra", "-Werror"])]
     personality = compile_file(source / "engine/quickjs-c/rust_eh_personality.c", "personality")
     for test in [False, True]:
         suffix = "test" if test else "host"

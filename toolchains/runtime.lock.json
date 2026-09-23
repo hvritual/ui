@@ -11,6 +11,10 @@
     {
       "path": "patches/pocketjs/release-shutdown-buffers.patch",
       "sha256": "5794f95896725530913229a4949ef4a3a825bd6b03c78648859970603d427990"
+    },
+    {
+      "path": "patches/pocketjs/resource-event.patch",
+      "sha256": "6f0617f2ee31081f1dcbc1be4d6b2321add96f4362804c9a75b7d789a3e53d94"
     }
   ],
   "upstream_files": {

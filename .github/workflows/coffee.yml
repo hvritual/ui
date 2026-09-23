@@ -1,0 +1,91 @@
+name: P4 Coffee Demo and Media
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare pinned modern static ARM emulator for the Go runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user-static=1:8.2.2+ds-0ubuntu1.18
+          mkdir emulator
+          cp /usr/bin/qemu-arm-static emulator/qemu-arm
+          echo '47a63bcbdf3030cf42230a0521dae38ff9d62ba1268d5cafc7d8ccf7da7c761c  emulator/qemu-arm' | sha256sum -c -
+          qemu-arm-static --version | tee emulator/version.txt
+          dpkg-query -W qemu-user-static | tee emulator/package.txt
+          readelf -l emulator/qemu-arm > emulator/elf.txt
+          ! grep -q INTERP emulator/elf.txt
+          cp /usr/share/doc/qemu-user-static/copyright emulator/COPYRIGHT
+          (cd emulator && sha256sum qemu-arm version.txt package.txt elf.txt COPYRIGHT > SHA256SUMS)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: coffee-emulator-${{ github.run_id }}
+          path: emulator/
+          retention-days: 30
+  coffee:
+    needs: emulator
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: coffee-emulator-${{ github.run_id }}
+          path: out/coffee/emulator
+      - name: Verify emulator without changing the ARM compiler baseline
+        run: |
+          (cd out/coffee/emulator && sha256sum -c SHA256SUMS)
+          chmod +x out/coffee/emulator/qemu-arm
+          echo "$GITHUB_WORKSPACE/out/coffee/emulator" >> "$GITHUB_PATH"
+      - name: Install pinned build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user patch
+          rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target armv7-unknown-linux-gnueabihf
+          rustup toolchain install nightly-2026-07-02 --profile minimal --component rust-src --target armv7-unknown-linux-gnueabihf
+          curl -fsSL --max-time 180 https://go.dev/dl/go1.26.8.linux-amd64.tar.gz -o /tmp/go.tar.gz
+          echo 'd0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b  /tmp/go.tar.gz' | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/coffee-go"
+          tar xzf /tmp/go.tar.gz -C "$RUNNER_TEMP/coffee-go"
+          echo "$RUNNER_TEMP/coffee-go/go/bin" >> "$GITHUB_PATH"
+          python3 -m pip install Pillow==11.3.0 fonttools==4.59.0
+          qemu-arm --version
+      - name: Static gates and exact upstream
+        run: make check check-targets fetch-runtime
+      - name: Build licensed static glyphs and signed image fixtures
+        run: make build-demo
+      - name: Native real Coffee runtime
+        run: make test-demo-native
+      - name: ARM real Coffee runtime
+        run: make test-demo-arm
+      - name: Media installer native and ARM tests
+        run: make test-assets
+      - name: Verify cross-architecture scene evidence
+        run: make verify-demo
+      - name: Preserve validated ARM device package
+        run: make build-device-package package-demo
+      - name: Preserve exact source and native debugging objects
+        if: always()
+        run: |
+          mkdir -p out/coffee/review
+          git archive --format=tar HEAD > out/coffee/review/source.tar
+          if [ -d out/runtime/native ]; then tar czf out/coffee/review/native.tar.gz out/runtime/native out/runtime/include out/runtime/source-native/engine/quickjs-c/pocket_runtime.h out/runtime/cargo/x86_64-unknown-linux-gnu/release/libpocketjs_symbian_core.a; fi
+      - name: Upload P4 evidence and device assets (no source font or private key)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: p4-coffee-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/coffee/
+          if-no-files-found: error
+          retention-days: 30

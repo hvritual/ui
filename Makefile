@@ -72,3 +72,17 @@ test-input-live-arm: test-runtime-arm
 	python3 scripts/input_live.py test arm
 verify-input-live:
 	python3 scripts/input_live.py verify
+
+.PHONY: build-demo test-assets test-demo-native test-demo-arm verify-demo package-demo
+build-demo:
+	python3 scripts/coffee_assets.py
+test-assets:
+	python3 scripts/coffee.py media-test
+test-demo-native: test-runtime
+	python3 scripts/coffee.py test native
+test-demo-arm: test-runtime-arm
+	python3 scripts/coffee.py test arm
+verify-demo:
+	python3 scripts/coffee.py verify
+package-demo:
+	python3 scripts/coffee.py package

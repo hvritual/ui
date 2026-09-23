@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "go": {"version": "1.26.8", "linux_amd64_sha256": "d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b", "device": {"GOOS": "linux", "GOARCH": "arm", "GOARM": "7", "CGO_ENABLED": "0"}},
+  "emulator": {"package": "qemu-user-static", "ubuntu_package_version": "1:8.2.2+ds-0ubuntu1.18", "binary_sha256": "47a63bcbdf3030cf42230a0521dae38ff9d62ba1268d5cafc7d8ccf7da7c761c", "cpu": "cortex-a7", "scope": "cloud functional tests, not physical hardware or performance"},
+  "image_packet": {"version": 1, "slots": 8, "width": 256, "height": 128, "pixel_storage": "RGBA8888-straight", "maximum_bundle_bytes": 16777216, "maximum_image_bytes": 2097152, "maximum_decoded_pixels_per_image": 1048576}
+}
