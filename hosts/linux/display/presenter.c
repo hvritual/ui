@@ -82,7 +82,30 @@ const char *fb_copy(const struct fb_fix_screeninfo *fix,
     if (src > UINTPTR_MAX - source_end || dst > UINTPTR_MAX - mapped_length ||
         (src < dst + mapped_length && dst < src + source_end)) return "FB_BUFFER_ALIAS_OR_OVERFLOW";
     /* All fallible checks precede the first write. Padding and hidden pixels
-       remain untouched. Byte stores also support unaligned ARM scanlines. */
+       remain untouched. memcpy to/from local words is alignment/alias safe. */
+    if (!l.rgb565 && l.red == 16 && l.green == 8 && l.blue == 0 &&
+        (!l.has_alpha || l.alpha == 24)) {
+        /* The Core format is opaque BGRA. Preserve the historical fb_copy
+           contract even for diagnostic sources with arbitrary alpha: BGRX has
+           X=0, BGRA has A=255. Block copies reduce framebuffer byte stores;
+           no unchecked cast to a potentially unaligned uint32_t is used. */
+        uint32_t words[64];
+        const uint32_t alpha = l.has_alpha ? 0xff000000U : 0U;
+        for (uint32_t y = 0; y < l.height; ++y) {
+            const uint8_t *s = frame->pixels + (size_t)y * frame->stride;
+            uint8_t *d = (uint8_t *)mapped + l.first_byte + (size_t)y * l.stride;
+            for (uint32_t x = 0; x < l.width;) {
+                uint32_t count = l.width - x;
+                if (count > 64) count = 64;
+                memcpy(words, s + (size_t)x * 4, (size_t)count * 4);
+                for (uint32_t i = 0; i < count; ++i)
+                    words[i] = (words[i] & 0x00ffffffU) | alpha;
+                memcpy(d + (size_t)x * 4, words, (size_t)count * 4);
+                x += count;
+            }
+        }
+        return NULL;
+    }
     for (uint32_t y = 0; y < l.height; ++y) {
         const uint8_t *s = frame->pixels + (size_t)y * frame->stride;
         uint8_t *d = (uint8_t *)mapped + l.first_byte + (size_t)y * l.stride;

@@ -19,6 +19,8 @@ typedef struct {
     HostAsset script, pack;
     uint32_t width, height;
     uint64_t turns, renders;
+    uint64_t presented_frames, clean_frames_skipped;
+    int presentation_valid;
     const char *error;
 } LinuxHost;
 typedef struct { size_t live_bytes, peak_bytes, live_blocks; } HostAllocStats;
@@ -43,6 +45,11 @@ int host_turn_contacts(LinuxHost *host, const PocketRuntimeContactsInput *input)
 typedef int (*HostContactsSource)(void *context, PocketRuntimeContactsInput *out);
 int host_pump(LinuxHost *host, uint64_t now); /* headless, no hardware input */
 int host_render(LinuxHost *host, HostFrame *frame);
+/* Call synchronously after host_render, before any runtime mutation.
+ * Only successful presentation validates the destination. Force on exposure,
+ * destination replacement or recovery; zero damage is not a framebuffer lease. */
+int host_present_latest(LinuxHost *host, const HostFrame *frame, int force,
+                        HostPresenter present, void *context);
 int host_pump_present(LinuxHost *host, uint64_t now, HostPresenter present, void *context);
 int host_pump_present_contacts(LinuxHost *host, uint64_t now,
                                HostContactsSource source, void *source_context,

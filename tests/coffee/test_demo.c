@@ -25,6 +25,7 @@ static int shot(LinuxHost *h,const char *dir,const char *name,unsigned height){
  return !fclose(out);
 }
 #include "test_store.inc"
+#include "test_render_quality.inc"
 int main(int argc,char **argv){
  const char *assets=argc>1?argv[1]:"out/coffee/assets",*out=argc>2?argv[2]:"out/coffee";
  int deliberate=argc>3&&!strcmp(argv[3],"--intentional-failure");
@@ -56,7 +57,7 @@ int main(int argc,char **argv){
   unsigned char old=packet.data[0];packet.data[0]='X';CHECK(!media_packet_valid(packet.data,packet.length));CHECK(pocket_runtime_resource_pack(packet.data,packet.length)==-1);packet.data[0]=old;CHECK(inspect(6)==2);checks++;
   for(int i=0;i<24;i++){CHECK(pocket_runtime_resource_pack(packet.data,packet.length)==1);CHECK(inspect(7)==8);CHECK(host_render(&h,&f));}
   CHECK(host_alloc_stats().live_bytes<20U*1024*1024);CHECK(stage_calls>0);checks++;
-  host_close(&h);CHECK(host_alloc_stats().live_bytes==0);CHECK(store_suite(assets,height));checks++;printf("PASS coffee-%u scenarios=10 real_core=true\n",height);
+  host_close(&h);CHECK(host_alloc_stats().live_bytes==0);CHECK(store_suite(assets,height));CHECK(render_quality_suite(assets,height));checks++;printf("PASS coffee-%u scenarios=10 real_core=true\n",height);
  }
 cleanup:
  host_asset_free(&packet);host_close(&h);

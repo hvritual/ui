@@ -74,13 +74,9 @@ func Validate(raw []byte,key ed25519.PublicKey)(*Validated,error){
   if (format!="png"&&format!="jpeg")||cfg.Width<1||cfg.Height<1||cfg.Width>2048||cfg.Height>2048||cfg.Width*cfg.Height>1<<20{return nil,errors.New("unsupported image or decoded pixel budget")}
   if (format=="png")!=strings.HasSuffix(entry.File,".png"){return nil,errors.New("format/extension mismatch")}
   img,_,e:=image.Decode(bytes.NewReader(encoded));if e!=nil{return nil,e}
-  // Aspect-fit, with an explicitly documented bounded nearest-neighbour MVP resampler.
-  target:=pixels[i*Width*Height*4:(i+1)*Width*Height*4];w,h:=Width,Height
-  if cfg.Width*Height>cfg.Height*Width{h=cfg.Height*Width/cfg.Width}else{w=cfg.Width*Height/cfg.Height};if w<1{w=1};if h<1{h=1};x0,y0:=(Width-w)/2,(Height-h)/2
-  for y:=0;y<h;y++{for x:=0;x<w;x++{r,g,b,a:=img.At(img.Bounds().Min.X+x*cfg.Width/w,img.Bounds().Min.Y+y*cfg.Height/h).RGBA();p:=((y+y0)*Width+x+x0)*4
-   // image.Color is premultiplied; PocketJS format 3 uses straight RGBA.
-   if a>0{target[p]=byte(r*65535/a>>8);target[p+1]=byte(g*65535/a>>8);target[p+2]=byte(b*65535/a>>8)};target[p+3]=byte(a>>8)
-  }}
+  // Prepare target-size antialiased, straight-alpha pixels outside the UI.
+  resized := fitImage(img, Width, Height)
+  copy(pixels[i*Width*Height*4:(i+1)*Width*Height*4], resized.Pix)
  }
  header:=make([]byte,64);copy(header,[]byte("PUIIMG1\x00"));fields:=[]uint32{1,uint32(len(Slots)),Width,Height,uint32(len(pixels)),crc32.ChecksumIEEE(pixels)};for i,v:=range fields{binary.LittleEndian.PutUint32(header[8+i*4:],v)};mh:=sha256.Sum256(manifest);copy(header[32:],mh[:]);return &Validated{m,append(header,pixels...),hash(raw)},nil
 }

@@ -8,8 +8,11 @@ import (
 // fixtureImage draws original coffee cup illustrations for diagnostic bundles.
 // These are clearly marked test assets, not photographs of the user's products.
 func fixtureImage(drink, variant int) *image.NRGBA {
- im := image.NewNRGBA(image.Rect(0,0,Width,Height))
+ // Four-times coverage bake is temporary; deployed textures remain 256x128.
+ const scale = 4
+ im := image.NewNRGBA(image.Rect(0,0,Width*scale,Height*scale))
  ellipse := func(cx,cy,rx,ry int,c color.NRGBA) {
+  cx*=scale;cy*=scale;rx*=scale;ry*=scale
   for y:=cy-ry;y<=cy+ry;y++ {for x:=cx-rx;x<=cx+rx;x++ {
    dx,dy:=x-cx,y-cy
    if dx*dx*ry*ry+dy*dy*rx*rx<=rx*rx*ry*ry {im.SetNRGBA(x,y,c)}
@@ -30,11 +33,11 @@ func fixtureImage(drink, variant int) *image.NRGBA {
  ellipse(179,71,22,20,shade)
  ellipse(177,69,22,18,cream)
  ellipse(180,70,12,10,color.NRGBA{})
- for y:=43;y<=94;y++ {
-  half:=45-(y-43)*9/51
-  for x:=127-half;x<=127+half;x++ {
+ for y:=43*scale;y<=94*scale;y++ {
+  half:=45*scale-(y-43*scale)*9/51
+  for x:=127*scale-half;x<=127*scale+half;x++ {
    c:=cream
-   if x>127+half-7 {c=shade}
+   if x>127*scale+half-7*scale {c=shade}
    if drink==6||drink==7 {c=color.NRGBA{216,227,218,235}}
    im.SetNRGBA(x,y,c)
   }
@@ -48,7 +51,7 @@ func fixtureImage(drink, variant int) *image.NRGBA {
   for i:=0;i<4;i++ {ellipse(125,40+i*2,12-i*2,2,color.NRGBA{250,240,207,255})}
  }
  if drink==5 {ellipse(124,42,12,4,color.NRGBA{208,167,116,255})}
- for k:=0;k<3;k++ {for y:=8;y<27;y++ {x:=109+k*17+(y%10-5)/3;im.SetNRGBA(x,y,color.NRGBA{126,139,130,80});im.SetNRGBA(x+1,y,color.NRGBA{126,139,130,50})}}
+ for k:=0;k<3;k++ {for y:=8*scale;y<27*scale;y++ {x:=(109+k*17)*scale+(y%(10*scale)-5*scale)/3;for dx:=0;dx<2*scale;dx++ {im.SetNRGBA(x+dx,y,color.NRGBA{126,139,130,80})}}}
  if drink<6 {ellipse(66,99,8,5,color.NRGBA{101,68,45,255});ellipse(57,107,7,4,color.NRGBA{118,79,48,255})}
- return im
+ return fitImage(im,Width,Height)
 }

@@ -14,7 +14,10 @@ mkdir -p "$OUT"
  echo "COFFEE_DEMO_BEGIN store=$STORE ticks=$TICKS"
  echo 'Run only while idle; pause original UI/input consumer. Keep machine control/network/OTA running.'
  echo 'Simulation only. No heater/dispense command. USB is never mounted or executed by this program.'
+ echo 'Label this run idle / interaction / media-update when returning logs. CPU excludes the separate mediactl process.'
  uname -a
+ cat /proc/meminfo 2>/dev/null || true
+ cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null || true
  sha256sum "$BASE/ui-host-imx6ul-static" "$BASE/mediactl"
  "$BASE/ui-host-imx6ul-static" --touch-test --app coffee-demo --profile imx6ul-1024x600 \
   --fbdev /dev/fb0 --input-dir /dev/input --asset-root "$BASE/assets" --media-store "$STORE" \

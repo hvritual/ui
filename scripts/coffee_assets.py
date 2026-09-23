@@ -36,17 +36,21 @@ def generate_atlas(path, locales, *, debug_index=0):
     if missing: raise RuntimeError('font missing: '+repr(missing))
     if len(chars)>512: raise RuntimeError('glyph budget')
     font=ImageFont.truetype(str(path),22,index=debug_index,layout_engine=ImageFont.Layout.BASIC)
+    bake_scale=4
+    bake_font=ImageFont.truetype(str(path),22*bake_scale,index=debug_index,layout_engine=ImageFont.Layout.BASIC)
     cell=(32,36); header=struct.pack('<IHH8B',0x41464344,3,len(chars),*cell,26,36,0,0,1,0)
     records=[]; pixels=bytearray(); widths={}
     for i,c in enumerate(chars):
         advance=max(1,round(font.getlength(c)))
         if advance>32: raise RuntimeError('advance budget')
-        tile=Image.new('L',cell)
-        ImageDraw.Draw(tile).text((0,26),c,font=font,fill=255,anchor='ls')
+        tile=Image.new('L',(cell[0]*bake_scale,cell[1]*bake_scale))
+        ImageDraw.Draw(tile).text((0,26*bake_scale),c,font=bake_font,fill=255,anchor='ls')
+        tile=tile.resize(cell,Image.Resampling.LANCZOS)
         records.append(struct.pack('<IHBB',ord(c),i,advance,0)); pixels.extend(tile.tobytes())
         widths[c]=advance
     data=header+b''.join(records)+pixels
     if len(data)>600*1024: raise RuntimeError('atlas budget')
+    if sum(0<v<255 for v in pixels)<len(chars)*8: raise RuntimeError('gray coverage lost')
     return data,widths
 
 def main():
@@ -93,7 +97,7 @@ def main():
     (assets/'IMAGE-LICENSE.txt').write_text('Original diagnostic coffee illustrations authored in tools/media/fixture.go. Not approved manufacturer photographs. Replacement material must be supplied with authorization.\n')
     max_names={k:max(sum(widths[c] for c in s) for s in v['names']) for k,v in locales.items()}
     if max(max_names.values())>270: raise RuntimeError('drink label exceeds layout budget')
-    manifest={'schema':1,'application':'coffee-demo','font_source':{'repository':'notofonts/noto-cjk','revision':FONT_REV,'path':FONT_PATH,'git_blob':FONT_BLOB,'sha256':sha(font),'debug_only':bool(a.debug_font)},'atlas':{'glyph_count':len(widths),'bytes':len(atlas),'sha256':sha(assets/'labels.atlas'),'pixel_size':22,'cell':[32,36],'static_labels_only':True},'locale_max_drink_label_px':max_names,'ui_locales':list(locales),'input_locale':None,'keyboard_layout':None,'shaping':False,'bidi':False,'image_decoders':['PNG','JPEG'],'image_texture':[256,128],'image_slots':8,'image_fixture_only':True,'updates':packets,'files':{p.name:sha(p) for p in sorted(assets.iterdir()) if p.is_file()}}
+    manifest={'schema':1,'application':'coffee-demo','font_source':{'repository':'notofonts/noto-cjk','revision':FONT_REV,'path':FONT_PATH,'git_blob':FONT_BLOB,'sha256':sha(font),'debug_only':bool(a.debug_font)},'atlas':{'glyph_count':len(widths),'bytes':len(atlas),'sha256':sha(assets/'labels.atlas'),'pixel_size':22,'bake_scale':4,'coverage_filter':'lanczos-to-native-size','runtime_density':1,'cell':[32,36],'static_labels_only':True},'locale_max_drink_label_px':max_names,'ui_locales':list(locales),'input_locale':None,'keyboard_layout':None,'shaping':False,'bidi':False,'image_decoders':['PNG','JPEG'],'image_texture':[256,128],'image_slots':8,'image_fixture_only':True,'updates':packets,'files':{p.name:sha(p) for p in sorted(assets.iterdir()) if p.is_file()}}
     (OUT/'assets.json').write_text(json.dumps(manifest,indent=2,ensure_ascii=False)+'\n')
     print('COFFEE_ASSETS_OK glyphs='+str(len(widths))+' atlas_bytes='+str(len(atlas)))
 if __name__=='__main__': main()
