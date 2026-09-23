@@ -12,7 +12,7 @@ typedef struct {
     FbLayout layout;
     const char *error;
     int system_errno, cleanup_errno;
-    uint64_t presents;
+    uint64_t presents, bytes_written;
 } FbDevice;
 
 /* Pass zero-initialized storage. Probe is O_RDONLY and never maps memory. */

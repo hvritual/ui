@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/resource.h>
 
 static volatile sig_atomic_t interrupted;
 static void stop_touch(int number) { interrupted = number; }
@@ -23,8 +24,36 @@ typedef struct {
     unsigned long action_sequence;
     unsigned target_mask;
     int coffee; MediaStore media;
+    uint64_t usage_start_ns, usage_start_cpu_us, cpu_us, wall_ns;
+    long peak_rss_kib;
+    int usage_valid;
+    uint64_t render_begin_ns, render_end_ns, submitted_bytes;
+    unsigned long damage_pixels;
+    int present_skipped;
 } TouchEvidence;
 
+/* Linux getrusage is process-wide (all UI threads). It is not whole-machine
+ * CPU and does not include independently invoked mediactl processes. */
+static int usage_cpu(uint64_t *cpu_us, long *peak_kib) {
+    struct rusage r;
+    if (getrusage(RUSAGE_SELF, &r)) return 0;
+    *cpu_us = (uint64_t)r.ru_utime.tv_sec * 1000000ULL + r.ru_utime.tv_usec +
+              (uint64_t)r.ru_stime.tv_sec * 1000000ULL + r.ru_stime.tv_usec;
+    *peak_kib = r.ru_maxrss;
+    return 1;
+}
+static void usage_begin(TouchEvidence *e) {
+    e->usage_valid = host_monotonic_ns(&e->usage_start_ns) &&
+                    usage_cpu(&e->usage_start_cpu_us, &e->peak_rss_kib);
+}
+static void usage_end(TouchEvidence *e) {
+    uint64_t now, cpu;
+    if (!e->usage_valid || !host_monotonic_ns(&now) ||
+        !usage_cpu(&cpu, &e->peak_rss_kib) || now < e->usage_start_ns ||
+        cpu < e->usage_start_cpu_us) { e->usage_valid = 0; return; }
+    e->wall_ns = now - e->usage_start_ns;
+    e->cpu_us = cpu - e->usage_start_cpu_us;
+}
 static int unsigned_arg(const char *text, unsigned long *out) {
     if (!text || !*text) return 0;
     for (const char *p = text; *p; ++p) if (*p < '0' || *p > '9') return 0;
@@ -68,10 +97,25 @@ static int turn(LinuxHost *host, InputBridge *bridge, FbDevice *display,
     if(e->coffee && host->turns%30==0 && !guest.contact_count && !guest.cancelled_count)
         (void)media_store_poll(&e->media);
     e->present_begin_ns = e->present_end_ns = 0;
+    e->render_begin_ns = e->render_end_ns = e->submitted_bytes = 0;
+    e->damage_pixels = 0; e->present_skipped = 0;
     if (force_present || host->turns % 2 == 0) {
-        if (!host_render(host, &frame) || !host_monotonic_ns(&e->present_begin_ns) ||
-            !fbdev_present(display, &frame) || !host_monotonic_ns(&e->present_end_ns)) return 0;
+        if (!host_monotonic_ns(&e->render_begin_ns) || !host_render(host, &frame) ||
+            !host_monotonic_ns(&e->render_end_ns)) return 0;
+        e->damage_pixels = pocket_runtime_damage_pixels();
+        uint64_t before = display->presents, bytes_before = display->bytes_written;
+        if (!host_monotonic_ns(&e->present_begin_ns)) return 0;
+        int applied = e->coffee ? host_present_latest(host, &frame, force_present,
+                                                     fbdev_present, display) :
+                                 fbdev_present(display, &frame);
+        if (!applied || !host_monotonic_ns(&e->present_end_ns)) return 0;
+        e->submitted_bytes = display->bytes_written - bytes_before;
+        if (before == display->presents) {
+            e->present_skipped = 1;
+            e->present_begin_ns = e->present_end_ns = 0;
+        }
     }
+    if (e->coffee && host->turns % 60 == 0) usage_end(e);
     unsigned long sequence = pocket_runtime_action_sequence();
     if (sequence != e->action_sequence) {
         const char *name = pocket_runtime_action_name();
@@ -81,12 +125,15 @@ static int turn(LinuxHost *host, InputBridge *bridge, FbDevice *display,
         e->action_sequence = sequence;
     }
     if (e->trace) {
-        fprintf(e->trace, "%llu,%llu,%llu,%llu,%llu,%llu,%llu,%u,%u,%lu\n",
+        fprintf(e->trace, "%llu,%llu,%llu,%llu,%llu,%llu,%llu,%u,%u,%lu,%llu,%llu,%lu,%d,%llu,%llu,%llu,%ld,%d\n",
                 (unsigned long long)host->turns, (unsigned long long)bridge->delivered_frames,
                 (unsigned long long)event_ns, (unsigned long long)e->guest_begin_ns,
                 (unsigned long long)e->guest_end_ns, (unsigned long long)e->present_begin_ns,
                 (unsigned long long)e->present_end_ns, guest.contact_count, guest.cancelled_count,
-                e->action_sequence);
+                e->action_sequence, (unsigned long long)e->render_begin_ns,
+                (unsigned long long)e->render_end_ns, e->damage_pixels, e->present_skipped,
+                (unsigned long long)e->submitted_bytes, (unsigned long long)e->cpu_us,
+                (unsigned long long)e->wall_ns, e->peak_rss_kib, e->usage_valid);
         ++e->rows;
         if (ferror(e->trace)) return 0;
     }
@@ -105,6 +152,18 @@ static int report_json(FILE *out, const char *fbpath, const InputLive *in,
     fputs(e->coffee ? "{\"schema_version\":2,\"operation\":\"coffee-demo\",\"ok\":" : "{\"schema_version\":2,\"operation\":\"touch-test\",\"ok\":", out);
     fputs(ok ? "true" : "false", out);
     if(e->coffee)fprintf(out,",\"media_applied\":%lu,\"media_rejected\":%lu,\"media_deferred\":%lu",e->media.applied_count,e->media.rejected_count,e->media.deferred_count);
+    if (e->coffee) {
+        fprintf(out, ",\"presentation\":{\"clean_frames_skipped\":%llu,\"bytes_written\":%llu,"
+                "\"dirty_rect_copy\":false},\"usage\":{\"valid\":%s,\"cpu_us\":%llu,"
+                "\"wall_ns\":%llu,\"peak_rss_kib\":%ld,\"cpu_percent_one_core\":",
+                (unsigned long long)h->clean_frames_skipped, (unsigned long long)d->bytes_written,
+                e->usage_valid ? "true" : "false", (unsigned long long)e->cpu_us,
+                (unsigned long long)e->wall_ns, e->peak_rss_kib);
+        if (e->usage_valid && e->wall_ns)
+            fprintf(out, "%.3f", (double)e->cpu_us * 100000.0 / (double)e->wall_ns);
+        else fputs("null", out);
+        fputs(",\"scope\":\"ui-process-runtime-excludes-mediactl\"}", out);
+    }
     fputs(",\"error\":", out);
     if (error) json_string(out, error); else fputs("null", out);
     fputs(",\"profile\":\"imx6ul-1024x600\",\"fbdev\":", out); json_string(out, fbpath);
@@ -169,7 +228,7 @@ int input_cli(int argc, char **argv) {
     if (trace_path && !open_report(trace_path, &evidence.trace, &trace_created)) {
         error = "TOUCH_TRACE_OPEN_FAILED"; goto cleanup;
     }
-    if (evidence.trace) fputs("turn,sample,event_ns,guest_begin_ns,guest_end_ns,present_begin_ns,present_end_ns,contacts,cancelled,action_seq\n", evidence.trace);
+    if (evidence.trace) fputs("turn,sample,event_ns,guest_begin_ns,guest_end_ns,present_begin_ns,present_end_ns,contacts,cancelled,action_seq,render_begin_ns,render_end_ns,damage_pixels,present_skipped,submitted_bytes,ui_cpu_us,ui_wall_ns,peak_rss_kib,usage_valid\n", evidence.trace);
     InputLiveConfig config = {.expected_name="ilitek_ts", .width=1024, .height=600,
         .swap_xy=0, .invert_x=0, .invert_y=0, .expected_raw_min=0, .expected_raw_max=16384, .expected_slots=10};
     if (!input_live_discover(&input, input_dir, &config)) { error = input.error; goto cleanup; }
@@ -179,10 +238,13 @@ int input_cli(int argc, char **argv) {
         !input_bridge_init(&bridge, runtime_hit, NULL)) { error = "TOUCH_BOOT_FAILED"; goto cleanup; }
     if(app && !media_builtin(root)) {error="COFFEE_BUILTIN_ASSETS_FAILED";goto cleanup;}
     if(app)(void)media_store_poll(&evidence.media);
-    if (!host_render(&host, &frame) || !fbdev_present(&display, &frame)) { error = "TOUCH_PRESENT_FAILED"; goto cleanup; }
+    if (!host_render(&host, &frame) ||
+        !(app ? host_present_latest(&host, &frame, 1, fbdev_present, &display) :
+                fbdev_present(&display, &frame))) { error = "TOUCH_PRESENT_FAILED"; goto cleanup; }
     shown = 1;
     if (!host_monotonic_ns(&now)) { error = "HOST_CLOCK_FAILED"; goto cleanup; }
     host_clock_start(&host.clock, now);
+    if (app) usage_begin(&evidence);
     deadline = now + ((uint64_t)ticks / 60 + 30) * 1000000000ULL;
     action.sa_handler = stop_touch; sigemptyset(&action.sa_mask); interrupted = 0;
     if (sigaction(SIGINT, &action, &old_int)) { error = "TOUCH_SIGNAL_FAILED"; goto cleanup; } signals = 1;
@@ -224,6 +286,7 @@ cleanup:
     if (shown && !cancel_guest(&host, &bridge, &display, &evidence)) { ok = 0; error = "TOUCH_FINAL_CANCEL_FAILED"; }
     if (signals >= 1) sigaction(SIGINT, &old_int, NULL);
     if (signals >= 2) sigaction(SIGTERM, &old_term, NULL);
+    if (app) usage_end(&evidence);
     input_live_close(&input); host_close(&host);
     int display_closed = fbdev_close(&display);
     if (input.cleanup_errno || !display_closed) { ok = 0; error = "TOUCH_CLEANUP_FAILED"; }

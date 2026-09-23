@@ -61,6 +61,24 @@ int host_render(LinuxHost *h, HostFrame *frame) {
         return fail(h, "HOST_RENDER_CONTRACT_FAILED");
     ++h->renders; return 1;
 }
+int host_present_latest(LinuxHost *h, const HostFrame *frame, int force,
+                        HostPresenter present, void *context) {
+    int bounds[4];
+    if (!h || owner != h || h->state != HOST_RUNNING || !frame || !frame->pixels ||
+        frame->width != h->width || frame->height != h->height || !present) return 0;
+    /* Require both indicators to agree. Inconsistent damage falls back to full
+       presentation, never a silent dropped update. Initial/resumed destinations
+       and explicit recovery remain full presentations even with no damage. */
+    if (!force && h->presentation_valid && !pocket_runtime_damage_pixels() &&
+        !pocket_runtime_damage_bounds(bounds)) {
+        ++h->clean_frames_skipped;
+        return 1;
+    }
+    if (!present(context, frame)) return fail(h, "HOST_PRESENT_FAILED");
+    h->presentation_valid = 1;
+    ++h->presented_frames;
+    return 1;
+}
 int host_pump_present(LinuxHost *h, uint64_t now, HostPresenter present, void *context) {
     HostFrame frame;
     int due;
@@ -108,5 +126,6 @@ int host_pump(LinuxHost *h, uint64_t now) {
 int host_pause(LinuxHost *h, int paused, uint64_t now) {
     if (!h || owner != h || (h->state != HOST_RUNNING && h->state != HOST_PAUSED)) return 0;
     if (now < h->clock.last_ns || now > UINT64_MAX - 1000000000ULL) return fail(h, "HOST_CLOCK_REVERSED");
-    host_clock_pause(&h->clock, paused, now); h->state = paused ? HOST_PAUSED : HOST_RUNNING; return 1;
+    host_clock_pause(&h->clock, paused, now); h->state = paused ? HOST_PAUSED : HOST_RUNNING;
+    h->presentation_valid = 0; return 1;
 }

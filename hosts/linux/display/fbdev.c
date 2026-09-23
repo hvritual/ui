@@ -84,7 +84,9 @@ int fbdev_present(void *context, const HostFrame *frame) {
         layout.rgb565 != d->layout.rgb565) return fail(d, "FB_MODE_CHANGED", 0);
     error = fb_copy(&f, &v, d->mapping, d->mapping_length, frame);
     if (error) return fail(d, error, 0);
-    ++d->presents; return 1;
+    ++d->presents;
+    d->bytes_written += (uint64_t)layout.width * layout.height * layout.bytes_per_pixel;
+    return 1;
 }
 static void json_string(FILE *out, const char *text, size_t limit) {
     fputc('"', out);
