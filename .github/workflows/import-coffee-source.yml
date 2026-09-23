@@ -1,4 +1,4 @@
-name: Import reviewed P4 source
+name: Import reviewed P4 integration
 on:
   push:
     branches: [build/coffee-demo-media]
@@ -13,22 +13,18 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
-      - name: Apply the exact reviewed source delta on the feature branch
+      - name: Apply exact integration diff on feature branch only
         run: |
           git merge-base --is-ancestor eba7e1c029c873dc874f1412cd490364cdbfadaa HEAD
           python3 - <<'PY'
-          import base64,gzip,hashlib,pathlib,subprocess
-          parts=sorted(pathlib.Path('.').glob('.p4-import.part*'))
-          assert len(parts)==6
-          raw=gzip.decompress(base64.b64decode(''.join(p.read_text().strip() for p in parts),validate=True))
-          assert len(raw)==82663
-          assert hashlib.sha256(raw).hexdigest()=='303eb8c4d0cf1808e97c85b50abe1bd312017dc888a59f9d81f702203e4e4fb8'
-          assert b'+++ b/.github/' not in raw
+          import hashlib,pathlib,subprocess
+          raw=pathlib.Path('.p4-integration.patch').read_bytes()
+          assert hashlib.sha256(raw).hexdigest()=='8aa0e0fab8e441ed8b2a438b1b407fdb091b71b6cd92d1c0d6b687e92ec55661'
           subprocess.run(['git','apply','--check','-'],input=raw,check=True)
           subprocess.run(['git','apply','--index','-'],input=raw,check=True)
-          for p in parts:p.unlink()
+          pathlib.Path('.p4-integration.patch').unlink()
           pathlib.Path('.p4-import.ready').unlink()
           PY
           git add -u
-          git -c user.name='P4 source import' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'feat: add Coffee Demo and signed image generation updates'
+          git -c user.name='P4 integration' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'feat: integrate data-only media delivery with the existing Linux host'
           git push origin HEAD:build/coffee-demo-media
