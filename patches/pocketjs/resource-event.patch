@@ -1,0 +1,36 @@
+--- a/engine/quickjs-c/pocket_runtime.c
++++ b/engine/quickjs-c/pocket_runtime.c
+@@ -1004,3 +1004,23 @@
+ const char *pocket_runtime_error(void) {
+   return last_error;
+ }
++
++/* Downstream data-only resource delivery. Main UI thread, between guest turns.
++ * No eval, jobs drain or additional ui_tick. Callback owns atomic texture swap.
++ * 1=applied, 0=deferred, -1=rejected. The input bytes are copied, never borrowed. */
++int pocket_runtime_resource_pack(const uint8_t *bytes, size_t length) {
++  if (!runtime || !context || runtime_failed || (!bytes && length) || length > 2U*1024U*1024U) return -1;
++  JSValue fn = JS_GetPropertyStr(context, global, "onResourcePack");
++  if (JS_IsException(fn)) { take_exception(context); return -1; }
++  if (!JS_IsFunction(context, fn)) { JS_FreeValue(context, fn); return -1; }
++  JSValue arg = bytes ? JS_NewArrayBufferCopy(context, bytes, length) : JS_NULL;
++  if (JS_IsException(arg)) { JS_FreeValue(context, fn); take_exception(context); return -1; }
++  JSValue result = JS_Call(context, fn, global, 1, &arg);
++  JS_FreeValue(context, arg); JS_FreeValue(context, fn);
++  if (JS_IsException(result)) { take_exception(context); runtime_failed = 1; return -1; }
++  int32_t status = -1;
++  int converted = JS_ToInt32(context, &status, result);
++  JS_FreeValue(context, result);
++  if (converted < 0) { take_exception(context); return -1; }
++  return status == 0 || status == 1 ? status : -1;
++}
+--- a/engine/quickjs-c/pocket_runtime.h
++++ b/engine/quickjs-c/pocket_runtime.h
+@@ -154,5 +154,7 @@
+ size_t pocket_runtime_length(void);
+ const char *pocket_runtime_error(void);
+ void pocket_runtime_shutdown(void);
++/* Data-only host resource event: 1 applied, 0 busy, -1 rejected. */
++int pocket_runtime_resource_pack(const uint8_t *bytes, size_t length);
+ 
+ #endif
