@@ -1,0 +1,38 @@
+name: Native Video Backend
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  dependencies:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install cross compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user
+      - name: Build pinned decoder dependencies
+        run: |
+          python3 scripts/video_deps.py native
+          python3 scripts/video_deps.py arm
+      - name: Preserve exact dependencies for decoder integration
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: video-deps-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/video/deps/native/
+            out/video/deps/arm/
+            out/video/deps/*.json
+            out/video/deps/*.log
+            out/video/deps/*.tar.xz
+          if-no-files-found: error
+          retention-days: 30
