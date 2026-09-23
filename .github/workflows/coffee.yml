@@ -68,12 +68,16 @@ jobs:
         run: make test-demo-native
       - name: ARM real Coffee runtime
         run: make test-demo-arm
+      - name: Build signed dynamic scene and carousel fixtures
+        run: make build-scene
+      - name: Native and ARM dynamic scene runtime
+        run: make test-scene-native test-scene-arm
       - name: Media installer native and ARM tests
         run: make test-assets
       - name: Verify cross-architecture scene evidence
-        run: make verify-demo
+        run: make verify-demo verify-scene
       - name: Preserve validated ARM device package
-        run: make build-device-package package-demo
+        run: make build-device-package package-demo package-scene
       - name: Preserve exact source and native debugging objects
         if: always()
         run: |
@@ -87,5 +91,14 @@ jobs:
           name: p4-coffee-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             out/coffee/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload dynamic scene and carousel evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: media-scene-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/scene/
           if-no-files-found: error
           retention-days: 30

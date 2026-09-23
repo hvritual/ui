@@ -97,11 +97,21 @@ func state(dir string)(string,string,error){
  v:=strings.Split(strings.TrimSuffix(string(b),"\n"),"\n");if len(v)!=2||!hexID.MatchString(v[0])||(v[1]!="-"&&!hexID.MatchString(v[1])){return "","",errors.New("corrupt activation state")};return v[0],v[1],nil
 }
 func activate(dir string,v *Validated,raw []byte)error{
+ receipt,e:=json.Marshal(v.Manifest);if e!=nil{return e}
+ return activateFiles(dir,v.ID,v.Packet,receipt,raw)
+}
+func activateFiles(dir,id string,packet,receipt,raw []byte)error{
  current,_,e:=state(dir);if e!=nil{return e}
+ // A shared installer must never mix app namespaces in one local store.
+ if current!=""{
+  old,e:=regular(filepath.Join(dir,current+".json"),SceneMetadata);if e!=nil{return e}
+  var before,after struct{App string `json:"app"`}
+  if json.Unmarshal(old,&before)!=nil||json.Unmarshal(receipt,&after)!=nil||before.App==""||before.App!=after.App{return errors.New("store application mismatch")}
+ }
  // Originals are retained for authenticated rollback. Store and parents are trusted local state.
- if e=atomicWrite(dir,v.ID+".bundle",raw);e!=nil{return e};if e=atomicWrite(dir,v.ID+".rgba",v.Packet);e!=nil{return e};receipt,_:=json.Marshal(v.Manifest);if e=atomicWrite(dir,v.ID+".json",receipt);e!=nil{return e}
- if current==v.ID{return nil};if current==""{current="-"};if e=atomicWrite(dir,"current",[]byte(v.ID+"\n"+current+"\n"));e!=nil{return e}
- entries,e:=os.ReadDir(dir);if e!=nil{return e};for _,f:=range entries{stem:=strings.TrimSuffix(f.Name(),filepath.Ext(f.Name()));ext:=filepath.Ext(f.Name());if hexID.MatchString(stem)&&stem!=v.ID&&stem!=current&&(ext==".rgba"||ext==".bundle"||ext==".json"){if e=os.Remove(filepath.Join(dir,f.Name()));e!=nil{return e}}};return syncDir(dir)
+ if e=atomicWrite(dir,id+".bundle",raw);e!=nil{return e};if e=atomicWrite(dir,id+".rgba",packet);e!=nil{return e};if e=atomicWrite(dir,id+".json",receipt);e!=nil{return e}
+ if current==id{return nil};if current==""{current="-"};if e=atomicWrite(dir,"current",[]byte(id+"\n"+current+"\n"));e!=nil{return e}
+ entries,e:=os.ReadDir(dir);if e!=nil{return e};for _,f:=range entries{stem:=strings.TrimSuffix(f.Name(),filepath.Ext(f.Name()));ext:=filepath.Ext(f.Name());if hexID.MatchString(stem)&&stem!=id&&stem!=current&&(ext==".rgba"||ext==".bundle"||ext==".json"){if e=os.Remove(filepath.Join(dir,f.Name()));e!=nil{return e}}};return syncDir(dir)
 }
 func Install(dir string,raw []byte,key ed25519.PublicKey)(*Validated,error){v,e:=Validate(raw,key);if e!=nil{return nil,e};if e=ensureStore(dir);e!=nil{return nil,e};unlock,e:=storeLock(dir);if e!=nil{return nil,e};defer unlock();if e=activate(dir,v,raw);e!=nil{return nil,e};return v,nil}
 func Rollback(dir string,key ed25519.PublicKey)(*Validated,error){
@@ -128,6 +138,7 @@ func keygen(prefix string)error{pub,priv,e:=ed25519.GenerateKey(rand.Reader);if 
 func main(){debug.SetMemoryLimit(64<<20);if e:=command(os.Args[1:]);e!=nil{fmt.Fprintln(os.Stderr,"MEDIA_ERROR:",e);os.Exit(1)}}
 func command(a []string)error{
  if len(a)==0{return errors.New("usage: mediactl keygen PREFIX | pack IMAGE_DIR VERSION PRIVATE_KEY OUTPUT | install STORE PUBLIC_KEY FILE | fetch STORE PUBLIC_KEY HTTPS_URL | rollback STORE PUBLIC_KEY | status STORE")}
+ if strings.HasPrefix(a[0],"scene-"){return sceneCommand(a)}
  switch a[0]{
  case "keygen":if len(a)!=2{break};return keygen(a[1])
  case "fixture":if len(a)!=3{break};v:=0;if a[2]=="b"{v=1};return fixture(a[1],v)

@@ -52,7 +52,7 @@ def media_test():
  d=OUT/'media-tests';d.mkdir(parents=True,exist_ok=True)
  run(['go','test','-race','-count=1','-v','./...'],d/'go-native.log',cwd=ROOT/'tools/media')
  run(['go','test','-c','-o',d/'media-arm-test','.'],d/'go-arm-build.log',cwd=ROOT/'tools/media',env={**os.environ,'CGO_ENABLED':'0','GOOS':'linux','GOARCH':'arm','GOARM':'7'})
- run(['qemu-arm','-cpu','cortex-a7',d/'media-arm-test','-test.v','-test.run','TestValidate|TestInstall|TestRollback|TestResample|TestFixtureCoverage'],d/'go-arm.log',timeout=300)
+ run(['qemu-arm','-cpu','cortex-a7',d/'media-arm-test','-test.v','-test.run','TestValidate|TestInstall|TestRollback|TestResample|TestFixtureCoverage|TestScene'],d/'go-arm.log',timeout=300)
  rt.write_json(d/'test.json',{**rt.project_state(),'logs':{p.name:rt.digest(p) for p in sorted(d.glob('*.log'))},'arm_binary_sha256':rt.digest(d/'media-arm-test')})
 
 def verify():

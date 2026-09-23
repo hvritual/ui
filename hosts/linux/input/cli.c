@@ -92,7 +92,8 @@ static int turn(LinuxHost *host, InputBridge *bridge, FbDevice *display,
     PocketRuntimeContactsInput guest = {0}; uint64_t event_ns = 0;
     HostFrame frame;
     if (!input_bridge_next(bridge, &guest, &event_ns) ||
-        !host_monotonic_ns(&e->guest_begin_ns) || !host_turn_contacts(host, &guest) ||
+        !host_monotonic_ns(&e->guest_begin_ns) ||
+        (e->media.scene && !media_scene_clock(e->guest_begin_ns)) || !host_turn_contacts(host, &guest) ||
         !host_monotonic_ns(&e->guest_end_ns)) return 0;
     if(e->coffee && host->turns%30==0 && !guest.contact_count && !guest.cancelled_count)
         (void)media_store_poll(&e->media);
@@ -149,7 +150,7 @@ static int cancel_guest(LinuxHost *host, InputBridge *bridge, FbDevice *display,
 static int report_json(FILE *out, const char *fbpath, const InputLive *in,
                        const InputBridge *b, const LinuxHost *h, const FbDevice *d,
                        const TouchEvidence *e, int ok, const char *error) {
-    fputs(e->coffee ? "{\"schema_version\":2,\"operation\":\"coffee-demo\",\"ok\":" : "{\"schema_version\":2,\"operation\":\"touch-test\",\"ok\":", out);
+    fputs(e->media.scene ? "{\"schema_version\":2,\"operation\":\"media-scene\",\"ok\":" : e->coffee ? "{\"schema_version\":2,\"operation\":\"coffee-demo\",\"ok\":" : "{\"schema_version\":2,\"operation\":\"touch-test\",\"ok\":", out);
     fputs(ok ? "true" : "false", out);
     if(e->coffee)fprintf(out,",\"media_applied\":%lu,\"media_rejected\":%lu,\"media_deferred\":%lu",e->media.applied_count,e->media.rejected_count,e->media.deferred_count);
     if (e->coffee) {
@@ -220,8 +221,9 @@ int input_cli(int argc, char **argv) {
         if ((seen & bit) || !argv[i+1][0]) goto arguments;
         seen |= bit;
     }
-    if (!profile || strcmp(profile, "imx6ul-1024x600") || (app && strcmp(app,"coffee-demo"))) goto arguments;
+    if (!profile || strcmp(profile, "imx6ul-1024x600") || (app && strcmp(app,"coffee-demo") && strcmp(app,"media-scene"))) goto arguments;
     evidence.coffee = app != NULL; evidence.media.root = media_root;
+    evidence.media.scene = app && !strcmp(app,"media-scene");
     if (!open_report(output, &report, &created)) {
         fprintf(stderr, "TOUCH_REPORT_OPEN_FAILED errno=%d\n", errno); return 1;
     }
@@ -234,9 +236,9 @@ int input_cli(int argc, char **argv) {
     if (!input_live_discover(&input, input_dir, &config)) { error = input.error; goto cleanup; }
     if (!fbdev_open(&display, fbpath, 1)) { error = display.error; goto cleanup; }
     if (!host_monotonic_ns(&now)) { error = "HOST_CLOCK_FAILED"; goto cleanup; }
-    if (!host_open(&host, profile, root, app ? "coffee.js" : "touch-scene.js", app ? "labels.atlas" : "display-font.bin", now) ||
+    if (!host_open(&host, profile, root, app ? (evidence.media.scene?"media-scene.js":"coffee.js") : "touch-scene.js", app ? "labels.atlas" : "display-font.bin", now) ||
         !input_bridge_init(&bridge, runtime_hit, NULL)) { error = "TOUCH_BOOT_FAILED"; goto cleanup; }
-    if(app && !media_builtin(root)) {error="COFFEE_BUILTIN_ASSETS_FAILED";goto cleanup;}
+    if(app && !(evidence.media.scene?media_scene_builtin(root):media_builtin(root))) {error="COFFEE_BUILTIN_ASSETS_FAILED";goto cleanup;}
     if(app)(void)media_store_poll(&evidence.media);
     if (!host_render(&host, &frame) ||
         !(app ? host_present_latest(&host, &frame, 1, fbdev_present, &display) :
@@ -301,12 +303,12 @@ cleanup:
     if (created && fclose(report)) report_ok = 0;
     if (!report_ok) { fprintf(stderr, "TOUCH_REPORT_WRITE_FAILED\n"); return 1; }
     fprintf(stderr, "%s events=%llu input_frames=%llu guest_turns=%llu presents=%llu targets=%u reconnects=%llu physical_touch_validated=false\n",
-            ok ? (app?"COFFEE_DEMO_OK":"TOUCH_TEST_OK") : (error ? error : "TOUCH_TEST_FAILED"),
+            ok ? (evidence.media.scene?"MEDIA_SCENE_OK":app?"COFFEE_DEMO_OK":"TOUCH_TEST_OK") : (error ? error : "TOUCH_TEST_FAILED"),
             (unsigned long long)input.events, (unsigned long long)input.frames,
             (unsigned long long)host.turns, (unsigned long long)display.presents,
             evidence.target_mask, (unsigned long long)input.reconnects);
     return ok ? 0 : (interrupted ? 128 + interrupted : 1);
 arguments:
-    fprintf(stderr, "TOUCH_ARGUMENT_INVALID: --touch-test --profile imx6ul-1024x600 [--fbdev PATH] [--input-dir DIR] [--asset-root DIR] [--ticks 1..3600] [--output NEW.json] [--trace-output NEW.csv] [--app coffee-demo --media-store DIR]\n");
+    fprintf(stderr, "TOUCH_ARGUMENT_INVALID: --touch-test --profile imx6ul-1024x600 [--fbdev PATH] [--input-dir DIR] [--asset-root DIR] [--ticks 1..3600] [--output NEW.json] [--trace-output NEW.csv] [--app coffee-demo|media-scene --media-store DIR]\n");
     return 2;
 }
