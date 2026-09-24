@@ -11,16 +11,22 @@ typedef struct {
     uint64_t handler_no_flush;
     uint64_t no_timer_ready;
     uint64_t immediate_retries;
+    uint64_t handler_cpu_ns;
     uint64_t flush_calls;
     uint64_t flush_pixels;
     uint64_t flush_bytes;
     uint64_t full_screen_flushes;
+    uint64_t flush_cpu_ns;
     uint64_t bridge_create_calls;
     uint64_t bridge_update_calls;
     uint64_t bridge_duplicate_updates;
+    uint64_t bridge_update_cpu_ns;
 } PocketEngineMetrics;
 
 PocketLvglEngine *pocket_engine_create(uint32_t width, uint32_t height, uint32_t partial_rows);
+/* Explicit physical-display path. Preflights and locks an exact 32-bpp RGB framebuffer
+ * before LVGL opens it. This function can modify the visible framebuffer. */
+PocketLvglEngine *pocket_engine_create_fbdev(uint32_t width, uint32_t height, const char *path);
 void pocket_engine_destroy(PocketLvglEngine *engine);
 
 PocketNode pocket_engine_box(PocketLvglEngine *engine, int32_t x, int32_t y, int32_t width, int32_t height,
@@ -41,5 +47,6 @@ void pocket_engine_reset_metrics(PocketLvglEngine *engine);
 PocketEngineMetrics pocket_engine_metrics(const PocketLvglEngine *engine);
 uint32_t pocket_engine_width(const PocketLvglEngine *engine);
 uint32_t pocket_engine_height(const PocketLvglEngine *engine);
+int pocket_engine_framebuffer_active(const PocketLvglEngine *engine);
 
 #endif

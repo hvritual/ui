@@ -84,3 +84,38 @@ same input replay and same physical device measurements against #25.
 If LVGL passes functionally but idle CPU is materially worse than the current
 renderer, #33 remains failed or `Continue Investigation` until the source of
 the excess CPU is isolated (timer loop, render, flush, input poll or JS bridge).
+
+
+## Physical framebuffer slice
+
+The CI/headless flush callback intentionally does no framebuffer I/O. It proves scheduler/render invalidation behavior only.
+
+For physical evidence, the board package enables LVGL 9.6's Linux fbdev driver with:
+- partial rendering;
+- 40-row XRGB8888 buffer;
+- mmap framebuffer writes;
+- no LVGL VSync wait in this first comparison;
+- an instrumentation wrapper around LVGL's real flush callback.
+
+The executable performs a strict preflight before allowing writes: character-device major 29, exact expected resolution, 32-bpp packed true-color, RGB offsets 16/8/0, zero viewport offset and sufficient stride/memory. It holds an exclusive `flock` while running. This deliberately matches the already observed 1024×600 board and fails closed on unknown framebuffer layouts.
+
+The physical report separates:
+- total process CPU;
+- LVGL timer/render handler CPU;
+- real fbdev flush/copy CPU;
+- bridge update CPU;
+- flush pixels/bytes and wakeups.
+
+The static ARM binary avoids a dependency on the board's reported uClibc loader; this is a diagnostic portability technique, **not** proof that a production dynamically-linked Runtime is ABI-compatible.
+
+Build:
+```sh
+make package-engine-spike-board
+```
+
+Board:
+```sh
+./run-lvgl-fbdev-spike.sh I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER /dev/fb0 1024x600 10000
+```
+
+The existing display owner must be stopped first. The test changes the visible framebuffer and does not restore the previous UI.

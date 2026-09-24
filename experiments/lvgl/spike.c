@@ -6,7 +6,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <time.h>
+
+#define FB_WRITE_TOKEN "I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER"
 
 static uint64_t ns_now(clockid_t clock_id) {
     struct timespec ts;
@@ -23,19 +26,19 @@ static int sleep_ms(uint32_t ms) {
 }
 
 static int write_report(const char *path, const char *scenario, uint32_t width, uint32_t height,
-                        uint32_t duration_ms, uint64_t wall_ns, uint64_t cpu_ns,
+                        uint32_t duration_ms, uint64_t wall_ns, uint64_t cpu_ns_total,
                         uint64_t wakeups, uint64_t slept_ms, uint64_t progress_updates,
-                        PocketEngineMetrics m) {
+                        int framebuffer_active, long max_rss_kib, PocketEngineMetrics m) {
     FILE *f = fopen(path, "wb");
     if(!f) return 0;
     const double wall_s = wall_ns ? (double)wall_ns / 1000000000.0 : 0.0;
-    const double cpu = wall_ns ? (double)cpu_ns * 100.0 / (double)wall_ns : 0.0;
+    const double cpu = wall_ns ? (double)cpu_ns_total * 100.0 / (double)wall_ns : 0.0;
     const double wakeup_hz = wall_s > 0.0 ? (double)wakeups / wall_s : 0.0;
     const double retry_ratio = m.handler_calls ? (double)m.immediate_retries / (double)m.handler_calls : 0.0;
     const double no_flush_ratio = m.handler_calls ? (double)m.handler_no_flush / (double)m.handler_calls : 0.0;
     fprintf(f,
         "{\n"
-        "  \"schema_version\": 1,\n"
+        "  \"schema_version\": 2,\n"
         "  \"engine\": \"lvgl\",\n"
         "  \"scenario\": \"%s\",\n"
         "  \"profile\": {\"width\": %u, \"height\": %u, \"color_format\": \"XRGB8888\", \"render_mode\": \"partial\"},\n"
@@ -43,12 +46,14 @@ static int write_report(const char *path, const char *scenario, uint32_t width, 
         "  \"wall_ns\": %" PRIu64 ",\n"
         "  \"cpu_ns\": %" PRIu64 ",\n"
         "  \"cpu_percent_one_core\": %.6f,\n"
+        "  \"max_rss_kib\": %ld,\n"
         "  \"wakeups\": %" PRIu64 ",\n"
         "  \"wakeup_hz\": %.6f,\n"
         "  \"slept_ms\": %" PRIu64 ",\n"
         "  \"handler_calls\": %" PRIu64 ",\n"
         "  \"handler_no_flush\": %" PRIu64 ",\n"
         "  \"handler_no_flush_ratio\": %.6f,\n"
+        "  \"handler_cpu_ns\": %" PRIu64 ",\n"
         "  \"no_timer_ready\": %" PRIu64 ",\n"
         "  \"immediate_retries\": %" PRIu64 ",\n"
         "  \"immediate_retry_ratio\": %.6f,\n"
@@ -56,40 +61,50 @@ static int write_report(const char *path, const char *scenario, uint32_t width, 
         "  \"flush_pixels\": %" PRIu64 ",\n"
         "  \"flush_bytes\": %" PRIu64 ",\n"
         "  \"full_screen_flushes\": %" PRIu64 ",\n"
+        "  \"flush_cpu_ns\": %" PRIu64 ",\n"
         "  \"bridge_create_calls\": %" PRIu64 ",\n"
         "  \"bridge_update_calls\": %" PRIu64 ",\n"
         "  \"bridge_duplicate_updates\": %" PRIu64 ",\n"
+        "  \"bridge_update_cpu_ns\": %" PRIu64 ",\n"
         "  \"progress_updates\": %" PRIu64 ",\n"
+        "  \"framebuffer_active\": %s,\n"
         "  \"warmup_excluded\": true,\n"
         "  \"hardware_performance_authority\": false\n"
         "}\n",
-        scenario, width, height, duration_ms, wall_ns, cpu_ns, cpu, wakeups, wakeup_hz, slept_ms,
-        m.handler_calls, m.handler_no_flush, no_flush_ratio, m.no_timer_ready, m.immediate_retries, retry_ratio,
-        m.flush_calls, m.flush_pixels, m.flush_bytes, m.full_screen_flushes,
-        m.bridge_create_calls, m.bridge_update_calls, m.bridge_duplicate_updates, progress_updates);
+        scenario, width, height, duration_ms, wall_ns, cpu_ns_total, cpu, max_rss_kib,
+        wakeups, wakeup_hz, slept_ms, m.handler_calls, m.handler_no_flush, no_flush_ratio,
+        m.handler_cpu_ns, m.no_timer_ready, m.immediate_retries, retry_ratio,
+        m.flush_calls, m.flush_pixels, m.flush_bytes, m.full_screen_flushes, m.flush_cpu_ns,
+        m.bridge_create_calls, m.bridge_update_calls, m.bridge_duplicate_updates, m.bridge_update_cpu_ns,
+        progress_updates, framebuffer_active ? "true" : "false");
     return fclose(f) == 0;
 }
 
 int main(int argc, char **argv) {
     uint32_t width = 1024, height = 600, duration_ms = 1500;
-    const char *scenario = "idle", *output = NULL;
+    const char *scenario = "idle", *output = NULL, *fbdev = NULL, *fb_token = NULL;
     for(int i = 1; i < argc; ++i) {
         if(!strcmp(argv[i], "--width") && i + 1 < argc) width = (uint32_t)strtoul(argv[++i], NULL, 10);
         else if(!strcmp(argv[i], "--height") && i + 1 < argc) height = (uint32_t)strtoul(argv[++i], NULL, 10);
         else if(!strcmp(argv[i], "--duration-ms") && i + 1 < argc) duration_ms = (uint32_t)strtoul(argv[++i], NULL, 10);
         else if(!strcmp(argv[i], "--scenario") && i + 1 < argc) scenario = argv[++i];
         else if(!strcmp(argv[i], "--output") && i + 1 < argc) output = argv[++i];
+        else if(!strcmp(argv[i], "--fbdev") && i + 1 < argc) fbdev = argv[++i];
+        else if(!strcmp(argv[i], "--allow-framebuffer-write") && i + 1 < argc) fb_token = argv[++i];
         else { fprintf(stderr, "SPIKE_ARGUMENT_INVALID\n"); return 2; }
     }
-    if(width != 1024 || (height != 600 && height != 800) || duration_ms < 500 || duration_ms > 10000 ||
-       (strcmp(scenario, "idle") && strcmp(scenario, "progress")) || !output) {
+    if(width != 1024 || (height != 600 && height != 800) || duration_ms < 500 || duration_ms > 60000 ||
+       (strcmp(scenario, "idle") && strcmp(scenario, "progress")) || !output ||
+       (fbdev && (!fb_token || strcmp(fb_token, FB_WRITE_TOKEN)))) {
         fprintf(stderr, "SPIKE_ARGUMENT_INVALID\n"); return 2;
     }
 
-    PocketLvglEngine *engine = pocket_engine_create(width, height, 40);
+    PocketLvglEngine *engine = fbdev ?
+        pocket_engine_create_fbdev(width, height, fbdev) :
+        pocket_engine_create(width, height, 40);
     PocketCoffeeWorkload workload;
     if(!engine || !pocket_coffee_build(engine, &workload)) {
-        fprintf(stderr, "SPIKE_INIT_FAILED\n");
+        fprintf(stderr, fbdev ? "SPIKE_FBDEV_INIT_FAILED\n" : "SPIKE_INIT_FAILED\n");
         pocket_engine_destroy(engine);
         return 1;
     }
@@ -144,13 +159,19 @@ int main(int argc, char **argv) {
 
     const uint64_t cpu_end = ns_now(CLOCK_PROCESS_CPUTIME_ID);
     const uint64_t wall_end = ns_now(CLOCK_MONOTONIC);
+    struct rusage usage;
+    memset(&usage, 0, sizeof(usage));
+    (void)getrusage(RUSAGE_SELF, &usage);
     const PocketEngineMetrics metrics = pocket_engine_metrics(engine);
+    const int fb_active = pocket_engine_framebuffer_active(engine);
     const int ok = write_report(output, scenario, width, height, duration_ms,
                                 wall_end - wall_start, cpu_end - cpu_start,
-                                wakeups, slept, progress_updates, metrics);
-    printf("LVGL_SPIKE_OK scenario=%s width=%u height=%u handlers=%" PRIu64
-           " flushes=%" PRIu64 " pixels=%" PRIu64 "\n",
-           scenario, width, height, metrics.handler_calls, metrics.flush_calls, metrics.flush_pixels);
+                                wakeups, slept, progress_updates, fb_active,
+                                usage.ru_maxrss, metrics);
+    printf("LVGL_SPIKE_OK scenario=%s width=%u height=%u fbdev=%d cpu_ns=%" PRIu64
+           " handlers=%" PRIu64 " flushes=%" PRIu64 " pixels=%" PRIu64 "\n",
+           scenario, width, height, fb_active, cpu_end - cpu_start,
+           metrics.handler_calls, metrics.flush_calls, metrics.flush_pixels);
     pocket_engine_destroy(engine);
     return ok ? 0 : 1;
 }

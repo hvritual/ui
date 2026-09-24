@@ -122,7 +122,7 @@ verify-video:
 package-video:
 	python3 scripts/video.py package
 
-.PHONY: check-engine-spike fetch-engine-spike build-engine-spike-native build-engine-spike-arm test-engine-spike-native test-engine-spike-arm test-engine-spike verify-engine-spike
+.PHONY: check-engine-spike fetch-engine-spike build-engine-spike-native build-engine-spike-arm build-engine-spike-arm-static test-engine-spike-native test-engine-spike-arm test-engine-spike verify-engine-spike package-engine-spike-board
 check-engine-spike:
 	python3 scripts/engine_spike.py check
 fetch-engine-spike:
@@ -131,6 +131,8 @@ build-engine-spike-native:
 	python3 scripts/engine_spike.py build native
 build-engine-spike-arm:
 	python3 scripts/engine_spike.py build arm
+build-engine-spike-arm-static:
+	python3 scripts/engine_spike.py build arm-static
 test-engine-spike-native: build-engine-spike-native
 	python3 scripts/engine_spike.py test native
 test-engine-spike-arm: build-engine-spike-arm
@@ -138,3 +140,5 @@ test-engine-spike-arm: build-engine-spike-arm
 test-engine-spike: test-engine-spike-native test-engine-spike-arm
 verify-engine-spike:
 	python3 scripts/engine_spike.py verify
+package-engine-spike-board:
+	python3 scripts/engine_spike.py package-board
