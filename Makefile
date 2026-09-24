@@ -98,3 +98,25 @@ verify-scene:
 	python3 scripts/scene.py verify
 package-scene:
 	python3 scripts/scene.py package
+
+.PHONY: build-video-deps build-video test-video-native test-video-arm verify-video package-video
+build-video-deps:
+	python3 scripts/video_deps.py native
+	python3 scripts/video_deps.py arm
+build-video:
+	python3 scripts/video.py fixtures
+	python3 scripts/video.py build native
+	python3 scripts/video.py build arm
+	python3 scripts/video_evidence.py build
+test-video-native:
+	python3 scripts/video.py test native
+	python3 scripts/video_evidence.py tested native
+test-video-arm:
+	python3 scripts/video.py test arm
+	python3 scripts/video_evidence.py tested arm
+verify-video:
+	python3 scripts/video_evidence.py verify
+	python3 scripts/video.py verify
+	python3 scripts/video_evidence.py seal
+package-video:
+	python3 scripts/video.py package

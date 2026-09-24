@@ -45,7 +45,6 @@ func regular(path string,max int64)([]byte,error){
  st,e:=os.Lstat(path);if e!=nil{return nil,e};if !st.Mode().IsRegular()||st.Size()>max{return nil,errors.New("not a bounded regular file")}
  f,e:=os.Open(path);if e!=nil{return nil,e};defer f.Close();now,e:=f.Stat();if e!=nil{return nil,e};if !os.SameFile(st,now){return nil,errors.New("source changed while opening")};return limited(f,max)
 }
-// Reject duplicate keys rather than letting later values silently replace earlier ones.
 func uniqueJSON(raw []byte)error{
  d:=json.NewDecoder(bytes.NewReader(raw));var walk func()error
  walk=func()error{t,e:=d.Token();if e!=nil{return e};switch t{
@@ -74,13 +73,11 @@ func Validate(raw []byte,key ed25519.PublicKey)(*Validated,error){
   if (format!="png"&&format!="jpeg")||cfg.Width<1||cfg.Height<1||cfg.Width>2048||cfg.Height>2048||cfg.Width*cfg.Height>1<<20{return nil,errors.New("unsupported image or decoded pixel budget")}
   if (format=="png")!=strings.HasSuffix(entry.File,".png"){return nil,errors.New("format/extension mismatch")}
   img,_,e:=image.Decode(bytes.NewReader(encoded));if e!=nil{return nil,e}
-  // Prepare target-size antialiased, straight-alpha pixels outside the UI.
   resized := fitImage(img, Width, Height)
   copy(pixels[i*Width*Height*4:(i+1)*Width*Height*4], resized.Pix)
  }
  header:=make([]byte,64);copy(header,[]byte("PUIIMG1\x00"));fields:=[]uint32{1,uint32(len(Slots)),Width,Height,uint32(len(pixels)),crc32.ChecksumIEEE(pixels)};for i,v:=range fields{binary.LittleEndian.PutUint32(header[8+i*4:],v)};mh:=sha256.Sum256(manifest);copy(header[32:],mh[:]);return &Validated{m,append(header,pixels...),hash(raw)},nil
 }
-// TLS trust is not bypassed. The configured URL is never logged with credentials.
 func download(address string,client *http.Client)([]byte,error){
  u,e:=url.Parse(address);if e!=nil||u.Scheme!="https"||u.Hostname()==""||u.User!=nil||u.Fragment!=""{return nil,errors.New("HTTPS URL without credentials required")}
  req,e:=http.NewRequest("GET",address,nil);if e!=nil{return nil,e};req.Header.Set("Accept-Encoding","identity");resp,e:=client.Do(req);if e!=nil{return nil,errors.New("HTTPS transfer failed")};defer resp.Body.Close()
@@ -102,13 +99,11 @@ func activate(dir string,v *Validated,raw []byte)error{
 }
 func activateFiles(dir,id string,packet,receipt,raw []byte)error{
  current,_,e:=state(dir);if e!=nil{return e}
- // A shared installer must never mix app namespaces in one local store.
  if current!=""{
   old,e:=regular(filepath.Join(dir,current+".json"),SceneMetadata);if e!=nil{return e}
   var before,after struct{App string `json:"app"`}
   if json.Unmarshal(old,&before)!=nil||json.Unmarshal(receipt,&after)!=nil||before.App==""||before.App!=after.App{return errors.New("store application mismatch")}
  }
- // Originals are retained for authenticated rollback. Store and parents are trusted local state.
  if e=atomicWrite(dir,id+".bundle",raw);e!=nil{return e};if e=atomicWrite(dir,id+".rgba",packet);e!=nil{return e};if e=atomicWrite(dir,id+".json",receipt);e!=nil{return e}
  if current==id{return nil};if current==""{current="-"};if e=atomicWrite(dir,"current",[]byte(id+"\n"+current+"\n"));e!=nil{return e}
  entries,e:=os.ReadDir(dir);if e!=nil{return e};for _,f:=range entries{stem:=strings.TrimSuffix(f.Name(),filepath.Ext(f.Name()));ext:=filepath.Ext(f.Name());if hexID.MatchString(stem)&&stem!=id&&stem!=current&&(ext==".rgba"||ext==".bundle"||ext==".json"){if e=os.Remove(filepath.Join(dir,f.Name()));e!=nil{return e}}};return syncDir(dir)
@@ -139,6 +134,7 @@ func main(){debug.SetMemoryLimit(64<<20);if e:=command(os.Args[1:]);e!=nil{fmt.F
 func command(a []string)error{
  if len(a)==0{return errors.New("usage: mediactl keygen PREFIX | pack IMAGE_DIR VERSION PRIVATE_KEY OUTPUT | install STORE PUBLIC_KEY FILE | fetch STORE PUBLIC_KEY HTTPS_URL | rollback STORE PUBLIC_KEY | status STORE")}
  if strings.HasPrefix(a[0],"scene-"){return sceneCommand(a)}
+ if strings.HasPrefix(a[0],"video-"){return videoCommand(a)}
  switch a[0]{
  case "keygen":if len(a)!=2{break};return keygen(a[1])
  case "fixture":if len(a)!=3{break};v:=0;if a[2]=="b"{v=1};return fixture(a[1],v)
