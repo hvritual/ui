@@ -9,10 +9,12 @@
   "targets": {
     "native": {
       "cc": "gcc",
+      "cxx": "g++",
       "runner": []
     },
     "arm": {
       "cc": "arm-linux-gnueabihf-gcc",
+      "cxx": "arm-linux-gnueabihf-g++",
       "c_flags": ["-mcpu=cortex-a7", "-mfpu=neon-vfpv4", "-mfloat-abi=hard"],
       "runner": ["qemu-arm", "-cpu", "cortex-a7", "-L", "/usr/arm-linux-gnueabihf"]
     }

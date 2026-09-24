@@ -16,10 +16,15 @@ SRC = OUT / "source" / "lvgl"
 WORKLOAD = ROOT / "experiments" / "lvgl" / "workload.c"
 
 def run(args, cwd=ROOT, env=None, timeout=600):
-    print("+", " ".join(map(str, args)))
-    return subprocess.run(list(map(str, args)), cwd=cwd, env=env, check=True,
-                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                          text=True, timeout=timeout).stdout
+    print("+", " ".join(map(str, args)), flush=True)
+    result = subprocess.run(list(map(str, args)), cwd=cwd, env=env, check=False,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, timeout=timeout)
+    if result.stdout:
+        print(result.stdout, end="" if result.stdout.endswith("\n") else "\n", flush=True)
+    if result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, result.args, output=result.stdout)
+    return result.stdout
 
 def load(path):
     return json.loads(Path(path).read_text())
@@ -77,7 +82,9 @@ def build(mode):
           "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"]
     if mode=="arm":
         args += [f"-DCMAKE_C_COMPILER={target['cc']}",
-                 "-DCMAKE_C_FLAGS="+" ".join(target["c_flags"])]
+                 f"-DCMAKE_CXX_COMPILER={target['cxx']}",
+                 "-DCMAKE_C_FLAGS="+" ".join(target["c_flags"]),
+                 "-DCMAKE_CXX_FLAGS="+" ".join(target["c_flags"])]
     run(args)
     run(["cmake","--build",b,"--target","pocket-lvgl-spike","-j2"])
     binary=b/"pocket-lvgl-spike"
