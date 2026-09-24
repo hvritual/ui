@@ -8,3 +8,5 @@
 - Rust target support reference: https://doc.rust-lang.org/rustc/platform-support.html . Target support does not certify the libc/kernel of the user's board.
 
 No fonts, drink images or other third-party UI assets are included by P0. Future asset licensing is tracked in P4/P8.
+
+- F0 optional UI-engine spike: LVGL `v9.6.0@80ca777e37a2b176770726a02e07a6fb79ef0b39`, https://github.com/lvgl/lvgl/tree/80ca777e37a2b176770726a02e07a6fb79ef0b39 . MIT-licensed. It is fetched only for #33 feasibility testing and remains behind a private adapter; no LVGL API is part of the Pocket public contract.
