@@ -15,6 +15,7 @@
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/cpu.h>
 #include <libavutil/mem.h>
 #include <libswscale/swscale.h>
 
@@ -121,6 +122,10 @@ static int decode(Decoder *d) {
  d->codec->max_pixels=VIDEO_WIDTH_MAX*VIDEO_HEIGHT_MAX;d->codec->thread_count=1;d->codec->thread_type=0;
  d->codec->err_recognition=AV_EF_EXPLODE|AV_EF_BITSTREAM|AV_EF_BUFFER;
  if(avcodec_open2(d->codec,codec,NULL)<0){d->error="codec-open";return 0;}
+ /* Keep codec DSP selected at open time, but make YUV->BGRA conversion deterministic
+    across native/ARM. swscale otherwise selects architecture-specific SIMD paths
+    whose rounding is not pixel-identical even with SWS_BITEXACT. */
+ av_force_cpu_flags(0);
  d->frame=av_frame_alloc();d->packet=av_packet_alloc();d->pixels=av_malloc(VIDEO_FRAME_BYTES);
  if(!d->frame||!d->packet||!d->pixels){d->error="allocation";return 0;}
  int r;
