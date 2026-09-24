@@ -92,7 +92,7 @@ static int frames(Decoder *d) {
 }
 static int decode(Decoder *d) {
  struct stat st;
- if(fstat(d->fd,&st)||!S_ISREG(st.st_mode)||st.st_size<=0||st.st_size>VIDEO_FILE_BYTES||lseek(d->fd,0,SEEK_SET)<0){d->error="input-file";return 0;}
+ if(fstat(d->fd,&st)||!S_ISREG(st.st_mode)||st.st_size<=0||(uint64_t)st.st_size>VIDEO_FILE_BYTES||lseek(d->fd,0,SEEK_SET)<0){d->error="input-file";return 0;}
  d->format=avformat_alloc_context();if(!d->format){d->error="allocation";return 0;}
  uint8_t *buffer=av_malloc(32768);if(!buffer){d->error="allocation";return 0;}
  d->io=avio_alloc_context(buffer,32768,0,d,read_file,NULL,seek_file);
