@@ -1,0 +1,9 @@
+# Standby video measurement boundaries
+
+The video CSV records `wake_event_ns` and `wake_present_ns` on CLOCK_MONOTONIC. The second timestamp is taken after the restored Coffee frame is submitted by the CPU. JSON reports `wake_cpu_submit_samples` and `wake_cpu_submit_max_us`. Deduplicate timestamp pairs when deriving distributions: subsequent rows retain the last pair. This is not touch-to-visible LCD latency. A priority signal without touch is not a touch latency sample. The production CLI tests assert both the timestamp-derived maximum and this distinction.
+
+`decoded` counts complete decoder frames received. `shown` counts frames accepted into the reusable native surface; several overdue eligible frames can be consumed during one bounded drain, so not every accepted surface is presented. `video_presents` counts actual native video/poster framebuffer submissions. `dropped` counts explicitly late frames, not every possible scanout or coalescing loss. Use CSV PTS/session/time and submissions together; do not divide `shown` by total diagnostic wall time and claim physical FPS.
+
+UI and decoder CPU times are distinct. Decoder usage accumulates when workers are reaped, so interim snapshots omit the still-running worker. Final cleanup supplies completed worker usage. UI/decoder peak RSS values are separate process lifetime maxima, not simultaneous total memory. The two display-side buffers are not the decoder's total memory: codec reference pictures, packet buffers and the full-screen composition buffer also exist.
+
+Unreaped workers after bounded cleanup force diagnostic failure with `VIDEO_CHILD_UNREAPED`. There is no claim that SIGKILL can terminate an uninterruptible kernel wait. Other services, media installation CPU, screen-visible latency, sustained board FPS and long-duration stability still need physical evidence.

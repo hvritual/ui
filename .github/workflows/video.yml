@@ -1,0 +1,98 @@
+name: Native Video Backend
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Prepare pinned modern static ARM emulator for the Go runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user-static=1:8.2.2+ds-0ubuntu1.18
+          mkdir emulator
+          cp /usr/bin/qemu-arm-static emulator/qemu-arm
+          echo '47a63bcbdf3030cf42230a0521dae38ff9d62ba1268d5cafc7d8ccf7da7c761c  emulator/qemu-arm' | sha256sum -c -
+          qemu-arm-static --version | tee emulator/version.txt
+          dpkg-query -W qemu-user-static | tee emulator/package.txt
+          readelf -l emulator/qemu-arm > emulator/elf.txt
+          ! grep -q INTERP emulator/elf.txt
+          cp /usr/share/doc/qemu-user-static/copyright emulator/COPYRIGHT
+          (cd emulator && sha256sum qemu-arm version.txt package.txt elf.txt COPYRIGHT > SHA256SUMS)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: video-emulator-${{ github.run_id }}
+          path: emulator/
+          retention-days: 30
+  video:
+    needs: emulator
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: video-emulator-${{ github.run_id }}
+          path: out/coffee/emulator
+      - name: Verify emulator without changing the ARM compiler baseline
+        run: |
+          (cd out/coffee/emulator && sha256sum -c SHA256SUMS)
+          chmod +x out/coffee/emulator/qemu-arm
+          echo "$GITHUB_WORKSPACE/out/coffee/emulator" >> "$GITHUB_PATH"
+      - name: Install pinned build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user patch ffmpeg
+          rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target armv7-unknown-linux-gnueabihf
+          rustup toolchain install nightly-2026-07-02 --profile minimal --component rust-src --target armv7-unknown-linux-gnueabihf
+          curl -fsSL --max-time 180 https://go.dev/dl/go1.26.8.linux-amd64.tar.gz -o /tmp/go.tar.gz
+          echo 'd0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b  /tmp/go.tar.gz' | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/coffee-go"
+          tar xzf /tmp/go.tar.gz -C "$RUNNER_TEMP/coffee-go"
+          echo "$RUNNER_TEMP/coffee-go/go/bin" >> "$GITHUB_PATH"
+          python3 -m pip install Pillow==11.3.0 fonttools==4.59.0 numpy==2.2.6
+          qemu-arm --version
+      - name: Exact runtime and native ARM builds
+        run: make check check-targets fetch-runtime build-demo test-runtime test-runtime-arm
+      - name: Pinned minimal decoder libraries
+        run: make build-video-deps
+      - name: Build actual video binaries and signed fixtures
+        run: make build-video
+      - name: Native worker Core and production CLI
+        run: make test-video-native
+      - name: Cortex A7 actual decoder Core and signed media
+        run: make test-video-arm
+      - name: Exact evidence and distributable device package
+        run: make verify-video package-video
+      - name: Preserve source and evidence checksums
+        if: always()
+        run: |
+          mkdir -p out/video/review
+          git archive --format=tar HEAD > out/video/review/source.tar
+          python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          root=Path('out/video')
+          files=sorted(p for p in root.rglob('*') if p.is_file() and '/deps/' not in str(p) and '/decoder-compliance/' not in str(p) and '/package/' not in str(p) and p.name!='SHA256SUMS')
+          (root/'SHA256SUMS').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+str(p.relative_to(root))+'\n' for p in files))
+          PY
+      - name: Upload video software evidence no source font or private seed
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: standby-video-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/video/
+            !out/video/deps/
+            !out/video/decoder-compliance/
+            !out/video/package/
+          if-no-files-found: error
+          retention-days: 30
