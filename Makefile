@@ -110,6 +110,7 @@ build-video:
 	python3 scripts/video_evidence.py build
 test-video-native:
 	python3 scripts/video.py test native
+	python3 scripts/video_playlist_test.py
 	python3 scripts/video_evidence.py tested native
 test-video-arm:
 	python3 scripts/video.py test arm
