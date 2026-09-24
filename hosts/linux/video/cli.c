@@ -22,14 +22,14 @@ static void signal_request(int sig) {
  else if(sig==SIGUSR2)pause_request=1;
  else stopped=sig;
 }
-typedef struct { StandbyVideo *player;InputBridge *bridge;uint64_t now_ms,consumed,wake_gestures; } InputSink;
+typedef struct { StandbyVideo *player;InputBridge *bridge;uint64_t now_ms,consumed,wake_gestures,wake_event_ns,wake_present_ns,wake_samples,max_wake_us; int wake_pending; } InputSink;
 static int hit(void *unused,float x,float y) { (void)unused;return pocket_runtime_hit_test_bounds(x,y); }
 static int ingest(void *context,const InputFrame *f,uint64_t event_ns) {
  InputSink *s=context;VideoMode before=s->player->mode;
  if(!standby_input(s->player,f,s->now_ms)) {
   s->consumed++;
   if(before!=VIDEO_HELD_EXIT&&s->player->mode==VIDEO_HELD_EXIT) {
-   s->wake_gestures++;return input_bridge_cancel_all(s->bridge,event_ns);
+   s->wake_gestures++;s->wake_event_ns=event_ns;s->wake_present_ns=0;s->wake_pending=1;return input_bridge_cancel_all(s->bridge,event_ns);
   }
   return 1;
  }
@@ -51,7 +51,7 @@ static FILE *new_report(const char *path) {
 int video_cli(int argc,char **argv) {
  const char *root=NULL,*store=NULL,*decoder=NULL,*json_path=NULL,*csv_path=NULL,*fb="/dev/fb0",*input_dir="/dev/input",*error=NULL;
  unsigned seconds=60,seen=0;int ok=0,signals=0;uint64_t now=0,begin=0,deadline=0,retry=0,poll_at=0,start_cpu=0,compose_us=0,present_us=0,video_presents=0;
- LinuxHost host={0};FbDevice display={0};InputLive input={0};InputBridge bridge={0};StandbyVideo player={0};InputSink sink={&player,&bridge,0,0,0};
+ LinuxHost host={0};FbDevice display={0};InputLive input={0};InputBridge bridge={0};StandbyVideo player={0};InputSink sink={.player=&player,.bridge=&bridge};
  uint8_t *canvas=NULL;FILE *report=NULL,*trace=NULL;long peak=0;char generation[65]={0};
  struct sigaction sa={0},previous[4];const int sigs[4]={SIGINT,SIGTERM,SIGUSR1,SIGUSR2};
  for(int i=1;i<argc;i+=2) {
@@ -71,7 +71,7 @@ int video_cli(int argc,char **argv) {
  if(!root||!store||!decoder||!json_path||!csv_path)goto args;
  report=new_report(json_path);trace=new_report(csv_path);
  if(!report||!trace){error="VIDEO_REPORT_OPEN";goto cleanup;}
- fputs("wall_ms,mode,session,item,decoded,shown,dropped,pts_us,compose_us,present_us,input_events,wake_gestures,ui_cpu_us,decoder_cpu_us\n",trace);
+ fputs("wall_ms,mode,session,item,decoded,shown,dropped,pts_us,compose_us,present_us,input_events,wake_gestures,ui_cpu_us,decoder_cpu_us,wake_event_ns,wake_present_ns\n",trace);
  if(!host_monotonic_ns(&now)){error="VIDEO_CLOCK";goto cleanup;}
  begin=now;deadline=begin+(uint64_t)seconds*1000000000;
  if(!standby_init(&player,decoder,now/1000000)){error="VIDEO_INIT";goto cleanup;}
@@ -120,7 +120,7 @@ int video_cli(int argc,char **argv) {
            pocket_runtime_resource_pack(NULL,0)==1;
   if(ms>=poll_at){int r=standby_reload(&player,store,ms,safe);if(r<0)fprintf(stderr,"VIDEO_PLAN_REJECTED old_retained=true\n");poll_at=ms+1000;}
   (void)standby_step(&player,ms,safe);
-  compose_us=present_us=0;int presented=0;
+  compose_us=present_us=0;int presented=0,wake_restored=0;
   if(player.surface.valid&&(player.mode==VIDEO_PLAYING||player.mode==VIDEO_FALLBACK||player.mode==VIDEO_STARTING)) {
    if(player.surface.dirty) {
     uint64_t a,b,c;
@@ -135,16 +135,27 @@ int video_cli(int argc,char **argv) {
   } else if(player.restore_ui||player.mode==VIDEO_BUSINESS||player.mode==VIDEO_HELD_EXIT) {
    if(player.restore_ui||(due>0&&host.turns%2==0)) {
     if(!host_render(&host,&home)||!host_present_latest(&host,&home,player.restore_ui,fbdev_present,&display)){error="VIDEO_HOME_RESTORE";break;}
-    if(player.restore_ui){fprintf(stderr,"VIDEO_WAKE_UI_RESTORED consumed_until_all_up=true\n");player.restore_ui=0;}
+    if(player.restore_ui){
+     if(sink.wake_pending){
+      if(!host_monotonic_ns(&sink.wake_present_ns)){error="VIDEO_WAKE_CLOCK";break;}
+      if(sink.wake_event_ns&&sink.wake_present_ns>=sink.wake_event_ns){
+       uint64_t elapsed=(sink.wake_present_ns-sink.wake_event_ns)/1000;
+       if(elapsed>sink.max_wake_us)sink.max_wake_us=elapsed;
+       sink.wake_samples++;
+      }
+      sink.wake_pending=0;wake_restored=1;
+     }
+     fprintf(stderr,"VIDEO_WAKE_UI_RESTORED consumed_until_all_up=true\n");player.restore_ui=0;
+    }
    }
   }
-  if(presented||(due>0&&host.turns%60==0)) {
+  if(presented||wake_restored||(due>0&&host.turns%60==0)) {
    uint64_t used=cpu_us(&peak);
-   fprintf(trace,"%llu,%u,%llu,%u,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n",
+   fprintf(trace,"%llu,%u,%llu,%u,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n",
     (unsigned long long)((now-begin)/1000000),(unsigned)player.mode,(unsigned long long)player.session,player.item,
     (unsigned long long)player.worker.decoded,(unsigned long long)player.worker.shown,(unsigned long long)player.worker.dropped,
     (unsigned long long)player.surface.pts_us,(unsigned long long)compose_us,(unsigned long long)present_us,
-    (unsigned long long)input.events,(unsigned long long)sink.wake_gestures,(unsigned long long)(used>=start_cpu?used-start_cpu:0),(unsigned long long)player.worker.cpu_us);
+    (unsigned long long)input.events,(unsigned long long)sink.wake_gestures,(unsigned long long)(used>=start_cpu?used-start_cpu:0),(unsigned long long)player.worker.cpu_us,(unsigned long long)sink.wake_event_ns,(unsigned long long)sink.wake_present_ns);
    if(ferror(trace)){error="VIDEO_TRACE_WRITE";break;}
   }
  }
@@ -159,11 +170,12 @@ cleanup:
   if(!host_render(&host,&f)||!host_present_latest(&host,&f,1,fbdev_present,&display))ok=0;
  }
  memcpy(generation,player.plan.generation,sizeof(generation));
- input_live_close(&input);standby_close(&player);host_close(&host);if(!fbdev_close(&display))ok=0;free(canvas);
+ input_live_close(&input);standby_close(&player);if(player.worker.pid>0){ok=0;if(!error)error="VIDEO_CHILD_UNREAPED";}host_close(&host);if(!fbdev_close(&display))ok=0;free(canvas);
  uint64_t end=begin;(void)host_monotonic_ns(&end);uint64_t used=cpu_us(&peak);
  if(report) {
   fprintf(report,"{\"schema_version\":1,\"operation\":\"standby-video\",\"ok\":%s,\"error\":",ok?"true":"false");
   if(error)fprintf(report,"\"%s\"",error);else if(player.error)fprintf(report,"\"%s\"",player.error);else fputs("null",report);
+  fprintf(report,",\"wake_cpu_submit_samples\":%llu,\"wake_cpu_submit_max_us\":%llu",(unsigned long long)sink.wake_samples,(unsigned long long)sink.max_wake_us);
   fprintf(report,",\"generation\":\"%s\",\"starts\":%llu,\"decoded\":%llu,\"shown\":%llu,\"dropped\":%llu,\"video_presents\":%llu,\"wake_gestures\":%llu,\"consumed_frames\":%llu,\"loops\":%llu,\"faults\":%llu,\"guest_turns\":%llu,\"ui_cpu_us\":%llu,\"ui_peak_rss_kib\":%ld,\"decoder_cpu_us\":%llu,\"decoder_peak_rss_kib\":%ld,\"wall_ns\":%llu,\"decoder_reaped\":%llu,\"decoder_unreaped\":%s,\"single_framebuffer_writer\":true,\"vsync_enabled\":false,\"pan_enabled\":false,\"physical_video_validated\":false}\n",
    generation,(unsigned long long)player.starts,(unsigned long long)player.worker.decoded,(unsigned long long)player.worker.shown,
    (unsigned long long)player.worker.dropped,(unsigned long long)video_presents,(unsigned long long)sink.wake_gestures,(unsigned long long)sink.consumed,
