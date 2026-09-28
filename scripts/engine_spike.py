@@ -218,6 +218,16 @@ LOG="$OUT/startup.log"
   cat /proc/cpuinfo 2>/dev/null || true
   cat /proc/meminfo 2>/dev/null || true
   cat /proc/loadavg 2>/dev/null || true
+  echo "=== FB USERS BEFORE ==="
+  if command -v fuser >/dev/null 2>&1; then fuser "$FBDEV" 2>&1 || true; fi
+  for fd in /proc/[0-9]*/fd/*; do
+    target=$(readlink "$fd" 2>/dev/null || true)
+    if [ "$target" = "$FBDEV" ]; then
+      pid=$(echo "$fd" | cut -d/ -f3)
+      cmd=$(tr '\000' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)
+      echo "FB_USER pid=$pid fd=$fd cmd=$cmd"
+    fi
+  done
   echo "=== FB BLANK STATE BEFORE ==="
   cat /sys/class/graphics/$(basename "$FBDEV")/blank 2>/dev/null || true
   echo "=== FB MODE ==="
