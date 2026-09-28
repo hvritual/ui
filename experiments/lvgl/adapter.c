@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/fb.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
