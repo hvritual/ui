@@ -1,0 +1,29 @@
+name: F1 Engine Contract
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  engine-contract:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install ARM functional tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user
+      - name: Public/engine boundary leak gate
+        run: make check-no-engine-leak
+      - name: Native contract
+        run: make test-engine-contract
+      - name: Native adapters
+        run: make test-engine-adapters
+      - name: ARM contract and adapters
+        run: make test-engine-contract-arm
