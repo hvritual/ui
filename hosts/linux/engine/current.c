@@ -12,7 +12,7 @@ static PocketEngineStatus current_open(void *context, const PocketEngineOpenConf
     PocketCurrentEngine *e = context;
     PocketEngineStatus status;
     if(!e || !config || e->opened || !e->hooks.open || !e->hooks.close ||
-       !e->hooks.render) return POCKET_ENGINE_INVALID_ARGUMENT;
+       !e->hooks.tick || !e->hooks.render) return POCKET_ENGINE_INVALID_ARGUMENT;
     status = e->hooks.open(e->hooks.context, config);
     if(status == POCKET_ENGINE_OK) e->opened = 1;
     return status;

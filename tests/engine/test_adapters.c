@@ -92,7 +92,16 @@ static int test_fake(void) {
                "fake-remove")) return 0;
     if(!expect(pocket_fake_engine_api.node_update(&fake, child, &update) == POCKET_ENGINE_STALE_HANDLE,
                "fake-stale-node")) return 0;
+    PocketEngineNode old_root = root;
     if(!expect(pocket_fake_engine_api.close(&fake) == POCKET_ENGINE_OK, "fake-close")) return 0;
+    if(!expect(pocket_fake_engine_api.open(&fake, &open) == POCKET_ENGINE_OK, "fake-reopen")) return 0;
+    if(!expect(pocket_fake_engine_api.node_update(&fake, old_root, &update) ==
+               POCKET_ENGINE_STALE_HANDLE, "fake-cross-session-stale")) return 0;
+    create.parent = (PocketEngineNode){0};
+    PocketEngineNode root2 = {0};
+    if(!expect(pocket_fake_engine_api.node_create(&fake, &create, &root2) == POCKET_ENGINE_OK &&
+               root2.generation != old_root.generation, "fake-generation-advance")) return 0;
+    if(!expect(pocket_fake_engine_api.close(&fake) == POCKET_ENGINE_OK, "fake-final-close")) return 0;
     return 1;
 }
 static int test_current(void) {
@@ -125,6 +134,17 @@ static int test_current(void) {
                POCKET_ENGINE_LIFECYCLE_ERROR, "current-after-close")) return 0;
     return 1;
 }
+static int test_missing_declared_hook(void) {
+    CurrentFixture fixture = {0};
+    PocketCurrentEngine current;
+    PocketCurrentRendererHooks hooks = {
+        &fixture, fixture_open, fixture_close, NULL, fixture_render
+    };
+    PocketEngineOpenConfig open = {8,8,1};
+    pocket_current_engine_init(&current, &hooks);
+    return expect(pocket_current_engine_api.open(&current, &open) ==
+                  POCKET_ENGINE_INVALID_ARGUMENT, "missing-timer-hook");
+}
 static int test_backend_failure(void) {
     CurrentFixture fixture = {0};
     PocketCurrentEngine current;
@@ -137,7 +157,8 @@ static int test_backend_failure(void) {
                   POCKET_ENGINE_BACKEND_FAILED, "backend-failure-contained");
 }
 int main(void) {
-    if(!test_fake() || !test_current() || !test_backend_failure()) return 1;
+    if(!test_fake() || !test_current() || !test_missing_declared_hook() ||
+       !test_backend_failure()) return 1;
     puts("ENGINE_ADAPTERS_OK");
     return 0;
 }

@@ -78,3 +78,13 @@ make test-engine-contract-arm
 ```
 
 The ARM target is functional evidence only; physical performance remains P5.
+
+
+## Contract invariants added by review
+
+- An adapter that advertises a capability must have the corresponding runtime
+  hook at admission; v1 does not allow “advertised but returns unsupported”.
+- Fake/reference generation counters survive close/open. Handles from a prior
+  engine session remain stale even if the same slot is reused.
+- `pocket_engine_api_compatible` requires the same ABI major and at least the
+  v1 table size. Backend tables use the same major/size admission rule.

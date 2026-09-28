@@ -148,6 +148,14 @@ typedef struct {
     void (*release)(void *context, const void *bytes);
 } PocketAssetBackend;
 
+static inline int pocket_engine_api_compatible(const PocketEngineApi *api) {
+    return api && api->abi_major == POCKET_ENGINE_ABI_MAJOR &&
+           api->struct_size >= sizeof(PocketEngineApi);
+}
+static inline int pocket_backend_compatible(uint32_t abi_major, uint32_t struct_size,
+                                            uint32_t required_size) {
+    return abi_major == POCKET_BACKEND_ABI_MAJOR && struct_size >= required_size;
+}
 static inline int pocket_engine_node_valid(PocketEngineNode node) {
     return node.slot != 0U && node.generation != 0U;
 }

@@ -24,7 +24,25 @@ static PocketEngineStatus fake_close(void *context) {
     PocketFakeEngine *e = context;
     if(!e || !e->opened) return POCKET_ENGINE_LIFECYCLE_ERROR;
     free(e->pixels);
-    memset(e, 0, sizeof(*e));
+    e->pixels = NULL;
+    e->pixels_length = 0;
+    e->opened = 0;
+    e->width = e->height = 0;
+    e->damage_valid = 0;
+    e->next_deadline_ms = 0;
+    /* Keep generation counters across close/open so handles from an older
+     * engine session can never become valid again when slots are reused. */
+    for(uint32_t i = 0; i < POCKET_FAKE_ENGINE_MAX_NODES; ++i) {
+        e->nodes[i].live = 0;
+        e->nodes[i].kind = 0;
+        e->nodes[i].parent = (PocketEngineNode){0};
+        memset(&e->nodes[i].update, 0, sizeof(e->nodes[i].update));
+    }
+    for(uint32_t i = 0; i < POCKET_FAKE_ENGINE_MAX_RESOURCES; ++i) {
+        e->resources[i].live = 0;
+        e->resources[i].kind = 0;
+        e->resources[i].length = 0;
+    }
     return POCKET_ENGINE_OK;
 }
 static PocketEngineStatus fake_caps(void *context, PocketEngineCapabilities *out) {

@@ -16,6 +16,18 @@ int main(void) {
 
     if(POCKET_ENGINE_ABI_MAJOR != 1U || POCKET_ENGINE_ABI_MINOR != 0U)
         return fail("abi-version");
+    PocketEngineApi compatible = {0};
+    compatible.abi_major = POCKET_ENGINE_ABI_MAJOR;
+    compatible.abi_minor = POCKET_ENGINE_ABI_MINOR;
+    compatible.struct_size = sizeof(PocketEngineApi);
+    if(!pocket_engine_api_compatible(&compatible))
+        return fail("api-compatible");
+    compatible.abi_major++;
+    if(pocket_engine_api_compatible(&compatible))
+        return fail("api-major-mismatch");
+    if(!pocket_backend_compatible(display.abi_major, display.struct_size,
+                                  sizeof(PocketDisplayBackend)))
+        return fail("backend-compatible");
     if(sizeof(PocketEngineApi) < sizeof(void *) * 8U)
         return fail("api-size");
     if(pocket_engine_node_valid(none) || pocket_engine_resource_valid(no_resource))
