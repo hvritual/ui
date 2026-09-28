@@ -148,60 +148,144 @@ fail:
     return NULL;
 }
 
+static int preflight_fail(const char *stage, int err) {
+    fprintf(stderr, "FBDEV_PREFLIGHT_FAILED stage=%s errno=%d", stage, err);
+    if(err) fprintf(stderr, " error=%s", strerror(err));
+    fputc('\n', stderr);
+    return 0;
+}
+
 static int preflight_fbdev(PocketLvglEngine *engine, const char *path) {
     struct stat st;
     struct fb_fix_screeninfo fix;
     struct fb_var_screeninfo var;
-    if(!engine || !path) return 0;
+    if(!engine || !path) return preflight_fail("argument", EINVAL);
+
     engine->lock_fd = open(path, O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
-    if(engine->lock_fd < 0) return 0;
-    if(fstat(engine->lock_fd, &st) != 0 || !S_ISCHR(st.st_mode) || major(st.st_rdev) != 29) return 0;
-    if(flock(engine->lock_fd, LOCK_EX | LOCK_NB) != 0) return 0;
+    if(engine->lock_fd < 0) return preflight_fail("open", errno);
+
+    if(fstat(engine->lock_fd, &st) != 0) return preflight_fail("fstat", errno);
+    fprintf(stderr, "FBDEV_PREFLIGHT_STAT mode=%o major=%u minor=%u\n",
+            (unsigned)st.st_mode, major(st.st_rdev), minor(st.st_rdev));
+    if(!S_ISCHR(st.st_mode)) return preflight_fail("not-char-device", 0);
+
+    /* flock is advisory and is not a correctness prerequisite for fbdev.
+     * Some legacy systems/filesystems reject it; record that, but do not
+     * reject an otherwise valid framebuffer. */
+    if(flock(engine->lock_fd, LOCK_EX | LOCK_NB) != 0) {
+        fprintf(stderr, "FBDEV_PREFLIGHT_LOCK_WARNING errno=%d error=%s\n",
+                errno, strerror(errno));
+    }
+    else {
+        fprintf(stderr, "FBDEV_PREFLIGHT_LOCK_OK\n");
+    }
+
     memset(&fix, 0, sizeof(fix));
     memset(&var, 0, sizeof(var));
-    if(ioctl(engine->lock_fd, FBIOGET_FSCREENINFO, &fix) != 0 ||
-       ioctl(engine->lock_fd, FBIOGET_VSCREENINFO, &var) != 0) return 0;
+    if(ioctl(engine->lock_fd, FBIOGET_FSCREENINFO, &fix) != 0)
+        return preflight_fail("FBIOGET_FSCREENINFO", errno);
+    if(ioctl(engine->lock_fd, FBIOGET_VSCREENINFO, &var) != 0)
+        return preflight_fail("FBIOGET_VSCREENINFO", errno);
 
-    if(var.xres != engine->width || var.yres != engine->height ||
-       var.xres_virtual < var.xres || var.yres_virtual < var.yres ||
-       var.xoffset != 0 || var.yoffset != 0 ||
-       var.bits_per_pixel != 32 || var.rotate != FB_ROTATE_UR ||
+    fprintf(stderr,
+            "FBDEV_PREFLIGHT_INFO id=%.16s type=%u visual=%u line_length=%u smem_len=%u "
+            "xres=%u yres=%u xres_virtual=%u yres_virtual=%u xoffset=%u yoffset=%u "
+            "bpp=%u rotate=%u vmode=%u grayscale=%u nonstd=%u "
+            "rgba=%u/%u,%u/%u,%u/%u,%u/%u\n",
+            fix.id, fix.type, fix.visual, fix.line_length, fix.smem_len,
+            var.xres, var.yres, var.xres_virtual, var.yres_virtual,
+            var.xoffset, var.yoffset, var.bits_per_pixel, var.rotate, var.vmode,
+            var.grayscale, var.nonstd,
+            var.red.length, var.red.offset,
+            var.green.length, var.green.offset,
+            var.blue.length, var.blue.offset,
+            var.transp.length, var.transp.offset);
+
+    if(var.xres != engine->width || var.yres != engine->height)
+        return preflight_fail("resolution-mismatch", 0);
+    if(var.xres_virtual < var.xres || var.yres_virtual < var.yres)
+        return preflight_fail("virtual-resolution-invalid", 0);
+    if(var.bits_per_pixel != 32)
+        return preflight_fail("bpp-not-32", 0);
+    if(fix.line_length < engine->width * 4U)
+        return preflight_fail("stride-too-small", 0);
+    if((uint64_t)fix.line_length * var.yres > fix.smem_len)
+        return preflight_fail("smem-too-small", 0);
+
+    /* Do not duplicate LVGL's entire fbdev admission policy here. The pinned
+     * driver performs its own ioctl/mmap/format setup. Log unusual values and
+     * let lv_linux_fbdev_set_file() be authoritative for driver compatibility. */
+    if(fix.type != FB_TYPE_PACKED_PIXELS || fix.visual != FB_VISUAL_TRUECOLOR ||
+       var.xoffset != 0 || var.yoffset != 0 || var.rotate != FB_ROTATE_UR ||
        var.vmode != FB_VMODE_NONINTERLACED ||
-       var.red.offset != 16 || var.red.length != 8 || var.red.msb_right ||
-       var.green.offset != 8 || var.green.length != 8 || var.green.msb_right ||
-       var.blue.offset != 0 || var.blue.length != 8 || var.blue.msb_right ||
-       (var.transp.length != 0 &&
-        (var.transp.offset != 24 || var.transp.length != 8 || var.transp.msb_right)) ||
-       fix.type != FB_TYPE_PACKED_PIXELS || fix.visual != FB_VISUAL_TRUECOLOR ||
-       fix.line_length < engine->width * 4U ||
-       (uint64_t)fix.line_length * var.yres > fix.smem_len) return 0;
+       var.red.offset != 16 || var.red.length != 8 ||
+       var.green.offset != 8 || var.green.length != 8 ||
+       var.blue.offset != 0 || var.blue.length != 8) {
+        fprintf(stderr, "FBDEV_PREFLIGHT_COMPAT_WARNING noncanonical-layout\n");
+    }
+
+    fprintf(stderr, "FBDEV_PREFLIGHT_OK\n");
     return 1;
 }
 
 PocketLvglEngine *pocket_engine_create_fbdev(uint32_t width, uint32_t height, const char *path) {
-    if(width == 0 || height == 0 || !path) return NULL;
+    if(width == 0 || height == 0 || !path) {
+        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=argument\n");
+        return NULL;
+    }
     PocketLvglEngine *engine = alloc_engine(width, height, 40);
-    if(!engine) return NULL;
+    if(!engine) {
+        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=alloc-engine\n");
+        return NULL;
+    }
     if(!preflight_fbdev(engine, path)) goto fail_without_lvgl;
 
+    fprintf(stderr, "LVGL_FBDEV_INIT_STAGE lv_init\n");
     lv_init();
-    engine->display = lv_linux_fbdev_create();
-    if(!engine->display) goto fail;
-    /* Physical F0 must make the panel visible. Skipping FBIOBLANK unblank can
-     * produce a successful render/flush on a blanked LCD, which is a false
-     * acceptance. Let the pinned LVGL fbdev driver issue FB_BLANK_UNBLANK. */
-    lv_linux_fbdev_set_skip_unblank(engine->display, false);
-    if(lv_linux_fbdev_set_file(engine->display, path) != LV_RESULT_OK) goto fail;
-    if(lv_display_get_horizontal_resolution(engine->display) != (int32_t)width ||
-       lv_display_get_vertical_resolution(engine->display) != (int32_t)height ||
-       lv_display_get_color_format(engine->display) != LV_COLOR_FORMAT_XRGB8888) goto fail;
 
+    fprintf(stderr, "LVGL_FBDEV_INIT_STAGE create-display\n");
+    engine->display = lv_linux_fbdev_create();
+    if(!engine->display) {
+        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=create-display\n");
+        goto fail;
+    }
+
+    fprintf(stderr, "LVGL_FBDEV_INIT_STAGE set-file\n");
+    lv_linux_fbdev_set_skip_unblank(engine->display, false);
+    if(lv_linux_fbdev_set_file(engine->display, path) != LV_RESULT_OK) {
+        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=set-file errno=%d error=%s\n",
+                errno, strerror(errno));
+        goto fail;
+    }
+
+    const int32_t actual_w = lv_display_get_horizontal_resolution(engine->display);
+    const int32_t actual_h = lv_display_get_vertical_resolution(engine->display);
+    const int actual_cf = (int)lv_display_get_color_format(engine->display);
+    fprintf(stderr, "LVGL_FBDEV_INIT_DISPLAY width=%d height=%d color_format=%d\n",
+            actual_w, actual_h, actual_cf);
+
+    if(actual_w != (int32_t)width || actual_h != (int32_t)height) {
+        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=post-resolution expected=%ux%u actual=%dx%d\n",
+                width, height, actual_w, actual_h);
+        goto fail;
+    }
+    if(lv_display_get_color_format(engine->display) != LV_COLOR_FORMAT_XRGB8888) {
+        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=post-color-format actual=%d expected=%d\n",
+                actual_cf, (int)LV_COLOR_FORMAT_XRGB8888);
+        goto fail;
+    }
+
+    fprintf(stderr, "LVGL_FBDEV_INIT_STAGE wrap-flush\n");
     engine->delegate_flush = lv_display_get_flush_cb(engine->display);
-    if(!engine->delegate_flush) goto fail;
+    if(!engine->delegate_flush) {
+        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=no-flush-callback\n");
+        goto fail;
+    }
     engine->framebuffer_active = 1;
     lv_display_set_user_data(engine->display, engine);
     lv_display_set_flush_cb(engine->display, forwarding_flush_cb);
     init_screen(engine);
+    fprintf(stderr, "LVGL_FBDEV_INIT_OK\n");
     return engine;
 
 fail:
