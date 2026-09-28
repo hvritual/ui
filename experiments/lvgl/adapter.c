@@ -1,7 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "adapter.h"
 #include <lvgl/lvgl.h>
-#include <lvgl/drivers/display/lv_linux_fbdev.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/fb.h>
@@ -10,6 +9,7 @@
 #include <string.h>
 #include <sys/file.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <time.h>
@@ -25,9 +25,12 @@ struct PocketLvglEngine {
     lv_display_t *display;
     uint8_t *draw_buffer;
     uint32_t draw_buffer_bytes;
-    lv_display_flush_cb_t delegate_flush;
     int framebuffer_active;
     int lock_fd;
+    void *fb_mapping;
+    size_t fb_mapping_length;
+    struct fb_fix_screeninfo fb_fix;
+    struct fb_var_screeninfo fb_var;
     lv_obj_t *nodes[POCKET_MAX_NODES];
     uint16_t next_node;
     int32_t last_bar[POCKET_MAX_NODES];
@@ -69,17 +72,61 @@ static void counting_flush_cb(lv_display_t *display, const lv_area_t *area, uint
     lv_display_flush_ready(display);
 }
 
-static void forwarding_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map) {
+static void pocket_fbdev_flush_cb(lv_display_t *display, const lv_area_t *area, uint8_t *px_map) {
     PocketLvglEngine *engine = lv_display_get_user_data(display);
-    if(!engine || !engine->delegate_flush) {
+    if(!engine || !area || !px_map || !engine->fb_mapping) {
         lv_display_flush_ready(display);
         return;
     }
+
     record_flush(engine, area);
     const uint64_t start = cpu_ns();
-    engine->delegate_flush(display, area, px_map);
+
+    const int32_t x1 = area->x1;
+    const int32_t y1 = area->y1;
+    const int32_t x2 = area->x2;
+    const int32_t y2 = area->y2;
+    if(x1 < 0 || y1 < 0 || x2 < x1 || y2 < y1 ||
+       x2 >= (int32_t)engine->width || y2 >= (int32_t)engine->height) {
+        fprintf(stderr, "POCKET_FBDEV_FLUSH_REJECT area=%d,%d-%d,%d display=%ux%u\n",
+                x1, y1, x2, y2, engine->width, engine->height);
+        lv_display_flush_ready(display);
+        return;
+    }
+
+    const uint32_t area_w = (uint32_t)(x2 - x1 + 1);
+    const uint32_t area_h = (uint32_t)(y2 - y1 + 1);
+    const uint32_t src_stride = lv_draw_buf_width_to_stride(area_w, LV_COLOR_FORMAT_XRGB8888);
+    const size_t row_bytes = (size_t)area_w * 4U;
+    const size_t dst_base =
+        (size_t)(y1 + (int32_t)engine->fb_var.yoffset) * engine->fb_fix.line_length +
+        (size_t)(x1 + (int32_t)engine->fb_var.xoffset) * 4U;
+
+    if(src_stride < row_bytes ||
+       dst_base > engine->fb_mapping_length ||
+       area_h > 0 &&
+       ((size_t)(area_h - 1U) * engine->fb_fix.line_length >
+        engine->fb_mapping_length - dst_base) ||
+       row_bytes >
+       engine->fb_mapping_length - dst_base -
+       (size_t)(area_h - 1U) * engine->fb_fix.line_length) {
+        fprintf(stderr, "POCKET_FBDEV_FLUSH_REJECT range stride=%u row=%zu base=%zu map=%zu\n",
+                src_stride, row_bytes, dst_base, engine->fb_mapping_length);
+        lv_display_flush_ready(display);
+        return;
+    }
+
+    uint8_t *dst = (uint8_t *)engine->fb_mapping + dst_base;
+    const uint8_t *src = px_map;
+    for(uint32_t row = 0; row < area_h; ++row) {
+        memcpy(dst, src, row_bytes);
+        dst += engine->fb_fix.line_length;
+        src += src_stride;
+    }
+
     const uint64_t end = cpu_ns();
     if(end >= start) engine->metrics.flush_cpu_ns += end - start;
+    lv_display_flush_ready(display);
 }
 
 static PocketNode keep(PocketLvglEngine *engine, lv_obj_t *obj) {
@@ -213,9 +260,9 @@ static int preflight_fbdev(PocketLvglEngine *engine, const char *path) {
     if((uint64_t)fix.line_length * var.yres > fix.smem_len)
         return preflight_fail("smem-too-small", 0);
 
-    /* Do not duplicate LVGL's entire fbdev admission policy here. The pinned
-     * driver performs its own ioctl/mmap/format setup. Log unusual values and
-     * let lv_linux_fbdev_set_file() be authoritative for driver compatibility. */
+    /* Keep admission aligned with Pocket's verified i.MX6UL framebuffer
+     * contract. Unusual layouts are logged; the current F0 physical backend
+     * directly mmaps and writes the admitted 32-bpp RGB framebuffer. */
     if(fix.type != FB_TYPE_PACKED_PIXELS || fix.visual != FB_VISUAL_TRUECOLOR ||
        var.xoffset != 0 || var.yoffset != 0 || var.rotate != FB_ROTATE_UR ||
        var.vmode != FB_VMODE_NONINTERLACED ||
@@ -225,74 +272,96 @@ static int preflight_fbdev(PocketLvglEngine *engine, const char *path) {
         fprintf(stderr, "FBDEV_PREFLIGHT_COMPAT_WARNING noncanonical-layout\n");
     }
 
+    engine->fb_fix = fix;
+    engine->fb_var = var;
     fprintf(stderr, "FBDEV_PREFLIGHT_OK\n");
     return 1;
 }
 
 PocketLvglEngine *pocket_engine_create_fbdev(uint32_t width, uint32_t height, const char *path) {
     if(width == 0 || height == 0 || !path) {
-        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=argument\n");
+        fprintf(stderr, "POCKET_FBDEV_INIT_FAILED stage=argument\n");
         return NULL;
     }
+
     PocketLvglEngine *engine = alloc_engine(width, height, 40);
     if(!engine) {
-        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=alloc-engine\n");
+        fprintf(stderr, "POCKET_FBDEV_INIT_FAILED stage=alloc-engine\n");
         return NULL;
     }
     if(!preflight_fbdev(engine, path)) goto fail_without_lvgl;
 
-    fprintf(stderr, "LVGL_FBDEV_INIT_STAGE lv_init\n");
-    lv_init();
-
-    fprintf(stderr, "LVGL_FBDEV_INIT_STAGE create-display\n");
-    engine->display = lv_linux_fbdev_create();
-    if(!engine->display) {
-        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=create-display\n");
-        goto fail;
+    fprintf(stderr, "POCKET_FBDEV_INIT_STAGE unblank\n");
+    if(ioctl(engine->lock_fd, FBIOBLANK, FB_BLANK_UNBLANK) != 0) {
+        fprintf(stderr, "POCKET_FBDEV_UNBLANK_WARNING errno=%d error=%s\n", errno, strerror(errno));
+    }
+    else {
+        fprintf(stderr, "POCKET_FBDEV_UNBLANK_OK\n");
     }
 
-    fprintf(stderr, "LVGL_FBDEV_INIT_STAGE set-file\n");
-    lv_linux_fbdev_set_skip_unblank(engine->display, false);
-    if(lv_linux_fbdev_set_file(engine->display, path) != LV_RESULT_OK) {
-        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=set-file errno=%d error=%s\n",
+    fprintf(stderr, "POCKET_FBDEV_INIT_STAGE mmap bytes=%u\n", engine->fb_fix.smem_len);
+    engine->fb_mapping_length = engine->fb_fix.smem_len;
+    engine->fb_mapping = mmap(NULL, engine->fb_mapping_length,
+                              PROT_READ | PROT_WRITE, MAP_SHARED, engine->lock_fd, 0);
+    if(engine->fb_mapping == MAP_FAILED) {
+        engine->fb_mapping = NULL;
+        fprintf(stderr, "POCKET_FBDEV_INIT_FAILED stage=mmap errno=%d error=%s\n",
                 errno, strerror(errno));
+        goto fail_without_lvgl;
+    }
+
+    fprintf(stderr, "POCKET_FBDEV_INIT_STAGE lv_init\n");
+    lv_init();
+    lv_tick_set_cb(tick_ms);
+
+    fprintf(stderr, "POCKET_FBDEV_INIT_STAGE create-display\n");
+    engine->display = lv_display_create((int32_t)width, (int32_t)height);
+    if(!engine->display) {
+        fprintf(stderr, "POCKET_FBDEV_INIT_FAILED stage=create-display\n");
         goto fail;
     }
 
-    const int32_t actual_w = lv_display_get_horizontal_resolution(engine->display);
-    const int32_t actual_h = lv_display_get_vertical_resolution(engine->display);
-    const int actual_cf = (int)lv_display_get_color_format(engine->display);
-    fprintf(stderr, "LVGL_FBDEV_INIT_DISPLAY width=%d height=%d color_format=%d\n",
-            actual_w, actual_h, actual_cf);
-
-    if(actual_w != (int32_t)width || actual_h != (int32_t)height) {
-        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=post-resolution expected=%ux%u actual=%dx%d\n",
-                width, height, actual_w, actual_h);
-        goto fail;
-    }
-    if(lv_display_get_color_format(engine->display) != LV_COLOR_FORMAT_XRGB8888) {
-        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=post-color-format actual=%d expected=%d\n",
-                actual_cf, (int)LV_COLOR_FORMAT_XRGB8888);
+    lv_display_set_color_format(engine->display, LV_COLOR_FORMAT_XRGB8888);
+    const uint32_t draw_stride =
+        lv_draw_buf_width_to_stride(width, LV_COLOR_FORMAT_XRGB8888);
+    const uint64_t bytes64 = (uint64_t)draw_stride * engine->partial_rows;
+    if(bytes64 == 0 || bytes64 > UINT32_MAX) {
+        fprintf(stderr, "POCKET_FBDEV_INIT_FAILED stage=draw-buffer-size\n");
         goto fail;
     }
 
-    fprintf(stderr, "LVGL_FBDEV_INIT_STAGE wrap-flush\n");
-    engine->delegate_flush = lv_display_get_flush_cb(engine->display);
-    if(!engine->delegate_flush) {
-        fprintf(stderr, "LVGL_FBDEV_INIT_FAILED stage=no-flush-callback\n");
+    engine->draw_buffer_bytes = (uint32_t)bytes64;
+    engine->draw_buffer = malloc(engine->draw_buffer_bytes);
+    if(!engine->draw_buffer) {
+        fprintf(stderr, "POCKET_FBDEV_INIT_FAILED stage=draw-buffer-alloc bytes=%u\n",
+                engine->draw_buffer_bytes);
         goto fail;
     }
-    engine->framebuffer_active = 1;
+
+    lv_display_set_buffers(engine->display, engine->draw_buffer, NULL,
+                           engine->draw_buffer_bytes, LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_user_data(engine->display, engine);
-    lv_display_set_flush_cb(engine->display, forwarding_flush_cb);
+    lv_display_set_flush_cb(engine->display, pocket_fbdev_flush_cb);
+    engine->framebuffer_active = 1;
     init_screen(engine);
-    fprintf(stderr, "LVGL_FBDEV_INIT_OK\n");
+
+    fprintf(stderr,
+            "POCKET_FBDEV_INIT_OK width=%u height=%u stride=%u fb_stride=%u map=%zu partial_rows=%u\n",
+            width, height, draw_stride, engine->fb_fix.line_length,
+            engine->fb_mapping_length, engine->partial_rows);
     return engine;
 
 fail:
     if(engine->display) lv_display_delete(engine->display);
+    engine->display = NULL;
+    free(engine->draw_buffer);
+    engine->draw_buffer = NULL;
     lv_deinit();
 fail_without_lvgl:
+    if(engine->fb_mapping) {
+        munmap(engine->fb_mapping, engine->fb_mapping_length);
+        engine->fb_mapping = NULL;
+    }
     if(engine->lock_fd >= 0) close(engine->lock_fd);
     free(engine);
     return NULL;
@@ -302,6 +371,11 @@ void pocket_engine_destroy(PocketLvglEngine *engine) {
     if(!engine) return;
     if(engine->display) lv_display_delete(engine->display);
     free(engine->draw_buffer);
+    if(engine->fb_mapping) {
+        if(munmap(engine->fb_mapping, engine->fb_mapping_length) != 0) {
+            fprintf(stderr, "POCKET_FBDEV_UNMAP_WARNING errno=%d error=%s\n", errno, strerror(errno));
+        }
+    }
     if(engine->lock_fd >= 0) close(engine->lock_fd);
     free(engine);
     lv_deinit();

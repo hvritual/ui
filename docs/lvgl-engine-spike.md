@@ -119,3 +119,29 @@ Board:
 ```
 
 The existing display owner must be stopped first. The test changes the visible framebuffer and does not restore the previous UI.
+
+
+## 2026-09-28: Pocket-owned fbdev backend
+
+Physical log `startup(8).log` proved the board framebuffer itself is valid
+(1024×600, 32bpp, RGB offsets 16/8/0, stride 4096, smem 16 MiB) while the
+pinned LVGL 9.6 `lv_linux_fbdev_set_file()` returned `LV_RESULT_INVALID`
+before first render. The F0 path therefore no longer uses LVGL's Linux fbdev
+driver.
+
+New physical path:
+
+```text
+LVGL object/layout/render
+        ↓
+LVGL PARTIAL XRGB8888 draw buffer (40 rows)
+        ↓ flush(area, px_map)
+Pocket fbdev adapter
+        ↓ mmap row-copy only for the dirty area
+/dev/fb0 (mxs-lcdif)
+```
+
+The Pocket adapter owns open/ioctl/unblank/mmap/stride/range validation and
+records framebuffer copy CPU in `flush_cpu_ns`. This matches the platform
+architecture: GUI engine implementation stays replaceable while Linux/BSP
+display ownership remains in Pocket.

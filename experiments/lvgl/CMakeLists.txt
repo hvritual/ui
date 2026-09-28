@@ -21,20 +21,7 @@ set(LV_FETCH_DEPENDENCIES OFF CACHE BOOL "" FORCE)
 
 add_subdirectory("${LVGL_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/lvgl" EXCLUDE_FROM_ALL)
 
-# The physical F0 path intentionally uses LVGL's own Linux fbdev driver so the
-# experiment includes the renderer->partial-buffer->mmap copy cost instead of a
-# no-op flush callback. Keep the settings explicit and deterministic.
-target_compile_definitions(lvgl PUBLIC
-  _POSIX_C_SOURCE=200809L
-  LV_USE_LINUX_FBDEV=1
-  LV_LINUX_FBDEV_BSD=0
-  LV_LINUX_FBDEV_RENDER_MODE=LV_DISPLAY_RENDER_MODE_PARTIAL
-  LV_LINUX_FBDEV_BUFFER_COUNT=1
-  LV_LINUX_FBDEV_BUFFER_SIZE=40
-  LV_LINUX_FBDEV_MMAP=1
-  LV_LINUX_FBDEV_VSYNC=0
-)
-
+# Physical display is owned by Pocket's fbdev adapter. LVGL remains a render engine only.
 add_executable(pocket-lvgl-spike
   adapter.c
   workload.c
