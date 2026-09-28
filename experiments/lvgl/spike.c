@@ -69,14 +69,15 @@ static int write_report(const char *path, const char *scenario, uint32_t width, 
         "  \"progress_updates\": %" PRIu64 ",\n"
         "  \"framebuffer_active\": %s,\n"
         "  \"warmup_excluded\": true,\n"
-        "  \"hardware_performance_authority\": false\n"
+        "  \"hardware_performance_authority\": %s\n"
         "}\n",
         scenario, width, height, duration_ms, wall_ns, cpu_ns_total, cpu, max_rss_kib,
         wakeups, wakeup_hz, slept_ms, m.handler_calls, m.handler_no_flush, no_flush_ratio,
         m.handler_cpu_ns, m.no_timer_ready, m.immediate_retries, retry_ratio,
         m.flush_calls, m.flush_pixels, m.flush_bytes, m.full_screen_flushes, m.flush_cpu_ns,
         m.bridge_create_calls, m.bridge_update_calls, m.bridge_duplicate_updates, m.bridge_update_cpu_ns,
-        progress_updates, framebuffer_active ? "true" : "false");
+        progress_updates, framebuffer_active ? "true" : "false",
+        framebuffer_active ? "true" : "false");
     return fclose(f) == 0;
 }
 
