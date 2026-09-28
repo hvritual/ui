@@ -218,6 +218,9 @@ LOG="$OUT/startup.log"
   cat /proc/cpuinfo 2>/dev/null || true
   cat /proc/meminfo 2>/dev/null || true
   cat /proc/loadavg 2>/dev/null || true
+  echo "=== FB BLANK STATE BEFORE ==="
+  cat /sys/class/graphics/$(basename "$FBDEV")/blank 2>/dev/null || true
+  echo "=== FB MODE ==="
   fbset -fb "$FBDEV" 2>/dev/null || fbset 2>/dev/null || true
   if command -v sha256sum >/dev/null 2>&1; then sha256sum "$BIN"; fi
   echo "=== IDLE ==="
@@ -228,6 +231,8 @@ LOG="$OUT/startup.log"
   echo "IDLE_EXIT_CODE=$IDLE_RC"
   [ "$IDLE_RC" -eq 0 ] || exit "$IDLE_RC"
   cat "$OUT/idle.json"
+  echo "=== FB BLANK STATE AFTER IDLE ==="
+  cat /sys/class/graphics/$(basename "$FBDEV")/blank 2>/dev/null || true
   echo "=== PROGRESS ==="
   "$BIN" --width "$W" --height "$H" --scenario progress --duration-ms "$DURATION" \
     --fbdev "$FBDEV" --allow-framebuffer-write I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER \

@@ -109,6 +109,18 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    if(fbdev) {
+        printf("LVGL_FBDEV_OPEN_OK width=%u height=%u path=%s\n", width, height, fbdev);
+        if(!pocket_engine_force_render(engine)) {
+            fprintf(stderr, "SPIKE_FBDEV_FIRST_FLUSH_MISSING\n");
+            pocket_engine_destroy(engine);
+            return 1;
+        }
+        PocketEngineMetrics visible = pocket_engine_metrics(engine);
+        printf("LVGL_FBDEV_FIRST_FLUSH_OK calls=%" PRIu64 " pixels=%" PRIu64 " bytes=%" PRIu64 "\n",
+               visible.flush_calls, visible.flush_pixels, visible.flush_bytes);
+    }
+
     /* Warm up outside the measurement window. Initial layout/render must not
      * make the idle phase look expensive, and it must not hide later redraws. */
     const uint64_t warm_end = ns_now(CLOCK_MONOTONIC) + 250000000ULL;

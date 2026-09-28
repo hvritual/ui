@@ -10,9 +10,12 @@ int pocket_coffee_build(PocketLvglEngine *engine, PocketCoffeeWorkload *workload
     if(!engine || !workload) return 0;
     memset(workload, 0, sizeof(*workload));
     const uint32_t h = pocket_engine_height(engine);
-    if(!pocket_engine_label(engine, 32, 20, 620, "Coffee Machine", 0x303734)) return 0;
-    if(!pocket_engine_label(engine, 32, 55, 640, "Pocket F0 frozen structural workload", 0x71766f)) return 0;
-    if(!pocket_engine_button(engine, 832, 24, 160, 48, "en-US", 0xe7ece1)) return 0;
+    /* Physical visibility sentinel: deliberately high-contrast and unique so
+     * a human can distinguish the F0 probe from the previous UI. */
+    if(!pocket_engine_box(engine, 0, 0, 1024, 92, 0x173f5f, 0)) return 0;
+    if(!pocket_engine_label(engine, 32, 18, 620, "LVGL F0 PHYSICAL TEST", 0xffffff)) return 0;
+    if(!pocket_engine_label(engine, 32, 52, 700, "CPU / partial framebuffer probe", 0xffffff)) return 0;
+    if(!pocket_engine_button(engine, 832, 22, 160, 48, "TEST", 0xf2b544)) return 0;
 
     const int32_t top = 110;
     const int32_t bottom = (int32_t)h - 150;

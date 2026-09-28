@@ -187,7 +187,10 @@ PocketLvglEngine *pocket_engine_create_fbdev(uint32_t width, uint32_t height, co
     lv_init();
     engine->display = lv_linux_fbdev_create();
     if(!engine->display) goto fail;
-    lv_linux_fbdev_set_skip_unblank(engine->display, true);
+    /* Physical F0 must make the panel visible. Skipping FBIOBLANK unblank can
+     * produce a successful render/flush on a blanked LCD, which is a false
+     * acceptance. Let the pinned LVGL fbdev driver issue FB_BLANK_UNBLANK. */
+    lv_linux_fbdev_set_skip_unblank(engine->display, false);
     if(lv_linux_fbdev_set_file(engine->display, path) != LV_RESULT_OK) goto fail;
     if(lv_display_get_horizontal_resolution(engine->display) != (int32_t)width ||
        lv_display_get_vertical_resolution(engine->display) != (int32_t)height ||
@@ -347,3 +350,11 @@ PocketEngineMetrics pocket_engine_metrics(const PocketLvglEngine *engine) {
 uint32_t pocket_engine_width(const PocketLvglEngine *engine) { return engine ? engine->width : 0; }
 uint32_t pocket_engine_height(const PocketLvglEngine *engine) { return engine ? engine->height : 0; }
 int pocket_engine_framebuffer_active(const PocketLvglEngine *engine) { return engine ? engine->framebuffer_active : 0; }
+
+int pocket_engine_force_render(PocketLvglEngine *engine) {
+    if(!engine || !engine->display) return 0;
+    const uint64_t before = engine->metrics.flush_calls;
+    lv_obj_invalidate(lv_screen_active());
+    lv_refr_now(engine->display);
+    return engine->metrics.flush_calls > before;
+}

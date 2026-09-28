@@ -48,5 +48,7 @@ PocketEngineMetrics pocket_engine_metrics(const PocketLvglEngine *engine);
 uint32_t pocket_engine_width(const PocketLvglEngine *engine);
 uint32_t pocket_engine_height(const PocketLvglEngine *engine);
 int pocket_engine_framebuffer_active(const PocketLvglEngine *engine);
+/* Force one synchronous refresh for physical visibility admission. */
+int pocket_engine_force_render(PocketLvglEngine *engine);
 
 #endif
