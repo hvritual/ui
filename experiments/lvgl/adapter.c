@@ -104,9 +104,9 @@ static void pocket_fbdev_flush_cb(lv_display_t *display, const lv_area_t *area, 
 
     if(src_stride < row_bytes ||
        dst_base > engine->fb_mapping_length ||
-       area_h > 0 &&
-       ((size_t)(area_h - 1U) * engine->fb_fix.line_length >
-        engine->fb_mapping_length - dst_base) ||
+       (area_h > 0 &&
+        ((size_t)(area_h - 1U) * engine->fb_fix.line_length >
+         engine->fb_mapping_length - dst_base)) ||
        row_bytes >
        engine->fb_mapping_length - dst_base -
        (size_t)(area_h - 1U) * engine->fb_fix.line_length) {
