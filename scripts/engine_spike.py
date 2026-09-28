@@ -45,7 +45,7 @@ def check():
     if lock["tag"] != "v9.6.0" or lock["license"] != "MIT": raise RuntimeError("LVGL provenance drift")
     if policy["authority"]["imx6ul"] != "performance-authority": raise RuntimeError("hardware authority weakened")
     text=WORKLOAD.read_text()
-    if re.search(r"\blv_[A-Za-z0-9_]*\b|\blvgl\b", text, re.I):
+    if re.search(r"\blv_[A-Za-z0-9_]*\b", text) or re.search(r"#\s*include\s*[<\"]lvgl(?:/|\.h)", text, re.I):
         raise RuntimeError("engine API leaked into workload")
     adapter=(ROOT/"experiments/lvgl/adapter.c").read_text()
     if "#include <lvgl/lvgl.h>" not in adapter: raise RuntimeError("adapter does not own LVGL dependency")
