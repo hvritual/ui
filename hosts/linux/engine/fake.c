@@ -8,10 +8,8 @@ static PocketEngineStatus fake_open(void *context, const PocketEngineOpenConfig 
     size_t pixels;
     if(!e || !config || e->opened || !config->width || !config->height ||
        config->width > 4096U || config->height > 4096U) return POCKET_ENGINE_INVALID_ARGUMENT;
-    if((size_t)config->width > SIZE_MAX / 4U ||
-       (size_t)config->width * 4U > SIZE_MAX / config->height)
-        return POCKET_ENGINE_RESOURCE_EXHAUSTED;
-    pixels = (size_t)config->width * config->height * 4U;
+    /* Dimensions are capped above, so this multiplication is bounded to 64 MiB. */
+    pixels = (size_t)config->width * (size_t)config->height * 4U;
     e->pixels = calloc(1, pixels);
     if(!e->pixels) return POCKET_ENGINE_RESOURCE_EXHAUSTED;
     e->pixels_length = pixels;
