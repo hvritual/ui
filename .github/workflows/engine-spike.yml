@@ -1,0 +1,47 @@
+name: F0 LVGL Engine Spike
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+
+jobs:
+  engine-spike:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install pinned cross tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user git
+      - name: Static contract and source pin
+        run: make check-engine-spike
+      - name: Fetch exact LVGL source
+        run: make fetch-engine-spike
+      - name: Native CPU-first spike
+        run: make test-engine-spike-native
+      - name: ARM Cortex-A7 functional spike
+        run: make test-engine-spike-arm
+      - name: Verify fail-closed report
+        run: make verify-engine-spike
+      - name: Build static physical-board spike package
+        run: make package-engine-spike-board
+      - name: Preserve F0 evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: f0-lvgl-engine-spike-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/engine-spike/source.json
+            out/engine-spike/reports/
+            out/engine-spike/comparison.json
+            out/engine-spike/board/
+            out/engine-spike/pocket-lvgl-f0-imx6ul.tar.gz
+          if-no-files-found: warn
+          retention-days: 30

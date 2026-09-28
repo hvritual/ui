@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "authority": {
+    "native": "software-only",
+    "arm_qemu": "functional-only",
+    "imx6ul": "performance-authority"
+  },
+  "idle": {
+    "cpu_percent_one_core_max_for_native_regression": 10.0,
+    "cpu_percent_one_core_observation_target": 5.0,
+    "wakeup_hz_max": 80.0,
+    "immediate_retry_ratio_max": 0.20,
+    "post_warmup_flush_pixels_max": 0
+  },
+  "scheduler": {
+    "minimum_sleep_ms": 1,
+    "no_timer_sleep_ms": 1000,
+    "maximum_sleep_ms": 1000
+  },
+  "notes": [
+    "The <10% value mirrors the existing P5 initial idle CPU budget but native CI is not production evidence.",
+    "The <5% value is an observation target only until real i.MX6UL baseline data is captured.",
+    "QEMU CPU values are recorded for diagnostics only and must not be used for Adopt/Reject."
+  ]
+}
