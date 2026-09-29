@@ -26,3 +26,19 @@ directions). Physical keycodes remain backend concerns.
 
 Gesture recognizers and arbitration are the next F6 slice; this commit does not
 yet claim Tap/DoubleTap/LongPress/Pan/Drag/Flick.
+
+
+## P3 backend bridge
+
+`hosts/linux/input/interaction_bridge.*` is the only F6 entry point that
+depends on P3 `InputFrame`. It converts contact snapshots into semantic
+Down/Move/Up/Cancel events and converts kernel monotonic nanoseconds to the
+Interaction Runtime's millisecond clock.
+
+Tracking ID `0` is valid. Contacts that hit no semantic target are tracked by
+the bridge but are not injected into the Interaction Runtime, so a later move or
+up does not create a phantom pointer slot.
+
+`SYN_DROPPED`, suppressed frames and disconnect all invoke the same
+`pocket_interaction_cancel_all()` path. A stale destroyed target also releases
+its pointer slot immediately.
