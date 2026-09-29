@@ -62,6 +62,8 @@ PocketOverlayStatus pocket_overlay_input_capture(const PocketOverlayManager *man
 PocketOverlayStatus pocket_overlay_snapshot(const PocketOverlayManager *manager,uint64_t id,
                                             PocketOverlaySnapshot *out);
 size_t pocket_overlay_count(const PocketOverlayManager *manager);
+/* Changes even if a capturing overlay is opened and closed between frames. */
+uint64_t pocket_overlay_input_epoch(const PocketOverlayManager *manager);
 int pocket_overlay_blocks_background(const PocketOverlayManager *manager);
 uint64_t pocket_overlay_focus_token(const PocketOverlayManager *manager);
 PocketOverlayStatus pocket_overlay_back(PocketOverlayManager *manager,int *consumed);

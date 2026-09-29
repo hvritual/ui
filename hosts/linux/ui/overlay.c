@@ -21,6 +21,7 @@ typedef struct {
     uint64_t next_sequence;
     size_t live_count;
     uint64_t current_focus;
+    uint64_t input_epoch;
 } OverlayImpl;
 
 static OverlayImpl *oi(PocketOverlayManager *manager){return manager?(OverlayImpl *)manager->impl:NULL;}
@@ -112,7 +113,7 @@ PocketOverlayStatus pocket_overlay_present(PocketOverlayManager *manager,const P
     OverlayRecord *record=NULL;
     for(uint32_t i=0;i<impl->capacity;i++)if(!impl->records[i].live){record=&impl->records[i];break;}
     if(!record)return POCKET_OVERLAY_FULL;
-    if(impl->next_sequence==UINT64_MAX)return POCKET_OVERLAY_FULL;
+    if(impl->next_sequence==UINT64_MAX || (spec->captures_input&&impl->input_epoch==UINT64_MAX))return POCKET_OVERLAY_FULL;
     memset(record,0,sizeof(*record));
     record->live=1;
     record->spec=*spec;
@@ -120,11 +121,14 @@ PocketOverlayStatus pocket_overlay_present(PocketOverlayManager *manager,const P
     record->z_order=(uint64_t)layer_base(spec->kind)*1000000000ULL+record->sequence;
     if(spec->captures_focus){record->previous_focus=impl->current_focus;impl->current_focus=spec->focus_token;}
     impl->live_count++;
+    if(spec->captures_input)impl->input_epoch++;
     return POCKET_OVERLAY_OK;
 }
 PocketOverlayStatus pocket_overlay_dismiss(PocketOverlayManager *manager,uint64_t id){
     OverlayImpl *impl=oi(manager);OverlayRecord *record=by_id(impl,id);
     if(!record)return POCKET_OVERLAY_NOT_FOUND;
+    if(record->spec.captures_input&&impl->input_epoch==UINT64_MAX)return POCKET_OVERLAY_FULL;
+    if(record->spec.captures_input)impl->input_epoch++;
     if(record->spec.captures_focus){
         if(impl->current_focus==record->spec.focus_token)
             impl->current_focus=record->previous_focus;
@@ -146,14 +150,18 @@ uint32_t pocket_overlay_dismiss_owner(PocketOverlayManager *manager,uint64_t own
     OverlayImpl *impl=oi(manager);
     if(!impl||!owner_route)return 0;
     uint32_t count=0;
-    for(;;){
+    for(uint32_t attempt=0;attempt<impl->capacity;attempt++){
         OverlayRecord *best=NULL;
         for(uint32_t i=0;i<impl->capacity;i++){
             OverlayRecord *r=&impl->records[i];
             if(r->live&&r->spec.owner_route==owner_route&&(!best||r->z_order>best->z_order))best=r;
         }
         if(!best)break;
-        uint64_t id=best->spec.id;(void)pocket_overlay_dismiss(manager,id);count++;
+        uint64_t id=best->spec.id;
+        (void)pocket_overlay_dismiss(manager,id);
+        /* A rejected dismissal (for example epoch exhaustion) must not spin. */
+        if(by_id(impl,id))break;
+        count++;
     }
     return count;
 }
@@ -220,4 +228,9 @@ PocketOverlayStatus pocket_overlay_back(PocketOverlayManager *manager,int *consu
 }
 void pocket_overlay_navigation_cleanup(void *context,uint64_t route_id){
     if(context&&route_id)(void)pocket_overlay_dismiss_owner((PocketOverlayManager *)context,route_id);
+}
+
+uint64_t pocket_overlay_input_epoch(const PocketOverlayManager *manager){
+    const OverlayImpl *impl=coi(manager);
+    return impl?impl->input_epoch:0;
 }

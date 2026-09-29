@@ -15,6 +15,26 @@ static int frame_cancelled(const InputFrame *frame,int id){
     for(uint32_t i=0;i<frame->cancelled_count;i++)if(frame->cancelled[i]==id)return 1;
     return 0;
 }
+/* Reject the entire snapshot before delivering any edge. Corrupt contact IDs
+ * must not leave a partially-applied gesture active. */
+static int valid_frame(const InputFrame *frame){
+    if(!frame||frame->contact_count>INPUT_RUNTIME_MAX_CONTACTS||
+       frame->cancelled_count>INPUT_RUNTIME_MAX_CONTACTS)return 0;
+    for(uint32_t i=0;i<frame->contact_count;i++){
+        if(frame->contacts[i].id<0)return 0;
+        for(uint32_t j=0;j<i;j++)if(frame->contacts[j].id==frame->contacts[i].id)return 0;
+        for(uint32_t j=0;j<frame->cancelled_count;j++)if(frame->cancelled[j]==frame->contacts[i].id)return 0;
+    }
+    for(uint32_t i=0;i<frame->cancelled_count;i++){
+        if(frame->cancelled[i]<0)return 0;
+        for(uint32_t j=0;j<i;j++)if(frame->cancelled[j]==frame->cancelled[i])return 0;
+    }
+    return 1;
+}
+static int terminal_status(PocketInteractionStatus status){
+    return status==POCKET_INTERACTION_OK||status==POCKET_INTERACTION_STALE_HANDLE||
+           status==POCKET_INTERACTION_POINTER_NOT_ACTIVE;
+}
 static uint64_t to_ms(uint64_t event_ns){
     return event_ns/1000000ULL;
 }
@@ -27,8 +47,11 @@ int pocket_input_interaction_bridge_init(PocketInputInteractionBridge *bridge,
 }
 int pocket_input_interaction_bridge_frame(PocketInputInteractionBridge *bridge,
                                           const InputFrame *frame,uint64_t event_ns){
-    if(!bridge||!bridge->interaction||!frame||frame->contact_count>INPUT_RUNTIME_MAX_CONTACTS||
-       frame->cancelled_count>INPUT_RUNTIME_MAX_CONTACTS)return 0;
+    if(!bridge||!bridge->interaction)return 0;
+    if(!valid_frame(frame)){
+        pocket_input_interaction_bridge_disconnect(bridge,event_ns);
+        return 0;
+    }
     bridge->frames++;
     if(frame->syn_dropped||frame->suppressed){
         pocket_interaction_cancel_all(bridge->interaction,to_ms(event_ns));
@@ -46,7 +69,7 @@ int pocket_input_interaction_bridge_frame(PocketInputInteractionBridge *bridge,
             PocketPointerEvent event={(uint32_t)contact->id,POCKET_POINTER_CANCEL,
                                       contact->x,contact->y,to_ms(event_ns)};
             PocketInteractionStatus status=pocket_interaction_pointer(bridge->interaction,&event);
-            if(status!=POCKET_INTERACTION_OK&&status!=POCKET_INTERACTION_STALE_HANDLE)return 0;
+            if(!terminal_status(status))return 0;
             bridge->cancels++;
         }
         contact->active=0;
@@ -59,7 +82,7 @@ int pocket_input_interaction_bridge_frame(PocketInputInteractionBridge *bridge,
             PocketPointerEvent event={(uint32_t)previous->id,POCKET_POINTER_UP,
                                       previous->x,previous->y,to_ms(event_ns)};
             PocketInteractionStatus status=pocket_interaction_pointer(bridge->interaction,&event);
-            if(status!=POCKET_INTERACTION_OK&&status!=POCKET_INTERACTION_STALE_HANDLE)return 0;
+            if(!terminal_status(status))return 0;
             bridge->delivered++;
         }
         previous->active=0;
@@ -77,7 +100,7 @@ int pocket_input_interaction_bridge_frame(PocketInputInteractionBridge *bridge,
                                       contact->x,contact->y,to_ms(event_ns)};
             PocketInteractionStatus status=pocket_interaction_pointer(bridge->interaction,&event);
             if(status==POCKET_INTERACTION_OK){delivered=1;bridge->delivered++;}
-            else if(status!=POCKET_INTERACTION_STALE_HANDLE)return 0;
+            else if(!terminal_status(status))return 0;
         }else if(previous<0){
             PocketPointerEvent event={(uint32_t)contact->id,POCKET_POINTER_DOWN,
                                       contact->x,contact->y,to_ms(event_ns)};

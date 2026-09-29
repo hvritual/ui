@@ -191,3 +191,9 @@ test-interaction-bridge:
 	python3 scripts/ui_interaction.py bridge --mode native
 test-interaction-arm:
 	python3 scripts/ui_interaction.py all --mode arm
+
+.PHONY: test-gesture test-focus test-interaction-replay
+test-gesture test-interaction-replay:
+	python3 scripts/ui_interaction.py gesture --mode native
+test-focus:
+	python3 scripts/ui_interaction.py interaction --mode native

@@ -23,5 +23,16 @@ jobs:
         run: make test-interaction
       - name: P3 InputFrame bridge and cancel path
         run: make test-interaction-bridge
+      - name: Gesture arbitration and deterministic replay
+        run: POCKET_INTERACTION_SANITIZE=1 ASAN_OPTIONS=detect_leaks=1 make test-interaction test-interaction-bridge test-gesture
       - name: ARM Cortex-A7 parity
         run: make test-interaction-arm
+
+      - name: Preserve numeric replay evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: interaction-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/ui-interaction/
+          if-no-files-found: error
+          retention-days: 30

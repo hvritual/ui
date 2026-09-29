@@ -1,69 +1,105 @@
-# Pocket Interaction Runtime v1 — core slice
+# Pocket Interaction Runtime
 
-Issue: #39.
+Issue #39; full-framework board integration remains #49.
 
-This first F6 slice places a stable semantic layer above P3/Linux input:
+## Ownership and dispatch
 
-evdev/P3 -> pointer events -> hit-test/capture/focus -> Object Model events
+The Linux P3 InputFrame bridge is the only input-backend-dependent boundary.
+Applications receive Pocket pointer/key/gesture events, not keycodes or native
+engine handles. The owner calls input delivery, then `pocket_interaction_tick`
+at a frame boundary. `pocket_interaction_next_deadline` permits bounded sleep;
+a stationary page has no recognizer timer after all interactions finish.
 
-The runtime owns pointer lifecycle state for at most 8 simultaneous pointers.
-Pointer down hit-tests the active scene. Move/up use explicit capture when
-present; otherwise they hit-test the current location and fall back to the down
-target. cancel_all is the single backend-loss path for SYN_DROPPED, disconnect,
-or process-level input reset.
+There are at most 8 pointers, 128 generation-bound gesture registrations,
+16 pending double-tap candidates, and 16 focus-history records. Hit testing has
+a 256-depth / 4096-node work bound. All hot-path state is preallocated.
+Registrations for destroyed handles are recycled; generations prevent reuse
+from reviving old subscriptions. Overflow and reversed input clocks fail
+explicitly rather than manufacturing events.
 
-Hit testing is layout/clip-aware and descends the Pocket Object tree in visual
-child order. If an Overlay captures input, only the topmost capturing overlay
-root participates; background components are not hit.
+Raw down is hit-tested once. Move/up retain that target, or an explicit capture;
+there is no move/up retargeting into an unrelated button. Layout clipping and
+ancestor mounted/visible/enabled state are checked. Overlay interception limits
+hit testing and capture admission to the topmost capturing overlay.
 
-Focus is a Pocket UI handle, not a Linux keycode or engine object. Programmatic
-focus requires mounted+visible+enabled+focusable. Optional focus scopes constrain
-focus to a subtree. Focus updates the semantic FOCUSED state and emits explicit
-gain/loss events.
+Callbacks can consume propagation or cancel the default gesture. They can
+request capture/release and programmatic focus. Recursive pointer/tick/key
+injection and scene switching from inside dispatch return BUSY. Application
+navigation is queued and applied after dispatch. Destroying a target from a
+callback is safe: it is revalidated before subsequent semantic delivery.
+Disposal belongs to the outer owner; an attempted disposal inside dispatch
+requests cancellation but does not free a runtime whose stack is active.
 
-Key routing uses semantic PocketKeyAction values (Back/Accept/Next/Previous/
-directions). Physical keycodes remain backend concerns.
+## Recognizers and arbitration
 
-Gesture recognizers and arbitration are the next F6 slice; this commit does not
-yet claim Tap/DoubleTap/LongPress/Pan/Drag/Flick.
+Clickable targets default to Tap; Scroll objects default to vertical Scroll
+and Flick. `pocket_interaction_set_gestures` supplies an explicit per-target
+mask; zero disables defaults. No application hardware operation is attached to
+these events by the runtime.
 
+- Tap: one event on release inside the original target, and no movement beyond
+  12 logical pixels. Moving out and returning does not become a tap.
+- DoubleTap: opt-in; a single is deferred for 300ms. Two qualified releases on
+  the same live target within that interval and 24 pixels emit only DoubleTap.
+  At the exact expiration boundary the first single wins. Opening an overlay,
+  changing a page or canceling the input discards delayed singles.
+- LongPress: opt-in; one event after 500ms of stationary hold. It suppresses Tap
+  on release and never repeats. A cancel or slop-crossing move at the deadline
+  wins over LongPress.
+- Pan / Drag / Scroll: crossing slop selects the nearest eligible registered
+  ancestor (Drag, then Pan, then axis-compatible Scroll at each node). An
+  explicit child Drag wins over parent Scroll. A vertical-only parent cannot
+  claim a horizontal gesture. A parent win sends cancel to the original child,
+  owns capture, and suppresses the child's Tap.
+- Motion has Begin/Update/End events with bounded integer deltas. Flick adds a
+  final numeric velocity only when movement was within 150ms of release and
+  at least 600 logical pixels/second. This is recognition, not an implicit
+  inertial-animation engine. Applications decide how to use the event.
 
-## P3 backend bridge
+Events carry pointer identity, a full 64-bit effective monotonic timestamp,
+position, deltas and velocities. No text is logged. Backend source timestamps
+must not run backwards, but an already queued source event may precede the
+last frame-clock tick; the effective dispatch clock never moves backwards.
 
-`hosts/linux/input/interaction_bridge.*` is the only F6 entry point that
-depends on P3 `InputFrame`. It converts contact snapshots into semantic
-Down/Move/Up/Cancel events and converts kernel monotonic nanoseconds to the
-Interaction Runtime's millisecond clock.
+## Cancellation and focus
 
-Tracking ID `0` is valid. Contacts that hit no semantic target are tracked by
-the bridge but are not injected into the Interaction Runtime, so a later move or
-up does not create a phantom pointer slot.
+SYN_DROPPED, suppress-until-all-up and disconnect enter one cancellation path.
+A monotonic Overlay input epoch also detects open/close within a single frame.
+Mid-gesture overlay/scene changes cancel old capture and recognizers; remaining
+moves/up are suppressed, never injected as a new gesture into the overlay.
+Destroyed, hidden or disabled ancestors revoke eligibility. The P3 bridge
+validates all IDs, counts and duplicates before delivering any edge; an invalid
+snapshot cancels the existing interaction and fails as a whole.
 
-`SYN_DROPPED`, suppressed frames and disconnect all invoke the same
-`pocket_interaction_cancel_all()` path. A stale destroyed target also releases
-its pointer slot immediately.
+Focus is restricted to the active scene/top capturing overlay, FocusScope,
+and a mounted, visible, enabled ancestor chain. Every semantic key revalidates
+admission. Focus changes clear/set the semantic state and emit loss/gain events.
+Nested modal/keyboard transitions preserve bounded per-root focus/scope history.
+Dismissal restores only a still-live, currently eligible target; stale page
+handles cannot receive a key. Text sessions and IME are owned by #12, not this
+runtime. Key actions never imply Unicode text.
 
-## Focus admission and semantic key isolation
+## Acceptance
 
-Programmatic focus is limited to the active scene or the top input-capturing
-Overlay, and to the explicit FocusScope when present. The target must be
-focusable. Every ancestor must remain mounted, visible and enabled. Validation
-walks at most 256 nodes and does not allocate memory or depend on an engine API.
+```
+make test-interaction test-interaction-bridge
+make test-gesture test-focus test-interaction-replay
+make test-interaction-arm
+POCKET_INTERACTION_SANITIZE=1 ASAN_OPTIONS=detect_leaks=1 make test-interaction test-interaction-bridge test-gesture
+```
 
-Admission is checked again before each semantic key action. Opening a modal or
-hiding/disabling an ancestor can revoke an existing focus: the runtime clears
-FOCUSED state, emits focus loss and returns NO_TARGET without delivering that
-key to the background field. Stale targets are cleared and reported as stale.
-A valid field inside the modal still accepts focus and keys normally. Invalid
-programmatic focus requests do not replace an existing admissible focus.
+`tests/ui/test_gesture.c` adds eight grouped suites: independent 600/800 edge
+and cross-target behavior, timed recognizers, motion arbitration, nested
+modal/keyboard and focus restore, cancellation/reentrancy/stale-target safety,
+atomic malformed bridge rejection, and 1200 registration lifecycle cycles.
+`tests/ui/fixtures/interaction.csv` is synthetic numeric replay, not hardware
+trace. Two repetitions must match byte-for-byte, and ARM replay must also match
+Native. An intentional assertion failure must exit nonzero. These tests are
+functional evidence only: no LCD visibility, CPU/RSS or board latency claims.
 
-`tests/ui/test_interaction.c` covers modal/background isolation, an active modal
-field, ancestor visibility/enabled changes, a different inactive scene,
-FocusScope restrictions and destroyed targets. The setup helper returns an
-explicit status checked by every caller; compiler warnings remain errors.
+## Integration boundary
 
-This is key-routing hardening, not completed gesture arbitration, IME or board
-integration. Focus restoration across navigation/overlay lifecycle and pointer
-capture changes during an active gesture still require the remaining F6
-integration/replay gates. #49 remains the first full Framework-to-board gate;
-#12, #7, #8, #9 and #10 retain IME, performance, business and production scope.
+F6 supplies reusable interaction semantics. F6A must still wire the actual
+application, reactive flush, layout, engine adapter, presenter, text/image
+resources and real input into one deployable UI process. A green F6 suite is
+not evidence that the complete Framework Coffee application ran on a board.
