@@ -67,6 +67,8 @@ typedef struct {
     uint32_t default_budget;
     uint32_t batch_depth;
     int transaction_active;
+    int flushing;
+    int callback_phase;
     uint64_t mutation_serial;
     PocketComponentRuntime *components;
 } ReactiveImpl;
@@ -214,6 +216,7 @@ PocketReactiveStatus pocket_reactive_signal(PocketReactiveRuntime *runtime,
                                              PocketReactiveHandle *out) {
     ReactiveImpl *impl=impl_of(runtime);
     if(!impl||!out||!value_valid(initial))return POCKET_REACTIVE_INVALID_ARGUMENT;
+    if(impl->flushing)return POCKET_REACTIVE_BUSY;
     PocketReactiveHandle handle={0};ReactiveNode *node=allocate_node(impl,&handle);
     if(!node)return POCKET_REACTIVE_RESOURCE_EXHAUSTED;
     node->kind=REACTIVE_NODE_SIGNAL;node->type=initial.type;node->value=initial;node->version=1;
@@ -231,6 +234,7 @@ PocketReactiveStatus pocket_reactive_computed(PocketReactiveRuntime *runtime,
     if(!impl||!out||!compute||!type_valid(output_type)||
        !deps_valid(impl,dependencies,dependency_count))
         return POCKET_REACTIVE_INVALID_ARGUMENT;
+    if(impl->flushing)return POCKET_REACTIVE_BUSY;
     PocketReactiveHandle handle={0};ReactiveNode *node=allocate_node(impl,&handle);
     if(!node)return POCKET_REACTIVE_RESOURCE_EXHAUSTED;
     node->kind=REACTIVE_NODE_COMPUTED;node->type=output_type;node->compute=compute;
@@ -245,6 +249,7 @@ PocketReactiveStatus pocket_reactive_rewire_computed(PocketReactiveRuntime *runt
                                                       uint32_t dependency_count) {
     ReactiveImpl *impl=impl_of(runtime);ReactiveNode *node=node_at(impl,computed);
     if(!node)return POCKET_REACTIVE_STALE_HANDLE;
+    if(impl->flushing)return POCKET_REACTIVE_BUSY;
     if(node->kind!=REACTIVE_NODE_COMPUTED||!deps_valid(impl,dependencies,dependency_count))
         return POCKET_REACTIVE_INVALID_ARGUMENT;
     for(uint32_t i=0;i<dependency_count;i++)
@@ -276,6 +281,7 @@ PocketReactiveStatus pocket_reactive_set(PocketReactiveRuntime *runtime,
                                           PocketReactiveValue value) {
     ReactiveImpl *impl=impl_of(runtime);ReactiveNode *node=node_at(impl,signal);
     if(!node)return POCKET_REACTIVE_STALE_HANDLE;
+    if(impl->callback_phase==1)return POCKET_REACTIVE_BUSY;
     if(node->kind!=REACTIVE_NODE_SIGNAL)return POCKET_REACTIVE_INVALID_ARGUMENT;
     if(!value_valid(value)||value.type!=node->type)return POCKET_REACTIVE_TYPE_MISMATCH;
     if(impl->transaction_active) {
@@ -289,6 +295,7 @@ PocketReactiveStatus pocket_reactive_destroy(PocketReactiveRuntime *runtime,
                                               PocketReactiveHandle handle) {
     ReactiveImpl *impl=impl_of(runtime);ReactiveNode *node=node_at(impl,handle);
     if(!node)return POCKET_REACTIVE_STALE_HANDLE;
+    if(impl->flushing)return POCKET_REACTIVE_BUSY;
     for(uint32_t i=0;i<impl->node_capacity;i++) {
         ReactiveNode *other=&impl->nodes[i];
         if(!other->live||other==node)continue;
@@ -318,6 +325,7 @@ PocketReactiveStatus pocket_reactive_effect(PocketReactiveRuntime *runtime,
     if(!impl||!effect||!subscription||!dependency_count||
        !deps_valid(impl,dependencies,dependency_count))
         return POCKET_REACTIVE_INVALID_ARGUMENT;
+    if(impl->flushing)return POCKET_REACTIVE_BUSY;
     for(uint32_t i=0;i<impl->effect_capacity;i++) {
         ReactiveEffect *record=&impl->effects[i];
         if(!record->live) {
@@ -338,6 +346,7 @@ PocketReactiveStatus pocket_reactive_remove_effect(PocketReactiveRuntime *runtim
     ReactiveImpl *impl=impl_of(runtime);
     if(!impl||!subscription.slot||subscription.slot>impl->effect_capacity)
         return POCKET_REACTIVE_INVALID_ARGUMENT;
+    if(impl->flushing)return POCKET_REACTIVE_BUSY;
     ReactiveEffect *effect=&impl->effects[subscription.slot-1U];
     if(!effect->live||effect->generation!=subscription.generation)
         return POCKET_REACTIVE_STALE_HANDLE;
@@ -362,6 +371,7 @@ PocketReactiveStatus pocket_reactive_bind_component(PocketReactiveRuntime *runti
     if(!impl||!impl->components||!subscription||!node||!target_type_ok(node->type,target)||
        !pocket_component_handle_valid(component))
         return POCKET_REACTIVE_INVALID_ARGUMENT;
+    if(impl->flushing)return POCKET_REACTIVE_BUSY;
     PocketComponentSnapshot snapshot;
     if(pocket_component_snapshot(impl->components,component,&snapshot)!=POCKET_COMPONENT_OK)
         return POCKET_REACTIVE_COMPONENT_ERROR;
@@ -384,6 +394,7 @@ PocketReactiveStatus pocket_reactive_unbind(PocketReactiveRuntime *runtime,
     ReactiveImpl *impl=impl_of(runtime);
     if(!impl||!subscription.slot||subscription.slot>impl->binding_capacity)
         return POCKET_REACTIVE_INVALID_ARGUMENT;
+    if(impl->flushing)return POCKET_REACTIVE_BUSY;
     ReactiveBinding *binding=&impl->bindings[subscription.slot-1U];
     if(!binding->live||binding->generation!=subscription.generation)
         return POCKET_REACTIVE_STALE_HANDLE;
@@ -398,26 +409,26 @@ size_t pocket_reactive_binding_count(const PocketReactiveRuntime *runtime) {
 }
 PocketReactiveStatus pocket_reactive_batch_begin(PocketReactiveRuntime *runtime) {
     ReactiveImpl *impl=impl_of(runtime);
-    if(!impl||impl->transaction_active)return POCKET_REACTIVE_BUSY;
+    if(!impl||impl->transaction_active||impl->flushing)return POCKET_REACTIVE_BUSY;
     if(impl->batch_depth==UINT32_MAX)return POCKET_REACTIVE_RESOURCE_EXHAUSTED;
     impl->batch_depth++;
     return POCKET_REACTIVE_OK;
 }
 PocketReactiveStatus pocket_reactive_batch_end(PocketReactiveRuntime *runtime) {
     ReactiveImpl *impl=impl_of(runtime);
-    if(!impl||!impl->batch_depth)return POCKET_REACTIVE_BUSY;
+    if(!impl||!impl->batch_depth||impl->flushing)return POCKET_REACTIVE_BUSY;
     impl->batch_depth--;
     return POCKET_REACTIVE_OK;
 }
 PocketReactiveStatus pocket_reactive_transaction_begin(PocketReactiveRuntime *runtime) {
     ReactiveImpl *impl=impl_of(runtime);
-    if(!impl||impl->transaction_active||impl->batch_depth)return POCKET_REACTIVE_BUSY;
+    if(!impl||impl->transaction_active||impl->batch_depth||impl->flushing)return POCKET_REACTIVE_BUSY;
     impl->transaction_active=1;
     return POCKET_REACTIVE_OK;
 }
 PocketReactiveStatus pocket_reactive_transaction_commit(PocketReactiveRuntime *runtime) {
     ReactiveImpl *impl=impl_of(runtime);
-    if(!impl||!impl->transaction_active)return POCKET_REACTIVE_BUSY;
+    if(!impl||!impl->transaction_active||impl->flushing)return POCKET_REACTIVE_BUSY;
     for(uint32_t i=0;i<impl->node_capacity;i++) {
         ReactiveNode *node=&impl->nodes[i];
         if(node->live&&node->kind==REACTIVE_NODE_SIGNAL&&node->staged) {
@@ -429,7 +440,7 @@ PocketReactiveStatus pocket_reactive_transaction_commit(PocketReactiveRuntime *r
 }
 PocketReactiveStatus pocket_reactive_transaction_rollback(PocketReactiveRuntime *runtime) {
     ReactiveImpl *impl=impl_of(runtime);
-    if(!impl||!impl->transaction_active)return POCKET_REACTIVE_BUSY;
+    if(!impl||!impl->transaction_active||impl->flushing)return POCKET_REACTIVE_BUSY;
     for(uint32_t i=0;i<impl->node_capacity;i++)impl->nodes[i].staged=0;
     impl->transaction_active=0;
     return POCKET_REACTIVE_OK;
@@ -491,8 +502,8 @@ int pocket_reactive_has_pending(const PocketReactiveRuntime *runtime) {
     }
     return 0;
 }
-PocketReactiveStatus pocket_reactive_flush(PocketReactiveRuntime *runtime,uint32_t budget,
-                                            PocketReactiveFlushStats *stats) {
+static PocketReactiveStatus reactive_flush_impl(PocketReactiveRuntime *runtime,uint32_t budget,
+                                                PocketReactiveFlushStats *stats) {
     ReactiveImpl *impl=impl_of(runtime);
     if(!impl)return POCKET_REACTIVE_INVALID_ARGUMENT;
     if(impl->batch_depth||impl->transaction_active)return POCKET_REACTIVE_BUSY;
@@ -518,7 +529,9 @@ PocketReactiveStatus pocket_reactive_flush(PocketReactiveRuntime *runtime,uint32
                 return gathered;
             }
             PocketReactiveValue out={node->type,{0}};
+            impl->callback_phase=1;
             PocketReactiveStatus status=node->compute(node->context,values,node->dep_count,&out);
+            impl->callback_phase=0;
             if(status!=POCKET_REACTIVE_OK) {
                 if(stats) *stats=local;
                 return status;
@@ -560,7 +573,9 @@ PocketReactiveStatus pocket_reactive_flush(PocketReactiveRuntime *runtime,uint32
             }
             snapshot_versions(impl,effect->deps,effect->dep_versions,effect->dep_count);
             effect->initial=0;
+            impl->callback_phase=2;
             PocketReactiveStatus status=effect->effect(effect->context,values,effect->dep_count);
+            impl->callback_phase=0;
             local.work_items++;local.effect_runs++;progress=1;
             if(status!=POCKET_REACTIVE_OK) {
                 if(stats) *stats=local;
@@ -605,4 +620,17 @@ PocketReactiveStatus pocket_reactive_flush(PocketReactiveRuntime *runtime,uint32
     local.mutation_serial=impl->mutation_serial;
     if(stats)*stats=local;
     return POCKET_REACTIVE_OK;
+}
+
+PocketReactiveStatus pocket_reactive_flush(PocketReactiveRuntime *runtime,uint32_t budget,
+                                            PocketReactiveFlushStats *stats) {
+    ReactiveImpl *impl=impl_of(runtime);
+    if(!impl)return POCKET_REACTIVE_INVALID_ARGUMENT;
+    if(impl->flushing||impl->batch_depth||impl->transaction_active)
+        return POCKET_REACTIVE_BUSY;
+    impl->flushing=1;
+    PocketReactiveStatus status=reactive_flush_impl(runtime,budget,stats);
+    impl->callback_phase=0;
+    impl->flushing=0;
+    return status;
 }
