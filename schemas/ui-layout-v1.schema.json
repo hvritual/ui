@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pocket://schemas/ui-layout-v1",
+  "title": "Pocket UI Layout v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mode"],
+  "properties": {
+    "mode": {"enum": ["leaf", "row", "column", "stack", "grid", "absolute"]},
+    "width": {"$ref": "#/$defs/sizeLength"},
+    "height": {"$ref": "#/$defs/sizeLength"},
+    "offsetX": {"$ref": "#/$defs/offsetLength"},
+    "offsetY": {"$ref": "#/$defs/offsetLength"},
+    "minWidth": {"type": "integer", "minimum": 0},
+    "minHeight": {"type": "integer", "minimum": 0},
+    "maxWidth": {"type": "integer", "minimum": -1},
+    "maxHeight": {"type": "integer", "minimum": -1},
+    "margin": {"$ref": "#/$defs/insets"},
+    "padding": {"$ref": "#/$defs/insets"},
+    "gap": {"type": "integer", "minimum": 0},
+    "grow": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "shrink": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "alignItems": {"enum": ["start", "center", "end", "stretch"]},
+    "alignSelf": {"enum": ["auto", "start", "center", "end", "stretch"]},
+    "justifyContent": {"enum": ["start", "center", "end", "space-between"]},
+    "wrap": {"type": "boolean"},
+    "gridColumns": {"type": "integer", "minimum": 1, "maximum": 16},
+    "aspectRatio": {
+      "type": "object", "additionalProperties": false,
+      "required": ["numerator", "denominator"],
+      "properties": {
+        "numerator": {"type": "integer", "minimum": 1, "maximum": 4096},
+        "denominator": {"type": "integer", "minimum": 1, "maximum": 4096}
+      }
+    },
+    "overflow": {"enum": ["visible", "clip"]}
+  },
+  "$defs": {
+    "sizeLength": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["kind"], "properties": {"kind": {"enum": ["auto", "content", "fill"]}}},
+        {"type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": {"kind": {"const": "px"}, "value": {"type": "integer", "minimum": 0}}},
+        {"type": "object", "additionalProperties": false, "required": ["kind", "basisPoints"], "properties": {"kind": {"const": "percent"}, "basisPoints": {"type": "integer", "minimum": 0, "maximum": 10000}}}
+      ]
+    },
+    "offsetLength": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": {"kind": {"const": "px"}, "value": {"type": "integer"}}},
+        {"type": "object", "additionalProperties": false, "required": ["kind", "basisPoints"], "properties": {"kind": {"const": "percent"}, "basisPoints": {"type": "integer", "minimum": 0, "maximum": 10000}}}
+      ]
+    },
+    "insets": {
+      "type": "object", "additionalProperties": false,
+      "required": ["left", "top", "right", "bottom"],
+      "properties": {
+        "left": {"type": "integer", "minimum": 0}, "top": {"type": "integer", "minimum": 0},
+        "right": {"type": "integer", "minimum": 0}, "bottom": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

@@ -155,6 +155,13 @@ PocketUiStatus pocket_ui_snapshot(const PocketUiTree *tree, PocketUiHandle node,
 PocketUiStatus pocket_ui_take_dirty(PocketUiTree *tree, PocketUiHandle node,
                                     PocketUiDirtyFlags *out);
 size_t pocket_ui_live_count(const PocketUiTree *tree);
+/* Read-only structural traversal for Runtime-owned layout/inspection layers.
+ * Sibling order is implementation order; callers that need application creation
+ * order must normalize explicitly. */
+PocketUiStatus pocket_ui_first_child(const PocketUiTree *tree, PocketUiHandle parent,
+                                     PocketUiHandle *out);
+PocketUiStatus pocket_ui_next_sibling(const PocketUiTree *tree, PocketUiHandle node,
+                                      PocketUiHandle *out);
 
 PocketUiStatus pocket_ui_set_event_handler(PocketUiTree *tree, PocketUiHandle node,
                                            PocketUiEventHandler handler, void *context);

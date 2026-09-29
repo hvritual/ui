@@ -480,6 +480,24 @@ size_t pocket_ui_live_count(const PocketUiTree *tree) {
     const UiImpl *ui = const_impl(tree);
     return ui ? ui->live_count : 0;
 }
+PocketUiStatus pocket_ui_first_child(const PocketUiTree *tree, PocketUiHandle parent,
+                                     PocketUiHandle *out) {
+    const UiImpl *ui = const_impl(tree);
+    const UiNode *node = find_node_const(ui, parent);
+    if(!node) return POCKET_UI_STALE_HANDLE;
+    if(!out) return POCKET_UI_INVALID_ARGUMENT;
+    *out = node->first_child;
+    return POCKET_UI_OK;
+}
+PocketUiStatus pocket_ui_next_sibling(const PocketUiTree *tree, PocketUiHandle handle,
+                                      PocketUiHandle *out) {
+    const UiImpl *ui = const_impl(tree);
+    const UiNode *node = find_node_const(ui, handle);
+    if(!node) return POCKET_UI_STALE_HANDLE;
+    if(!out) return POCKET_UI_INVALID_ARGUMENT;
+    *out = node->next_sibling;
+    return POCKET_UI_OK;
+}
 PocketUiStatus pocket_ui_set_event_handler(PocketUiTree *tree, PocketUiHandle handle,
                                            PocketUiEventHandler handler, void *context) {
     UiImpl *ui = impl(tree);
