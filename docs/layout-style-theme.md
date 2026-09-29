@@ -81,3 +81,10 @@ Object Model reports that their handle generation no longer exists. A long-lived
 Layout Context therefore has bounded memory even when pages repeatedly
 create/destroy nodes. Querying the layout result of a destroyed handle returns
 `POCKET_UI_STALE_HANDLE`; historical geometry is never exposed as current.
+
+
+Resolved style values are field-validated. Colors are unsigned 32-bit values;
+opacity is 0..256; border/radius/font/spacing values are non-negative 32-bit
+integers; translations are signed 32-bit. Token references are validated after
+theme lookup with the same rules, so a valid token ID cannot inject an invalid
+field value.

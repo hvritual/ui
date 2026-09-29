@@ -34,5 +34,13 @@ int main(void){
  PocketStyleRule missing={200,0,1,atom_style(POCKET_STYLE_BACKGROUND,pocket_style_token(999))};CHECK(pocket_style_add_rule(&rt,&missing)==POCKET_STYLE_OK);
  CHECK(pocket_style_resolve(&rt,200,0,NULL,&out)==POCKET_STYLE_TOKEN_MISSING);
  CHECK(pocket_style_add_rule(&rt,&(PocketStyleRule){300,1U<<31,1,{0}})==POCKET_STYLE_INVALID_ARGUMENT);
+ PocketStyle invalidOpacity=atom_style(POCKET_STYLE_OPACITY,pocket_style_literal(257));
+ CHECK(pocket_style_add_rule(&rt,&(PocketStyleRule){301,0,1,invalidOpacity})==POCKET_STYLE_INVALID_ARGUMENT);
+ PocketThemeToken badToken[]={{77,300}};PocketThemeDefinition badTheme={3,(PocketStyle){0},badToken,1};
+ CHECK(pocket_style_add_theme(&rt,&badTheme)==POCKET_STYLE_OK);
+ PocketStyle tokenOpacity=atom_style(POCKET_STYLE_OPACITY,pocket_style_token(77));
+ CHECK(pocket_style_add_rule(&rt,&(PocketStyleRule){302,0,1,tokenOpacity})==POCKET_STYLE_OK);
+ CHECK(pocket_style_set_theme(&rt,3)==POCKET_STYLE_OK);
+ CHECK(pocket_style_resolve(&rt,302,0,NULL,&out)==POCKET_STYLE_INVALID_ARGUMENT);
  pocket_style_runtime_dispose(&rt);puts("STYLE_OK");return 0;
 }

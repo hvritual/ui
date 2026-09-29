@@ -1,5 +1,6 @@
 #include "style.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -45,10 +46,34 @@ static int atom_valid(PocketStyleAtom a){
     return (a.source==POCKET_STYLE_LITERAL && a.token==0U) ||
            (a.source==POCKET_STYLE_TOKEN && a.token!=0U && a.value==0);
 }
+static int field_value_valid(unsigned field,int64_t value){
+    switch(field){
+        case POCKET_STYLE_BACKGROUND:
+        case POCKET_STYLE_FOREGROUND:
+        case POCKET_STYLE_BORDER_COLOR:
+            return value>=0 && (uint64_t)value<=0xffffffffULL;
+        case POCKET_STYLE_BORDER_WIDTH:
+        case POCKET_STYLE_RADIUS:
+        case POCKET_STYLE_FONT_ID:
+        case POCKET_STYLE_FONT_SIZE:
+        case POCKET_STYLE_SPACING:
+            return value>=0 && value<=INT32_MAX;
+        case POCKET_STYLE_OPACITY:
+            return value>=0 && value<=256;
+        case POCKET_STYLE_TRANSLATE_X:
+        case POCKET_STYLE_TRANSLATE_Y:
+            return value>=INT32_MIN && value<=INT32_MAX;
+        default:
+            return 0;
+    }
+}
 static int style_valid(const PocketStyle *s){
     if(!s || (s->set_mask & ~POCKET_STYLE_ALL))return 0;
-    for(unsigned i=0;i<POCKET_STYLE_FIELD_COUNT;i++)
-        if((s->set_mask & POCKET_STYLE_BIT(i)) && !atom_valid(s->fields[i]))return 0;
+    for(unsigned i=0;i<POCKET_STYLE_FIELD_COUNT;i++)if(s->set_mask & POCKET_STYLE_BIT(i)){
+        if(!atom_valid(s->fields[i]))return 0;
+        if(s->fields[i].source==POCKET_STYLE_LITERAL && !field_value_valid(i,s->fields[i].value))
+            return 0;
+    }
     return 1;
 }
 PocketStyleStatus pocket_style_runtime_init(PocketStyleRuntime *runtime,
@@ -100,7 +125,8 @@ PocketStyleStatus pocket_style_add_theme(PocketStyleRuntime *runtime,
     if(!record)return POCKET_STYLE_RESOURCE_EXHAUSTED;
     record->used=1;record->id=theme->id;record->base=theme->base;
     record->token_start=impl->token_count;record->token_count=theme->token_count;
-    memcpy(&impl->tokens[impl->token_count],theme->tokens,(size_t)theme->token_count*sizeof(*theme->tokens));
+    if(theme->token_count)
+        memcpy(&impl->tokens[impl->token_count],theme->tokens,(size_t)theme->token_count*sizeof(*theme->tokens));
     impl->token_count+=theme->token_count;impl->theme_count++;
     if(!impl->active_theme){impl->active_theme=theme->id;impl->epoch=1;}
     return POCKET_STYLE_OK;
@@ -145,6 +171,7 @@ static PocketStyleStatus apply_style(const StyleImpl *impl,const ThemeRecord *th
         PocketStyleAtom a=style->fields[i];int64_t value=a.value;
         if(a.source==POCKET_STYLE_TOKEN && !token_value(impl,theme,a.token,&value))
             return POCKET_STYLE_TOKEN_MISSING;
+        if(!field_value_valid(i,value)) return POCKET_STYLE_INVALID_ARGUMENT;
         out->fields[i]=value;out->set_mask|=POCKET_STYLE_BIT(i);
     }
     return POCKET_STYLE_OK;
