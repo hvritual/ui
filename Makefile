@@ -184,8 +184,10 @@ test-virtual-list:
 test-reactive-all-arm:
 	python3 scripts/ui_reactive.py all --mode arm
 
-.PHONY: test-interaction test-interaction-arm
+.PHONY: test-interaction test-interaction-bridge test-interaction-arm
 test-interaction:
 	python3 scripts/ui_interaction.py interaction --mode native
+test-interaction-bridge:
+	python3 scripts/ui_interaction.py bridge --mode native
 test-interaction-arm:
-	python3 scripts/ui_interaction.py interaction --mode arm
+	python3 scripts/ui_interaction.py all --mode arm
