@@ -204,7 +204,7 @@ static PocketModelStatus sync_slot_state(VirtualImpl *impl,ModelSlot *slot) {
            POCKET_MODEL_OK:POCKET_MODEL_STALE_COMPONENT;
 }
 static PocketModelStatus sync_pool_states(VirtualImpl *impl) {
-    for(uint32_t i=0;i<impl->pool_size;i++) {
+    for(uint32_t i=0;i<impl->materialized_count;i++) {
         if(!impl->pool[i].bound)continue;
         PocketModelStatus status=sync_slot_state(impl,&impl->pool[i]);
         if(status!=POCKET_MODEL_OK)return status;
@@ -294,7 +294,7 @@ PocketModelStatus pocket_virtual_collection_component_for_key(
     const PocketVirtualCollection *collection,uint64_t key,PocketComponentHandle *out) {
     const VirtualImpl *impl=collection?(const VirtualImpl *)collection->impl:NULL;
     if(!impl||!key||!out)return POCKET_MODEL_INVALID_ARGUMENT;
-    for(uint32_t i=0;i<impl->pool_size;i++)
+    for(uint32_t i=0;i<impl->materialized_count;i++)
         if(impl->pool[i].bound&&impl->pool[i].key==key) {
             *out=impl->pool[i].component;
             return POCKET_MODEL_OK;
