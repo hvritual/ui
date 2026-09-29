@@ -83,7 +83,7 @@ int main(void){
     CHECK(pocket_layout_run(&l,root,180,80)==POCKET_UI_OK);CHECK(pocket_layout_result(&l,b,&br)==POCKET_UI_OK);
     CHECK(br.geometry.width>=90);
 
-    PocketLayoutSpec ratio=leaf_px(80,10);ratio.height.kind=POCKET_LENGTH_AUTO;ratio.aspect_num=2;ratio.aspect_den=1;
+    PocketLayoutSpec ratio=leaf_px(80,10);ratio.height=(PocketLength){POCKET_LENGTH_AUTO,0};ratio.aspect_num=2;ratio.aspect_den=1;
     CHECK(pocket_layout_set(&l,a,&ratio)==POCKET_UI_OK);CHECK(pocket_layout_run(&l,root,300,80)==POCKET_UI_OK);CHECK(pocket_layout_result(&l,a,&ar)==POCKET_UI_OK);
     CHECK(ar.geometry.height==40);
 
