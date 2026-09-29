@@ -111,8 +111,12 @@ PocketStyleStatus pocket_style_add_rule(PocketStyleRuntime *runtime,const Pocket
        !style_valid(&rule->style))return POCKET_STYLE_INVALID_ARGUMENT;
     if(impl->rule_count>=impl->rule_capacity)return POCKET_STYLE_RESOURCE_EXHAUSTED;
     for(uint32_t i=0;i<impl->rule_capacity;i++)if(!impl->rules[i].used){
-        impl->rules[i].used=1;impl->rules[i].rule=*rule;impl->rules[i].sequence=impl->next_sequence++;
-        if(!impl->next_sequence)impl->next_sequence=1;impl->rule_count++;return POCKET_STYLE_OK;
+        impl->rules[i].used=1;
+        impl->rules[i].rule=*rule;
+        impl->rules[i].sequence=impl->next_sequence++;
+        if(!impl->next_sequence) impl->next_sequence=1;
+        impl->rule_count++;
+        return POCKET_STYLE_OK;
     }
     return POCKET_STYLE_RESOURCE_EXHAUSTED;
 }
