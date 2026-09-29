@@ -1,0 +1,133 @@
+# Pocket UI Object Model v1
+
+Issue: #35. Depends on Engine Contract #34.
+
+## Layering
+
+```text
+JS / future Pocket SDK
+        ↓ opaque PocketUiHandle
+Pocket UI Object Model
+        ↓ private PocketEngineNode
+Engine Contract
+        ↓
+Current / Fake / future LVGL
+```
+
+Applications never receive engine handles. A Pocket UI handle is
+`{slot,generation}`; each node also receives a monotonic stable ID for trace,
+inspection and semantic references.
+
+## Node kinds
+
+v1 freezes only the minimum semantic categories:
+
+- Node
+- Component
+- Container
+- Text
+- Image
+- Input
+- Scroll
+- Custom
+
+These are not widgets and do not define visual style. F3/F4 own layout/style and
+standard controls.
+
+## Lifecycle
+
+Normal lifecycle is:
+
+```text
+create → mount → update* → layout → paint → unmount → destroy
+```
+
+Destroying a mounted parent performs bounded child-first unmount/destroy
+cleanup. Engine nodes are removed before the native slot is invalidated.
+Failures are reported, but native handles are still invalidated so JS/native
+objects cannot remain live after teardown; the Engine owner remains responsible
+for final cleanup at engine close.
+
+A child cannot mount before its parent. Paint cannot consume a node while layout
+dirty work remains.
+
+## Dirty propagation
+
+- structure: self + ancestor structure/layout/paint
+- geometry/visibility/text: self layout/paint + ancestor layout/paint
+- style/opacity/semantic-state: self style/paint + ancestor paint
+- resource: self resource/paint + ancestor paint
+- focusable/clickable/enabled: input dirty; enabled also style/paint
+
+Dirty flags are deduplicated bitsets. Layout and paint explicitly consume their
+respective work.
+
+## Events
+
+Events use deterministic:
+
+```text
+root capture → ... → parent capture → target → parent bubble → ... → root bubble
+```
+
+`CONSUME` stops propagation. `CANCEL` stops propagation and marks
+`default_prevented`.
+
+## Bounded update queue
+
+Queued property updates use a fixed configured ring. Enqueue fails with
+`POCKET_UI_QUEUE_FULL` instead of growing without bound. Drain is limited by a
+per-tick budget and returns `POCKET_UI_BUDGET_EXHAUSTED` while work remains.
+An update queued for a destroyed node returns `POCKET_UI_STALE_HANDLE`
+deterministically.
+
+## Engine ownership
+
+If an admitted Engine advertises `NODE_TREE`, create/update/destroy operations
+also create/update/remove a private Engine node. If no Node Tree capability is
+available (for example today's current renderer adapter), the UI Object Model
+still operates headlessly. No silent native-engine pointer escapes the model.
+
+## Acceptance
+
+```sh
+make test-ui-object-model
+make test-ui-lifecycle
+make test-ui-dirty
+make test-ui-object-arm
+```
+
+Object-model stress covers 1,200 create/mount/layout/paint/unmount/destroy
+cycles, stable-ID monotonicity, generation invalidation and zero live native
+nodes at exit.
+
+
+## Structural safety bounds
+
+The native tree caps parent depth at 256. This keeps recursive unmount/destroy
+cleanup bounded even when guest code attempts to manufacture a pathological
+single-child chain.
+
+Event propagation stores handles, not arena pointers. Before each capture,
+target or bubble callback the node is resolved again. This is required because
+a callback may create nodes and trigger arena `realloc`, or destroy a later
+event-path node. The former remains safe; the latter fails deterministically
+with `POCKET_UI_STALE_HANDLE` rather than dereferencing freed semantic state.
+
+
+Event dispatch uses a fixed stack path bounded by the 256-level tree-depth gate;
+it performs no heap allocation on the input path.
+
+Update-drain budget counts every dequeued attempt, including stale/error updates.
+This prevents a queue full of invalid callbacks from bypassing the per-tick work
+budget merely because none of them succeeds.
+
+
+Unknown property-field bits fail with `POCKET_UI_INVALID_ARGUMENT`; v1 never
+silently ignores a field from a newer or corrupted caller.
+
+If Engine node removal fails during teardown, the UI Object Model returns
+`POCKET_UI_ENGINE_ERROR` but still invalidates the native/JS-visible handle and
+removes it from the semantic tree. The Engine owner must reclaim any leaked
+implementation object when the Engine context closes. This prevents a backend
+fault from keeping guest-visible UI objects half alive.
