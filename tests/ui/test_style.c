@@ -22,8 +22,12 @@ int main(void){
  PocketStyleRule pressed={100,POCKET_STATE_PRESSED,40,atom_style(POCKET_STYLE_BACKGROUND,pocket_style_token(T_PRESSED))};
  PocketStyle disabledStyle=atom_style(POCKET_STYLE_BACKGROUND,pocket_style_token(T_DISABLED));disabledStyle.set_mask|=POCKET_STYLE_BIT(POCKET_STYLE_OPACITY);disabledStyle.fields[POCKET_STYLE_OPACITY]=pocket_style_literal(128);
  PocketStyleRule disabled={100,POCKET_STATE_DISABLED,50,disabledStyle};
+ PocketStyleRule checked={100,POCKET_STATE_CHECKED,35,atom_style(POCKET_STYLE_BORDER_WIDTH,pocket_style_literal(2))};
+ PocketStyle transform=atom_style(POCKET_STYLE_TRANSLATE_X,pocket_style_literal(3));transform.set_mask|=POCKET_STYLE_BIT(POCKET_STYLE_TRANSLATE_Y);transform.fields[POCKET_STYLE_TRANSLATE_Y]=pocket_style_literal(-2);
+ PocketStyleRule selected={100,POCKET_STATE_SELECTED,36,transform};
  CHECK(pocket_style_add_rule(&rt,&surface)==POCKET_STYLE_OK);CHECK(pocket_style_add_rule(&rt,&shape)==POCKET_STYLE_OK);
- CHECK(pocket_style_add_rule(&rt,&focused)==POCKET_STYLE_OK);CHECK(pocket_style_add_rule(&rt,&pressed)==POCKET_STYLE_OK);CHECK(pocket_style_add_rule(&rt,&disabled)==POCKET_STYLE_OK);
+ CHECK(pocket_style_add_rule(&rt,&focused)==POCKET_STYLE_OK);CHECK(pocket_style_add_rule(&rt,&checked)==POCKET_STYLE_OK);
+ CHECK(pocket_style_add_rule(&rt,&selected)==POCKET_STYLE_OK);CHECK(pocket_style_add_rule(&rt,&pressed)==POCKET_STYLE_OK);CHECK(pocket_style_add_rule(&rt,&disabled)==POCKET_STYLE_OK);
  PocketResolvedStyle parent={0};parent.set_mask=POCKET_STYLE_BIT(POCKET_STYLE_FOREGROUND)|POCKET_STYLE_BIT(POCKET_STYLE_FONT_SIZE);
  parent.fields[POCKET_STYLE_FOREGROUND]=0x123456;parent.fields[POCKET_STYLE_FONT_SIZE]=26;
  PocketResolvedStyle out;CHECK(pocket_style_resolve(&rt,100,POCKET_STATE_FOCUSED|POCKET_STATE_PRESSED,&parent,&out)==POCKET_STYLE_OK);
@@ -31,6 +35,8 @@ int main(void){
  CHECK(out.fields[POCKET_STYLE_BORDER_COLOR]==0x0060aa&&out.fields[POCKET_STYLE_RADIUS]==12&&out.fields[POCKET_STYLE_SPACING]==8);
  CHECK(pocket_style_resolve(&rt,100,POCKET_STATE_PRESSED|POCKET_STATE_DISABLED,NULL,&out)==POCKET_STYLE_OK);
  CHECK(out.fields[POCKET_STYLE_BACKGROUND]==0xaaaaaa&&out.fields[POCKET_STYLE_OPACITY]==128);
+ CHECK(pocket_style_resolve(&rt,100,POCKET_STATE_CHECKED|POCKET_STATE_SELECTED,NULL,&out)==POCKET_STYLE_OK);
+ CHECK(out.fields[POCKET_STYLE_BORDER_WIDTH]==2&&out.fields[POCKET_STYLE_TRANSLATE_X]==3&&out.fields[POCKET_STYLE_TRANSLATE_Y]==-2);
  PocketStyleRule missing={200,0,1,atom_style(POCKET_STYLE_BACKGROUND,pocket_style_token(999))};CHECK(pocket_style_add_rule(&rt,&missing)==POCKET_STYLE_OK);
  CHECK(pocket_style_resolve(&rt,200,0,NULL,&out)==POCKET_STYLE_TOKEN_MISSING);
  CHECK(pocket_style_add_rule(&rt,&(PocketStyleRule){300,1U<<31,1,{0}})==POCKET_STYLE_INVALID_ARGUMENT);

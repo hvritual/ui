@@ -96,3 +96,9 @@ Schema.
 
 The style schema now mirrors Runtime field ranges instead of using one generic
 integer atom for every field.
+
+
+Acceptance coverage explicitly exercises percentage width/height, oversized
+content measurement under clipped overflow, invalid safe-area geometry, checked
+and selected states, and signed translation transforms. These are gates rather
+than documentation-only capabilities.

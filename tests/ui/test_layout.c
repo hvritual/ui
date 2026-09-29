@@ -5,8 +5,10 @@
 
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"LAYOUT_FAIL line=%d %s\n",__LINE__,#x);return 1;}}while(0)
 
+static int long_measure_mode;
 static int measure(void *ctx,PocketUiHandle node,int32_t mw,int32_t mh,int32_t *w,int32_t *h){
     (void)ctx;(void)mw;(void)mh;
+    if(long_measure_mode){*w=5000;*h=40;return 1;}
     if(node.slot%2){*w=42;*h=18;}else{*w=64;*h=24;}
     return 1;
 }
@@ -86,6 +88,22 @@ int main(void){
     PocketLayoutSpec ratio=leaf_px(80,10);ratio.height=(PocketLength){POCKET_LENGTH_AUTO,0};ratio.aspect_num=2;ratio.aspect_den=1;
     CHECK(pocket_layout_set(&l,a,&ratio)==POCKET_UI_OK);CHECK(pocket_layout_run(&l,root,300,80)==POCKET_UI_OK);CHECK(pocket_layout_result(&l,a,&ar)==POCKET_UI_OK);
     CHECK(ar.geometry.height==40);
+
+    rs=pocket_layout_spec_default();rs.mode=POCKET_LAYOUT_STACK;rs.align_items=POCKET_ALIGN_START;rs.overflow=POCKET_OVERFLOW_CLIP;
+    CHECK(pocket_layout_set(&l,root,&rs)==POCKET_UI_OK);
+    PocketLayoutSpec percent=pocket_layout_spec_default();percent.width=(PocketLength){POCKET_LENGTH_PERCENT,5000};percent.height=(PocketLength){POCKET_LENGTH_PERCENT,2500};
+    CHECK(pocket_layout_set(&l,a,&percent)==POCKET_UI_OK);CHECK(pocket_layout_run(&l,root,200,100)==POCKET_UI_OK);CHECK(pocket_layout_result(&l,a,&ar)==POCKET_UI_OK);
+    CHECK(ar.geometry.width==100&&ar.geometry.height==25);
+
+    long_measure_mode=1;PocketLayoutSpec long_content=pocket_layout_spec_default();long_content.width.kind=POCKET_LENGTH_CONTENT;long_content.height.kind=POCKET_LENGTH_CONTENT;
+    CHECK(pocket_layout_set(&l,c,&long_content)==POCKET_UI_OK);CHECK(pocket_layout_run(&l,root,200,100)==POCKET_UI_OK);CHECK(pocket_layout_result(&l,c,&cr)==POCKET_UI_OK);
+    CHECK(cr.geometry.width==5000&&cr.geometry.height==40&&cr.clip.width==200);
+    long_measure_mode=0;
+
+    PocketLayoutContext unsafe={0};PocketLayoutConfig unsafe_cfg={.tree=&tree,.record_capacity=8,.safe_area={60,0,50,0}};
+    CHECK(pocket_layout_init(&unsafe,&unsafe_cfg)==POCKET_UI_OK);
+    CHECK(pocket_layout_run(&unsafe,root,100,100)==POCKET_UI_INVALID_ARGUMENT);
+    pocket_layout_dispose(&unsafe);
 
     PocketLayoutSpec bad=pocket_layout_spec_default();bad.width=(PocketLength){POCKET_LENGTH_PERCENT,10001};
     CHECK(pocket_layout_set(&l,a,&bad)==POCKET_UI_INVALID_ARGUMENT);
