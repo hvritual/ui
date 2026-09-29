@@ -434,3 +434,16 @@ PocketComponentStatus pocket_component_submit(PocketComponentRuntime *runtime,
     if(record->props.disabled||record->props.read_only)return POCKET_COMPONENT_DISABLED;
     emit(impl,record,POCKET_COMPONENT_EVENT_SUBMIT);return POCKET_COMPONENT_OK;
 }
+
+PocketComponentStatus pocket_component_from_root(const PocketComponentRuntime *runtime,
+                                                  PocketUiHandle root,
+                                                  PocketComponentSnapshot *out) {
+    const ComponentImpl *impl=cci(runtime);
+    if(!impl||!out||!pocket_ui_handle_valid(root))return POCKET_COMPONENT_INVALID_ARGUMENT;
+    for(uint32_t i=0;i<impl->capacity;i++) {
+        const ComponentRecord *r=&impl->records[i];
+        if(r->live&&r->root.slot==root.slot&&r->root.generation==root.generation)
+            return pocket_component_snapshot(runtime,(PocketComponentHandle){i+1U,r->generation},out);
+    }
+    return POCKET_COMPONENT_STALE_HANDLE;
+}

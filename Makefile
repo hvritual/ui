@@ -197,3 +197,21 @@ test-gesture test-interaction-replay:
 	python3 scripts/ui_interaction.py gesture --mode native
 test-focus:
 	python3 scripts/ui_interaction.py interaction --mode native
+
+.PHONY: test-framework test-framework-arm test-framework-sanitize verify-framework build-board-framework test-board-framework-package verify-board-framework test-board-framework-verifier
+test-framework:
+	python3 scripts/framework.py test --mode native
+test-framework-arm:
+	python3 scripts/framework.py test --mode arm
+test-framework-sanitize:
+	ASAN_OPTIONS=detect_leaks=1 python3 scripts/framework.py test --mode native --sanitize
+verify-framework:
+	python3 scripts/framework.py verify
+build-board-framework:
+	python3 scripts/framework.py package
+test-board-framework-package:
+	python3 scripts/framework.py package-check
+verify-board-framework:
+	python3 scripts/framework_hil.py --report "$(REPORT)"
+test-board-framework-verifier:
+	python3 scripts/framework_hil.py --self-test

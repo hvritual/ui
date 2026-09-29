@@ -122,6 +122,10 @@ PocketComponentStatus pocket_component_destroy(PocketComponentRuntime *runtime,
 PocketComponentStatus pocket_component_snapshot(const PocketComponentRuntime *runtime,
                                                  PocketComponentHandle component,
                                                  PocketComponentSnapshot *out);
+/* Read-only, generation-checked lookup used by scene projection. */
+PocketComponentStatus pocket_component_from_root(const PocketComponentRuntime *runtime,
+                                                  PocketUiHandle root,
+                                                  PocketComponentSnapshot *out);
 size_t pocket_component_live_count(const PocketComponentRuntime *runtime);
 
 PocketComponentStatus pocket_component_set_layout(PocketComponentRuntime *runtime,
