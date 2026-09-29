@@ -177,3 +177,9 @@ test-reactive-budget:
 	python3 scripts/ui_reactive.py reactive_budget --mode native
 test-reactive-core-arm:
 	python3 scripts/ui_reactive.py core --mode arm
+
+.PHONY: test-virtual-list test-reactive-all-arm
+test-virtual-list:
+	python3 scripts/ui_reactive.py virtual_list --mode native
+test-reactive-all-arm:
+	python3 scripts/ui_reactive.py all --mode arm

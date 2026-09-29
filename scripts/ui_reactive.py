@@ -4,7 +4,7 @@ import argparse, shutil, subprocess
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/"out"/"ui-reactive"
-COMMON=["hosts/linux/ui/reactive.c","hosts/linux/ui/external_state.c",
+COMMON=["hosts/linux/ui/reactive.c","hosts/linux/ui/external_state.c","hosts/linux/ui/model.c",
         "hosts/linux/ui/component.c","hosts/linux/ui/navigation.c","hosts/linux/ui/overlay.c",
         "hosts/linux/ui/layout.c","hosts/linux/ui/style.c","hosts/linux/ui/object.c"]
 def run(args):
@@ -27,10 +27,11 @@ def test(name,mode,marker):
     if marker not in text: raise RuntimeError("acceptance marker missing")
 def main():
     ap=argparse.ArgumentParser()
-    ap.add_argument("suite",choices=["reactive","binding","reactive_budget","core"])
+    ap.add_argument("suite",choices=["reactive","binding","reactive_budget","virtual_list","core","all"])
     ap.add_argument("--mode",choices=["native","arm"],default="native")
     a=ap.parse_args()
-    cases={"reactive":"REACTIVE_OK","binding":"BINDING_OK","reactive_budget":"REACTIVE_BUDGET_OK"}
-    names=list(cases) if a.suite=="core" else [a.suite]
+    cases={"reactive":"REACTIVE_OK","binding":"BINDING_OK","reactive_budget":"REACTIVE_BUDGET_OK",
+           "virtual_list":"VIRTUAL_LIST_OK"}
+    names=["reactive","binding","reactive_budget"] if a.suite=="core" else (list(cases) if a.suite=="all" else [a.suite])
     for name in names:test(name,a.mode,cases[name])
 if __name__=="__main__":main()

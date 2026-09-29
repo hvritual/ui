@@ -1,4 +1,4 @@
-name: F5 Reactive State Core
+name: F5 Reactive State Model Virtualization
 on:
   pull_request:
     branches: [main]
@@ -25,5 +25,7 @@ jobs:
         run: make test-binding
       - name: Budget and coalescing
         run: make test-reactive-budget
+      - name: Model virtualization
+        run: make test-virtual-list
       - name: ARM Cortex-A7 parity
-        run: make test-reactive-core-arm
+        run: make test-reactive-all-arm
