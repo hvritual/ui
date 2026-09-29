@@ -155,3 +155,15 @@ test-ui-schema:
 	python3 scripts/ui_platform.py schema --mode native
 test-ui-platform-arm:
 	python3 scripts/ui_platform.py all --mode arm
+
+.PHONY: test-components test-navigation test-overlay test-coffee-component-migration test-components-arm
+test-components:
+	python3 scripts/ui_components.py components --mode native
+test-navigation:
+	python3 scripts/ui_components.py navigation --mode native
+test-overlay:
+	python3 scripts/ui_components.py overlay --mode native
+test-coffee-component-migration:
+	python3 scripts/ui_components.py coffee_component_migration --mode native
+test-components-arm:
+	python3 scripts/ui_components.py all --mode arm

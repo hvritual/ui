@@ -39,6 +39,8 @@ def build_and_run(test, mode):
 def leak_check():
     paths=[
       ROOT/"hosts/linux/engine/contract.h",
+      ROOT/"hosts/linux/ui",
+      ROOT/"schemas",
       ROOT/"apps"
     ]
     forbidden=[
