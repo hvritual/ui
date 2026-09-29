@@ -507,24 +507,20 @@ static PocketUiStatus invoke_handler(UiNode *node, PocketUiHandle current,
 PocketUiStatus pocket_ui_dispatch_event(PocketUiTree *tree, PocketUiHandle target,
                                         PocketUiEvent *event) {
     UiImpl *ui = impl(tree);
+    if(!ui || !event) return POCKET_UI_INVALID_ARGUMENT;
     UiNode *target_node = find_node(ui, target);
     if(!target_node) return POCKET_UI_STALE_HANDLE;
-    if(!event || !mounted_phase(target_node->phase)) return POCKET_UI_LIFECYCLE_ERROR;
+    if(!mounted_phase(target_node->phase)) return POCKET_UI_LIFECYCLE_ERROR;
 
-    PocketUiHandle *ancestors = calloc(ui->capacity, sizeof(*ancestors));
-    if(!ancestors) return POCKET_UI_RESOURCE_EXHAUSTED;
+    /* Depth is capped at UI_MAX_DEPTH, so event dispatch never allocates.
+     * This keeps touch/input handling deterministic on low-memory targets. */
+    PocketUiHandle ancestors[UI_MAX_DEPTH];
     uint32_t count = 0;
     PocketUiHandle parent = target_node->parent;
     while(pocket_ui_handle_valid(parent)) {
-        if(count >= ui->capacity) {
-            free(ancestors);
-            return POCKET_UI_LIFECYCLE_ERROR;
-        }
+        if(count >= UI_MAX_DEPTH) return POCKET_UI_LIFECYCLE_ERROR;
         UiNode *p = find_node(ui, parent);
-        if(!p) {
-            free(ancestors);
-            return POCKET_UI_STALE_HANDLE;
-        }
+        if(!p) return POCKET_UI_STALE_HANDLE;
         ancestors[count++] = parent;
         parent = p->parent;
     }
@@ -536,28 +532,26 @@ PocketUiStatus pocket_ui_dispatch_event(PocketUiTree *tree, PocketUiHandle targe
 
     for(uint32_t i = count; i > 0 && !event->consumed && !event->cancelled; --i) {
         UiNode *n = find_node(ui, ancestors[i - 1U]);
-        if(!n) { result = POCKET_UI_STALE_HANDLE; goto done; }
+        if(!n) return POCKET_UI_STALE_HANDLE;
         result = invoke_handler(n, ancestors[i - 1U], POCKET_UI_EVENT_CAPTURE, event);
-        if(result != POCKET_UI_OK) goto done;
+        if(result != POCKET_UI_OK) return result;
     }
     if(!event->consumed && !event->cancelled) {
         /* A capture handler may create enough nodes to realloc the arena or
          * destroy the target. Resolve the handle again instead of retaining the
          * pre-dispatch pointer across user callbacks. */
         target_node = find_node(ui, target);
-        if(!target_node) { result = POCKET_UI_STALE_HANDLE; goto done; }
+        if(!target_node) return POCKET_UI_STALE_HANDLE;
         result = invoke_handler(target_node, target, POCKET_UI_EVENT_TARGET, event);
-        if(result != POCKET_UI_OK) goto done;
+        if(result != POCKET_UI_OK) return result;
     }
     for(uint32_t i = 0; i < count && !event->consumed && !event->cancelled; ++i) {
         UiNode *n = find_node(ui, ancestors[i]);
-        if(!n) { result = POCKET_UI_STALE_HANDLE; goto done; }
+        if(!n) return POCKET_UI_STALE_HANDLE;
         result = invoke_handler(n, ancestors[i], POCKET_UI_EVENT_BUBBLE, event);
-        if(result != POCKET_UI_OK) goto done;
+        if(result != POCKET_UI_OK) return result;
     }
-done:
-    free(ancestors);
-    return result;
+    return POCKET_UI_OK;
 }
 PocketUiStatus pocket_ui_enqueue_update(PocketUiTree *tree, PocketUiHandle node,
                                         PocketUiPropertyFields fields,
@@ -578,17 +572,18 @@ PocketUiStatus pocket_ui_drain_updates(PocketUiTree *tree, uint32_t budget,
     UiImpl *ui = impl(tree);
     if(!ui || !applied) return POCKET_UI_INVALID_ARGUMENT;
     if(!budget) budget = ui->update_budget;
-    uint32_t count = 0;
+    uint32_t processed = 0, successful = 0;
     PocketUiStatus first_error = POCKET_UI_OK;
-    while(ui->queue_count && count < budget) {
+    while(ui->queue_count && processed < budget) {
         UiQueuedUpdate update = ui->queue[ui->queue_head];
         ui->queue_head = (ui->queue_head + 1U) % ui->queue_capacity;
         ui->queue_count--;
+        processed++;
         PocketUiStatus status = pocket_ui_update(tree, update.node, update.fields, &update.properties);
-        if(status == POCKET_UI_OK) count++;
+        if(status == POCKET_UI_OK) successful++;
         else if(first_error == POCKET_UI_OK) first_error = status;
     }
-    *applied = count;
+    *applied = successful;
     if(first_error != POCKET_UI_OK) return first_error;
     return ui->queue_count ? POCKET_UI_BUDGET_EXHAUSTED : POCKET_UI_OK;
 }

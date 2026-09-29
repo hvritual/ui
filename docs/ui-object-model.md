@@ -113,3 +113,11 @@ target or bubble callback the node is resolved again. This is required because
 a callback may create nodes and trigger arena `realloc`, or destroy a later
 event-path node. The former remains safe; the latter fails deterministically
 with `POCKET_UI_STALE_HANDLE` rather than dereferencing freed semantic state.
+
+
+Event dispatch uses a fixed stack path bounded by the 256-level tree-depth gate;
+it performs no heap allocation on the input path.
+
+Update-drain budget counts every dequeued attempt, including stale/error updates.
+This prevents a queue full of invalid callbacks from bypassing the per-tick work
+budget merely because none of them succeeds.

@@ -113,11 +113,15 @@ int main(void) {
     if(!expect(pocket_ui_drain_updates(&tree, 3, &applied)==POCKET_UI_OK &&
                applied==3 && pocket_ui_queued_updates(&tree)==0, "queue-drain")) return 1;
 
-    if(!expect(pocket_ui_enqueue_update(&tree, child, POCKET_UI_PROP_GEOMETRY, &p)==POCKET_UI_OK,
-               "queue-stale-setup")) return 1;
+    for(int i=0;i<5;i++) {
+        if(!expect(pocket_ui_enqueue_update(&tree, child, POCKET_UI_PROP_GEOMETRY, &p)==POCKET_UI_OK,
+                   "queue-stale-setup")) return 1;
+    }
     if(!expect(pocket_ui_destroy(&tree, child)==POCKET_UI_OK, "destroy-child")) return 1;
-    if(!expect(pocket_ui_drain_updates(&tree, 8, &applied)==POCKET_UI_STALE_HANDLE &&
-               pocket_ui_queued_updates(&tree)==0, "queue-stale")) return 1;
+    if(!expect(pocket_ui_drain_updates(&tree, 2, &applied)==POCKET_UI_STALE_HANDLE &&
+               applied==0 && pocket_ui_queued_updates(&tree)==3, "queue-stale-budget")) return 1;
+    if(!expect(pocket_ui_drain_updates(&tree, 3, &applied)==POCKET_UI_STALE_HANDLE &&
+               applied==0 && pocket_ui_queued_updates(&tree)==0, "queue-stale-drain")) return 1;
 
     if(!expect(pocket_ui_unmount(&tree, root)==POCKET_UI_OK, "unmount-subtree")) return 1;
     PocketUiSnapshot snap;
