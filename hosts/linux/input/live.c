@@ -70,16 +70,29 @@ static int validate_candidate(InputLive *live, const InputLiveConfig *config) {
     if (ioctl(live->fd, EVIOCGNAME(sizeof(name)), name) < 0)
         return fail(live, "INPUT_NAME_QUERY_FAILED", errno);
     name[sizeof(name) - 1] = 0;
-    if (strcmp(name, config->expected_name))
+    live->diagnostics.name_queried = 1;
+    if (!copy_text(live->name, sizeof(live->name), name))
+        return fail(live, "INPUT_NAME_TOO_LONG", 0);
+    live->diagnostics.name_matched = !strcmp(name, config->expected_name);
+    if (!live->diagnostics.name_matched)
         return fail(live, "INPUT_NAME_MISMATCH", 0);
 
     if (!query_bits(live->fd, 0, ev, sizeof(ev)))
         return fail(live, "INPUT_EV_QUERY_FAILED", errno);
-    if (!TEST_BIT(EV_KEY, ev) || !TEST_BIT(EV_ABS, ev))
+    live->diagnostics.ev_key = (int)TEST_BIT(EV_KEY, ev);
+    live->diagnostics.ev_abs = (int)TEST_BIT(EV_ABS, ev);
+    if (!live->diagnostics.ev_key || !live->diagnostics.ev_abs)
         return fail(live, "INPUT_REQUIRED_EV_MISSING", 0);
     if (!query_bits(live->fd, EV_KEY, key, sizeof(key)) ||
         !query_bits(live->fd, EV_ABS, abs, sizeof(abs)))
         return fail(live, "INPUT_CAPABILITY_QUERY_FAILED", errno);
+
+    live->diagnostics.capabilities_queried = 1;
+    live->diagnostics.btn_touch = (int)TEST_BIT(BTN_TOUCH, key);
+    live->diagnostics.mt_slot = (int)TEST_BIT(ABS_MT_SLOT, abs);
+    live->diagnostics.mt_tracking = (int)TEST_BIT(ABS_MT_TRACKING_ID, abs);
+    live->diagnostics.mt_x = (int)TEST_BIT(ABS_MT_POSITION_X, abs);
+    live->diagnostics.mt_y = (int)TEST_BIT(ABS_MT_POSITION_Y, abs);
 
     if (!TEST_BIT(BTN_TOUCH, key) ||
         !TEST_BIT(ABS_MT_SLOT, abs) ||
@@ -94,6 +107,14 @@ static int validate_candidate(InputLive *live, const InputLiveConfig *config) {
         !query_abs(live->fd, ABS_MT_POSITION_Y, &pos_y))
         return fail(live, "INPUT_AXIS_QUERY_FAILED", errno);
 
+    live->diagnostics.axes_queried = 1;
+    live->diagnostics.slot_min = slot.minimum;
+    live->diagnostics.slot_max = slot.maximum;
+    live->diagnostics.raw_x_min = pos_x.minimum;
+    live->diagnostics.raw_x_max = pos_x.maximum;
+    live->diagnostics.raw_y_min = pos_y.minimum;
+    live->diagnostics.raw_y_max = pos_y.maximum;
+
     if (slot.minimum != 0 || slot.maximum < slot.minimum ||
         (uint64_t)((int64_t)slot.maximum - slot.minimum + 1) != config->expected_slots ||
         pos_x.minimum != config->expected_raw_min ||
@@ -104,9 +125,6 @@ static int validate_candidate(InputLive *live, const InputLiveConfig *config) {
 
     if (tracking.maximum < tracking.minimum)
         return fail(live, "INPUT_TRACKING_RANGE_INVALID", 0);
-
-    if (!copy_text(live->name, sizeof(live->name), name))
-        return fail(live, "INPUT_NAME_TOO_LONG", 0);
 
     InputTransform transform = {
         .x = {.minimum = pos_x.minimum, .maximum = pos_x.maximum},
@@ -141,18 +159,26 @@ void input_live_close(InputLive *live) {
     }
 }
 
+static int config_valid(const InputLiveConfig *config) {
+    return config && config->expected_name && config->expected_name[0] &&
+           config->width && config->height && config->expected_slots &&
+           config->expected_slots <= INPUT_HW_MAX_SLOTS &&
+           config->expected_raw_max > config->expected_raw_min;
+}
+
 int input_live_open_path(InputLive *live, const char *path, const InputLiveConfig *config) {
     struct stat st;
-    if (!live || !path || !config || !config->expected_name ||
-        !config->expected_name[0] || config->width == 0 || config->height == 0 ||
-        config->expected_slots == 0 ||
-        config->expected_slots > INPUT_HW_MAX_SLOTS ||
-        config->expected_raw_max <= config->expected_raw_min)
-        return 0;
+    if (!live || !path || !config_valid(config))
+        return fail(live, "INPUT_CONFIG_INVALID", EINVAL);
 
+    /* The caller may pass &live->config when re-opening this object. */
+    InputLiveConfig saved_config = *config;
     memset(live, 0, sizeof(*live));
     live->fd = -1;
-    live->config = *config;
+    live->config = saved_config;
+    config = &live->config;
+    if (!copy_text(live->path, sizeof(live->path), path))
+        return fail(live, "INPUT_PATH_TOO_LONG", ENAMETOOLONG);
 
     live->fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW);
     if (live->fd < 0) return fail(live, "INPUT_OPEN_FAILED", errno);
@@ -162,10 +188,6 @@ int input_live_open_path(InputLive *live, const char *path, const InputLiveConfi
         goto stat_failed;
     if (!S_ISCHR(st.st_mode) || major(st.st_rdev) != 13) {
         fail(live, "INPUT_NOT_EVDEV", 0);
-        goto rejected;
-    }
-    if (!copy_text(live->path, sizeof(live->path), path)) {
-        fail(live, "INPUT_PATH_TOO_LONG", 0);
         goto rejected;
     }
     if (!validate_candidate(live, config) || !resync_mt(live))
@@ -179,28 +201,99 @@ rejected:
     return 0;
 }
 
+static void json_text(FILE *out, const char *value) {
+    fputc('"', out);
+    for (const unsigned char *p = (const unsigned char *)value; p && *p; ++p) {
+        if (*p == '"' || *p == '\\') fputc('\\', out);
+        if (*p < 32 || *p >= 127) fprintf(out, "\\u%04x", *p);
+        else fputc(*p, out);
+    }
+    fputc('"', out);
+}
+
+int input_live_report(FILE *out, const InputLive *live) {
+    if (!out || !live) return 0;
+    const InputLiveConfig *c = &live->config;
+    const InputLiveDiagnostics *d = &live->diagnostics;
+    fputs("{\"schema\":1,\"operation\":\"live-input-admission\",\"path\":", out);
+    json_text(out, live->path);
+    fputs(",\"name\":", out); json_text(out, live->name);
+    fputs(",\"error\":", out);
+    if (live->error) json_text(out, live->error); else fputs("null", out);
+    fprintf(out, ",\"errno\":%d,\"cleanup_errno\":%d,\"admitted\":%s,"
+                 "\"name_queried\":%s,\"name_matched\":%s,\"expected\":{\"name\":",
+            live->system_errno, live->cleanup_errno, live->opened && !live->error ? "true" : "false",
+            d->name_queried ? "true" : "false", d->name_matched ? "true" : "false");
+    json_text(out, c->expected_name);
+    fprintf(out, ",\"width\":%u,\"height\":%u,\"raw_min\":%d,\"raw_max\":%d,"
+                 "\"slots\":%u,\"swap_xy\":%d,\"invert_x\":%d,\"invert_y\":%d},"
+                 "\"capabilities_queried\":%s,\"capabilities\":{\"ev_key\":%d,\"ev_abs\":%d,"
+                 "\"btn_touch\":%d,\"mt_slot\":%d,\"mt_tracking\":%d,\"mt_x\":%d,\"mt_y\":%d},"
+                 "\"axes_queried\":%s,\"axes\":{\"slot_min\":%d,\"slot_max\":%d,"
+                 "\"raw_x_min\":%d,\"raw_x_max\":%d,\"raw_y_min\":%d,\"raw_y_max\":%d},"
+                 "\"scanned\":%u,\"opened_candidates\":%u,\"rejected_candidates\":%u}\n",
+            c->width, c->height, c->expected_raw_min, c->expected_raw_max, c->expected_slots,
+            c->swap_xy, c->invert_x, c->invert_y, d->capabilities_queried ? "true" : "false",
+            d->ev_key, d->ev_abs, d->btn_touch, d->mt_slot, d->mt_tracking, d->mt_x, d->mt_y,
+            d->axes_queried ? "true" : "false", d->slot_min, d->slot_max,
+            d->raw_x_min, d->raw_x_max, d->raw_y_min, d->raw_y_max,
+            d->scanned, d->opened_candidates, d->rejected_candidates);
+    return !ferror(out);
+}
+
 int input_live_discover(InputLive *live, const char *input_dir, const InputLiveConfig *config) {
     char path[64];
-    int last_errno = 0;
-    if (!live || !input_dir || !config) return 0;
+    if (!live || !input_dir || !config_valid(config))
+        return fail(live, "INPUT_CONFIG_INVALID", EINVAL);
+    InputLiveConfig saved_config = *config;
+    config = &saved_config;
+    InputLive best = {0};
+    best.fd = -1; best.config = *config;
+    unsigned opened = 0, rejected = 0;
+    int best_rank = 0;
 
     for (unsigned i = 0; i < 64; ++i) {
         int n = snprintf(path, sizeof(path), "%s/event%u", input_dir, i);
-        if (n < 0 || (size_t)n >= sizeof(path)) return 0;
-
-        InputLive candidate = {0};
-        if (input_live_open_path(&candidate, path, config)) {
-            *live = candidate;
-            return 1;
+        if (n < 0 || (size_t)n >= sizeof(path)) {
+            *live = best;
+            return fail(live, "INPUT_PATH_TOO_LONG", ENAMETOOLONG);
         }
-        if (candidate.system_errno == EACCES || candidate.system_errno == EPERM)
-            last_errno = candidate.system_errno;
+        InputLive candidate = {0};
+        int accepted = input_live_open_path(&candidate, path, config);
+        int open_failed = candidate.error && !strcmp(candidate.error, "INPUT_OPEN_FAILED");
+        if (!open_failed) ++opened;
+        /* Do not print 64 ENOENT lines on every scan. Existing or inaccessible
+         * candidates keep their exact errno, query result and expected values. */
+        if (!accepted && open_failed && candidate.system_errno == ENOENT) continue;
+        if (!accepted) ++rejected;
+        candidate.diagnostics.scanned = i + 1;
+        candidate.diagnostics.opened_candidates = opened;
+        candidate.diagnostics.rejected_candidates = rejected;
+        fputs("INPUT_CANDIDATE ", stderr);
+        (void)input_live_report(stderr, &candidate);
+        if (candidate.cleanup_errno) {
+            *live = candidate;
+            return fail(live, "INPUT_CLOSE_FAILED", candidate.cleanup_errno);
+        }
+        if (accepted) { *live = candidate; return 1; }
+
+        int permission = candidate.system_errno == EACCES || candidate.system_errno == EPERM;
+        int rank = candidate.diagnostics.name_matched ? 4 : permission ? 3 :
+                   candidate.diagnostics.name_queried ? 1 : 2;
+        /* A later unrelated power key or missing event node must not erase the
+         * failure on the expected touchscreen. Preserve the first highest rank. */
+        if (rank > best_rank) {
+            best = candidate; best_rank = rank;
+            if (permission && !candidate.diagnostics.name_matched)
+                best.error = "INPUT_DEVICE_PERMISSION";
+        }
     }
-    memset(live, 0, sizeof(*live));
-    live->fd = -1;
-    live->config = *config;
-    return fail(live, last_errno ? "INPUT_DEVICE_PERMISSION" : "INPUT_DEVICE_NOT_FOUND",
-                last_errno);
+    best.diagnostics.scanned = 64;
+    best.diagnostics.opened_candidates = opened;
+    best.diagnostics.rejected_candidates = rejected;
+    *live = best;
+    if (!best_rank) return fail(live, "INPUT_DEVICE_NOT_FOUND", ENOENT);
+    return 0;
 }
 
 int input_live_wait(InputLive *live, int timeout_ms) {
