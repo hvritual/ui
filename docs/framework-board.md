@@ -42,6 +42,7 @@ runtime/assets. The P4 workflow performs those prerequisites and old regressions
 ```sh
 make test-framework
 make test-framework-arm
+make test-framework-sanitize
 make verify-framework
 make build-board-framework
 make test-board-framework-package
@@ -60,11 +61,17 @@ actual local media store updates, busy deferral, corrupt packet retention and
 rollback. Media tests write trusted local store fixtures; signature/HTTPS/USB
 installer tests remain the existing P4 tests, not fabricated network evidence.
 
+A second test invokes the actual production CLI/main loop with only device I/O
+and time replaced. It exercises UNBLANK, poll HUP, reconnect, SYN_DROPPED and
+navigation through real F6/app/rendering code. Its report and startup label are
+explicitly synthetic and cannot satisfy the hardware gate. Simultaneous pointer
+releases consume at most one navigation action per snapshot.
+
 Native/ARM actual pixels and numeric replay must match. The static ARM deployment
 ELF itself is checked for ARMv7 hard-float, absence of INTERP/NEEDED and absence
 of test-wrapper symbols, then run in Cortex-A7 QEMU. Build/test/source/asset/ELF
 hashes are bound to one commit. Neither QEMU nor native timing is a board metric.
-The optional Native sanitizer instruments this integration's C sources; linked
+The CI-required Native sanitizer instruments this integration's C sources; linked
 prebuilt third-party objects are not retroactively sanitizer-instrumented.
 
 For explicitly identified local recovery development only,

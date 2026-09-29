@@ -32,7 +32,8 @@ static PocketUiEventAction event(void *context,PocketUiEvent *e){
     Action *b=context;App *a=b->app;
     if(e->phase!=POCKET_UI_EVENT_TARGET)return POCKET_UI_EVENT_CONTINUE;
     if(e->type==POCKET_UI_EVENT_TAP){
-        if(a->pending){a->failed=1;return POCKET_UI_EVENT_CANCEL;}
+        /* One transition per input snapshot: the first consumed action wins. */
+        if(a->pending)return POCKET_UI_EVENT_CONSUME;
         a->pending=b->action;a->pending_index=b->index;a->actions++;return POCKET_UI_EVENT_CONSUME;
     }
     if(e->type==POCKET_UI_EVENT_SCROLL_BEGIN&&a->page==HOME){
@@ -184,6 +185,8 @@ static int success(App *a){
     return !a->failed&&pocket_navigation_replace(&a->nav,&(PocketNavigationPage){SUCCESS,c,1})==POCKET_NAV_OK;
 }
 static int window(App *a,unsigned first){
+    /* Recycled roots must not inherit a held pointer from their previous key. */
+    if(a->interaction.impl)pocket_interaction_cancel_all(&a->interaction,a->now);
     a->first=first;unsigned visible=a->item_count-first;if(visible>6)visible=6;
     if(pocket_virtual_collection_set_window(&a->list,first,visible)!=POCKET_MODEL_OK)return 0;
     return pocket_virtual_collection_refresh(&a->list,++a->revision)==POCKET_MODEL_OK;

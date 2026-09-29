@@ -87,6 +87,21 @@ static int flow(const char *assets,const char *out,unsigned height,int wrong_pix
     CHECK(tap(&d,330,(int)height-112));CHECK(state(&d,1,0));
     CHECK(tap(&d,870,(int)height-36));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==0);
 
+    /* Simultaneous releases queue at most one navigation, not a host failure. */
+    InputFrame multi={.contact_count=2,.contacts={{0,100,200},{1,430,200}}};
+    d.ms+=20;CHECK(pocket_framework_input(d.r,&multi,d.ms*1000000ULL));CHECK(step(&d,1,1));
+    multi.contact_count=0;d.ms+=20;CHECK(pocket_framework_input(d.r,&multi,d.ms*1000000ULL));CHECK(step(&d,1,1));
+    CHECK(state(&d,2,0));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.selected==0);
+    CHECK(tap(&d,330,(int)height-112));CHECK(state(&d,1,0));CHECK(mark(&d,"simultaneous-tap"));
+
+    /* Paging while another finger holds a recycled card cannot select its new key. */
+    multi=(InputFrame){.contact_count=2,.contacts={{0,100,200},{1,870,(int)height-36}}};
+    d.ms+=20;CHECK(pocket_framework_input(d.r,&multi,d.ms*1000000ULL));CHECK(step(&d,1,1));
+    multi.contact_count=1;d.ms+=20;CHECK(pocket_framework_input(d.r,&multi,d.ms*1000000ULL));CHECK(step(&d,1,1));
+    CHECK(state(&d,1,0));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==6);
+    CHECK(contact(&d,0,100,200));CHECK(state(&d,1,0));
+    CHECK(tap(&d,870,(int)height-36));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==0);CHECK(mark(&d,"recycle-held-pointer"));
+
     /* Backend cancellation consumes the old down; late release is not a tap. */
     CHECK(contact(&d,1,100,200));InputFrame lost={.syn_dropped=1,.suppressed=1,.sequence=++d.seq};
     d.ms+=20;CHECK(pocket_framework_input(d.r,&lost,d.ms*1000000ULL));CHECK(contact(&d,0,100,200));CHECK(state(&d,1,0));

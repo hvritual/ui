@@ -47,7 +47,7 @@ def runtime_check(mode):
     rt=importlib.util.module_from_spec(spec);spec.loader.exec_module(rt)
     data,_,_=rt.config();rt.check_build(data,mode)
 
-def compile_binary(mode,test=False,sanitize=False,static=False):
+def compile_binary(mode,test=False,sanitize=False,static=False,loop=False):
     runtime_check(mode);state()
     d=OUT/mode;d.mkdir(parents=True,exist_ok=True)
     cc='gcc' if mode=='native' else 'arm-linux-gnueabihf-gcc'
@@ -55,10 +55,10 @@ def compile_binary(mode,test=False,sanitize=False,static=False):
     target='x86_64-unknown-linux-gnu' if mode=='native' else 'armv7-unknown-linux-gnueabihf'
     rt=ROOT/'out/runtime'/mode;core=ROOT/'out/runtime/cargo'/target/'release/libpocketjs_symbian_core.a'
     sources=[ROOT/'hosts/linux/ui'/f'{n}.c' for n in UI]+[ROOT/'apps/coffee-framework/app.c',ROOT/'hosts/linux/engine/scene_runtime.c',ROOT/'hosts/linux/input/interaction_bridge.c',ROOT/'hosts/linux/framework.c']
-    sources+=[ROOT/('tests/framework/test_framework.c' if test else 'hosts/linux/framework_main.c')]
+    sources+=[ROOT/('tests/framework/test_live_loop.c' if loop else 'tests/framework/test_framework.c' if test else 'hosts/linux/framework_main.c')]
     objects=[rt/n for n in ('host.o','platform.o','runtime-host.o','personality.o','libquickjs.a','media-store.o')]
     if not test:sources += [ROOT/'hosts/linux/input/live.c',ROOT/'hosts/linux/input/state.c',ROOT/'hosts/linux/display/fbdev.c',ROOT/'hosts/linux/display/presenter.c']
-    binary=d/('framework-test' if test else 'ui-framework')
+    binary=d/('framework-loop' if loop else 'framework-test' if test else 'ui-framework')
     if sanitize:binary=binary.with_name(binary.name+'-sanitize')
     if static:binary=binary.with_name(binary.name+'-static')
     opts=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-g'] if sanitize else []
@@ -66,6 +66,9 @@ def compile_binary(mode,test=False,sanitize=False,static=False):
        '-I.','-Ihosts/linux','-DPOCKET_BUILD_COMMIT="'+git('rev-parse','HEAD')+'"',
        '-Iout/runtime/include','-Iout/runtime/source-'+mode+'/engine/quickjs-c',*sources,*objects,core,
        *(['-static'] if static else []),'-Wl,--gc-sections','-lm','-ldl','-lpthread','-lrt','-o',binary]
+    if loop:
+        wrappers=['host_monotonic_ns','host_sleep_until','fbdev_open','fbdev_close','fbdev_report','fbdev_present','ioctl','input_live_discover','input_live_close','input_live_wait','input_live_reconnect','input_live_drain']
+        cmd += ['-Wl,--wrap='+name for name in wrappers]
     run(cmd,d/(binary.name+'-build.log'));return binary
 
 def runner(mode,static=False):return [] if mode=='native' else ['qemu-arm','-cpu','cortex-a7',*([] if static else ['-L','/usr/arm-linux-gnueabihf'])]
@@ -108,6 +111,12 @@ def test(mode,sanitize=False):
     if len(images)!=18 or len(replays)!=4:raise RuntimeError('incomplete target matrix')
     if not sanitize:
         cli=compile_binary(mode);cli_checks(cli,mode,d/'cli')
+        loop=compile_binary(mode,loop=True)
+        for height in (600,800):
+            dest=d/('loop-'+str(height))
+            text=run([*runner(mode),loop,OUT/'assets',dest,str(height)],d/('loop-'+str(height)+'.log'))
+            r=json.loads((dest/'report.json').read_text())
+            if 'FRAMEWORK_LOOP_OK' not in text or r.get('synthetic') is not True or r['physical_io'] or not r['ok'] or r['page_mask']!=15 or r['completed']!=1 or r['disconnects']!=1 or r['reconnects']!=1 or r['syn_dropped']!=1:raise RuntimeError('production device loop gate failed')
     if before!=state():raise RuntimeError('source changed during test')
     record={**before,'mode':mode,'real_core':True,'physical_hardware':False,'sanitizer':sanitize,
        'run_dir':str(d.relative_to(OUT)),'test_binary_sha256':sha(binary),'assets_sha256':sha(OUT/'assets.json'),
@@ -128,6 +137,11 @@ def verify():
             if sha(d/n)!=v:raise RuntimeError('log evidence drift')
         results.append(r)
     if results[0]['images']!=results[1]['images'] or results[0]['replays']!=results[1]['replays']:raise RuntimeError('cross-architecture pixel/replay mismatch')
+    sanitized=json.loads((OUT/'native/sanitizer.json').read_text())
+    if any(sanitized[k]!=current[k] for k in current) or not sanitized.get('sanitizer') or sanitized['images']!=results[0]['images'] or sanitized['replays']!=results[0]['replays']:raise RuntimeError('sanitizer evidence incomplete or stale')
+    if sanitized['test_binary_sha256']!=sha(OUT/'native/framework-test-sanitize') or sanitized['assets_sha256']!=sha(OUT/'assets.json'):raise RuntimeError('sanitizer binary/resource drift')
+    for n,v in sanitized['logs'].items():
+        if sha(OUT/sanitized['run_dir']/n)!=v:raise RuntimeError('sanitizer log evidence drift')
     write(OUT/'verification.json',{'status':'passed',**current,'scope':'software-functional-only','physical_hardware':False,
           'engine':'current-pocket-scene','image_count':18,'replay_count':4,'test_reports':{m:sha(OUT/m/'test.json') for m in ('native','arm')}})
     print('FRAMEWORK_VERIFY_OK physical_hardware=false')

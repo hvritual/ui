@@ -92,7 +92,12 @@ int main(int argc,char **argv){
     if(!pocket_framework_tick(r,start,1)){failure=r->error;goto done;}
     char snapshot[4096];snprintf(snapshot,sizeof(snapshot),"%s/first.ppm",output);
     if(!pocket_framework_snapshot(r,snapshot)){failure="FIRST_SNAPSHOT";goto done;}
-    fprintf(stderr,"FRAMEWORK_FIRST_PRESENT profile=%s mode=%s commit=%s\n",profile,headless?"headless":"physical-fbdev",POCKET_BUILD_COMMIT);
+#ifdef POCKET_TEST_SYNTHETIC_IO
+    const char *io_mode="synthetic-io";
+#else
+    const char *io_mode=headless?"headless":"physical-fbdev";
+#endif
+    fprintf(stderr,"FRAMEWORK_FIRST_PRESENT profile=%s mode=%s commit=%s\n",profile,io_mode,POCKET_BUILD_COMMIT);
     while(!stopping){
         if(!host_monotonic_ns(&now)){failure="CLOCK";goto done;}
         if(now-start>=(uint64_t)seconds*1000000000ULL)break;
@@ -100,6 +105,8 @@ int main(int argc,char **argv){
             if(input.opened){
                 int wait=input_live_wait(&input,0);
                 if(wait<0|| (wait>0&&input_live_drain(&input,pocket_framework_input,r)<0)){
+                    /* poll HUP has no read-side disconnect callback. Count that loss once. */
+                    if(!input.state.disconnected){input_state_disconnect(&input.state);input.disconnects++;}
                     pocket_framework_disconnect(r,now);input_live_close(&input);next_reconnect=now+500000000ULL;
                 }
             }else if(now>=next_reconnect){(void)input_live_reconnect(&input,inputdir);next_reconnect=now+500000000ULL;}
@@ -133,8 +140,15 @@ done:
     double wall=now>=start?(now-start)/1000000000.0:0;
     FILE *report=file_at(output,"report.json");
     if(report){
-        fprintf(report,"{\"schema\":1,\"commit\":\"%s\",\"profile\":\"%s\",\"ok\":%s,\"physical_io\":%s,\"visual_validated\":false,\"business_commands\":false,\"error\":",
-          POCKET_BUILD_COMMIT,profile,ok?"true":"false",!headless&&fb.presents?"true":"false");
+#ifdef POCKET_TEST_SYNTHETIC_IO
+        const int physical_io=0;
+        fputs("{\"synthetic\":true,",report);
+#else
+        const int physical_io=!headless&&fb.presents;
+        fputc('{',report);
+#endif
+        fprintf(report,"\"schema\":1,\"commit\":\"%s\",\"profile\":\"%s\",\"ok\":%s,\"physical_io\":%s,\"visual_validated\":false,\"business_commands\":false,\"error\":",
+          POCKET_BUILD_COMMIT,profile,ok?"true":"false",physical_io?"true":"false");
         if(failure)fprintf(report,"\"%s\"",failure);else fputs("null",report);
         fprintf(report,",\"wall_seconds\":%.6f,\"cpu_percent_one_core\":%.6f,\"peak_rss_kib\":%ld,\"ticks\":%llu,\"presents\":%llu,\"clean_skips\":%llu,\"bytes_written\":%llu,\"page_mask\":%u,\"modal_seen\":%u,\"completed\":%u,\"pool\":%u,\"nodes\":%u,\"item_count\":%u,\"peak_pool\":%u,\"recycled\":%llu,\"input_frames\":%llu,\"syn_dropped\":%llu,\"disconnects\":%llu,\"reconnects\":%llu,\"timestamp_clamps\":%llu,\"media_applied\":%lu,\"media_rejected\":%lu,\"media_deferred\":%lu,\"unblank_errno\":%d,\"display_cleanup_errno\":%d,\"input_cleanup_errno\":%d,\"core_live_bytes_after_close\":%zu}\n",
          wall,wall>0?100*(cpu_seconds(&after)-cpu_seconds(&before))/wall:0,after.ru_maxrss,

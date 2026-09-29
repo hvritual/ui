@@ -31,7 +31,8 @@ static int visit(PocketScene *s,const PocketSceneSource *src,PocketUiHandle root
                            (uint32_t)n.properties.semantic_state,parent,&style)!=POCKET_STYLE_OK)return 0;
     /* Geometry transforms must also enter hit testing before being admitted. */
     if(style.fields[POCKET_STYLE_TRANSLATE_X]||style.fields[POCKET_STYLE_TRANSLATE_Y]||
-       style.fields[POCKET_STYLE_BORDER_WIDTH]||style.fields[POCKET_STYLE_FONT_ID])return 0;
+       style.fields[POCKET_STYLE_BORDER_WIDTH]||style.fields[POCKET_STYLE_FONT_ID]||
+       style.fields[POCKET_STYLE_SPACING]||style.fields[POCKET_STYLE_FONT_SIZE]!=22)return 0;
     alpha=(uint16_t)((uint32_t)alpha*n.properties.opacity_256/256U);
     if(style.set_mask&POCKET_STYLE_BIT(POCKET_STYLE_OPACITY))
         alpha=(uint16_t)((uint32_t)alpha*(uint32_t)style.fields[POCKET_STYLE_OPACITY]/256U);
