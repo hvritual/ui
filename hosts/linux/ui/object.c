@@ -7,6 +7,7 @@
 #define UI_DEFAULT_QUEUE_CAPACITY 256U
 #define UI_DEFAULT_UPDATE_BUDGET 128U
 #define UI_MAX_CAPACITY 65535U
+#define UI_MAX_DEPTH 256U
 
 typedef struct {
     uint32_t generation;
@@ -19,6 +20,7 @@ typedef struct {
     PocketUiHandle next_sibling;
     PocketUiHandle prev_sibling;
     uint32_t child_count;
+    uint16_t depth;
     PocketUiProperties properties;
     PocketUiDirtyFlags dirty;
     PocketUiEventHandler event_handler;
@@ -326,14 +328,22 @@ PocketUiStatus pocket_ui_create(PocketUiTree *tree, PocketUiNodeType type,
     if(status != POCKET_UI_OK) return status;
     node->type = type;
     node->phase = POCKET_UI_PHASE_CREATED;
-    node->stable_id = ui->next_stable_id++;
-    if(ui->next_stable_id == 0) ui->next_stable_id = 1;
 
     UiNode *parent_node = pocket_ui_handle_valid(parent) ? find_node(ui, parent) : NULL;
     if(pocket_ui_handle_valid(parent) && !parent_node) {
         node->live = 0;
         return POCKET_UI_STALE_HANDLE;
     }
+    node->depth = parent_node ? (uint16_t)(parent_node->depth + 1U) : 1U;
+    if(node->depth > UI_MAX_DEPTH) {
+        node->live = 0;
+        return POCKET_UI_RESOURCE_EXHAUSTED;
+    }
+    if(ui->next_stable_id == UINT64_MAX) {
+        node->live = 0;
+        return POCKET_UI_RESOURCE_EXHAUSTED;
+    }
+    node->stable_id = ui->next_stable_id++;
 
     if(ui->engine_api && (ui->engine_api->capabilities & POCKET_ENGINE_CAP_NODE_TREE)) {
         if(!ui->engine_api->node_create) {
@@ -526,15 +536,22 @@ PocketUiStatus pocket_ui_dispatch_event(PocketUiTree *tree, PocketUiHandle targe
 
     for(uint32_t i = count; i > 0 && !event->consumed && !event->cancelled; --i) {
         UiNode *n = find_node(ui, ancestors[i - 1U]);
+        if(!n) { result = POCKET_UI_STALE_HANDLE; goto done; }
         result = invoke_handler(n, ancestors[i - 1U], POCKET_UI_EVENT_CAPTURE, event);
         if(result != POCKET_UI_OK) goto done;
     }
     if(!event->consumed && !event->cancelled) {
+        /* A capture handler may create enough nodes to realloc the arena or
+         * destroy the target. Resolve the handle again instead of retaining the
+         * pre-dispatch pointer across user callbacks. */
+        target_node = find_node(ui, target);
+        if(!target_node) { result = POCKET_UI_STALE_HANDLE; goto done; }
         result = invoke_handler(target_node, target, POCKET_UI_EVENT_TARGET, event);
         if(result != POCKET_UI_OK) goto done;
     }
     for(uint32_t i = 0; i < count && !event->consumed && !event->cancelled; ++i) {
         UiNode *n = find_node(ui, ancestors[i]);
+        if(!n) { result = POCKET_UI_STALE_HANDLE; goto done; }
         result = invoke_handler(n, ancestors[i], POCKET_UI_EVENT_BUBBLE, event);
         if(result != POCKET_UI_OK) goto done;
     }

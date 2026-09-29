@@ -10,6 +10,24 @@ typedef struct {
     int *count;
 } HandlerContext;
 
+typedef struct {
+    PocketUiTree *tree;
+    PocketUiHandle parent;
+    PocketUiHandle created;
+    int *trace;
+    int *count;
+} GrowthHandlerContext;
+
+static PocketUiEventAction growth_handler(void *context, PocketUiEvent *event) {
+    GrowthHandlerContext *g = context;
+    g->trace[(*g->count)++] = 10 + (int)event->phase;
+    if(!pocket_ui_handle_valid(g->created)) {
+        if(pocket_ui_create(g->tree, POCKET_UI_CUSTOM, g->parent, &g->created) != POCKET_UI_OK)
+            return (PocketUiEventAction)99;
+    }
+    return POCKET_UI_EVENT_CONTINUE;
+}
+
 static PocketUiEventAction handler(void *context, PocketUiEvent *event) {
     HandlerContext *h = context;
     h->trace[(*h->count)++] = h->id * 10 + (int)event->phase;
@@ -61,6 +79,18 @@ int main(void) {
     int expected[]={11,21,32,23,13};
     if(!expect(count==5, "event-count")) return 1;
     for(int i=0;i<5;i++) if(!expect(trace[i]==expected[i],"event-order")) return 1;
+
+    /* Force an arena growth from inside capture. Dispatch must re-resolve all
+     * node handles and continue without using stale arena pointers. */
+    GrowthHandlerContext growth={&tree,root,{0},trace,&count};
+    count=0;
+    if(!expect(pocket_ui_set_event_handler(&tree,root,growth_handler,&growth)==POCKET_UI_OK,
+               "growth-handler-set")) return 1;
+    if(!expect(pocket_ui_dispatch_event(&tree,child,&event)==POCKET_UI_OK &&
+               pocket_ui_handle_valid(growth.created) && count==5, "event-arena-growth")) return 1;
+    if(!expect(pocket_ui_destroy(&tree,growth.created)==POCKET_UI_OK,"growth-cleanup")) return 1;
+    if(!expect(pocket_ui_set_event_handler(&tree,root,handler,&hr)==POCKET_UI_OK,
+               "growth-handler-restore")) return 1;
 
     count=0; hp.action=POCKET_UI_EVENT_CONSUME;
     if(!expect(pocket_ui_dispatch_event(&tree, child, &event) == POCKET_UI_OK &&

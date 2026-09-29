@@ -100,3 +100,16 @@ make test-ui-object-arm
 Object-model stress covers 1,200 create/mount/layout/paint/unmount/destroy
 cycles, stable-ID monotonicity, generation invalidation and zero live native
 nodes at exit.
+
+
+## Structural safety bounds
+
+The native tree caps parent depth at 256. This keeps recursive unmount/destroy
+cleanup bounded even when guest code attempts to manufacture a pathological
+single-child chain.
+
+Event propagation stores handles, not arena pointers. Before each capture,
+target or bubble callback the node is resolved again. This is required because
+a callback may create nodes and trigger arena `realloc`, or destroy a later
+event-path node. The former remains safe; the latter fails deterministically
+with `POCKET_UI_STALE_HANDLE` rather than dereferencing freed semantic state.
