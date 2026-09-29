@@ -26,3 +26,8 @@ automatically at the next flush.
 `PocketExternalStateAdapter` is deliberately one-way: an authoritative
 external/IPC field can ingest a value into a signal, but F5 exposes no hardware
 or device write callback. P6 remains authoritative for machine actions.
+
+
+Effect and binding subscriptions use generation handles rather than naked slot
+IDs. A stale unsubscribe handle cannot remove a newer subscription that reused
+the same storage slot.

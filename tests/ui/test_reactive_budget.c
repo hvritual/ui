@@ -37,7 +37,7 @@ int main(void) {
     PocketReactiveValue value;
     CHECK(pocket_reactive_get(&rt,derived,&value)==POCKET_REACTIVE_OK&&value.as.i64==1000);
 
-    Feedback feedback={&rt,source,0};uint32_t effect_id=0;
+    Feedback feedback={&rt,source,0};PocketReactiveSubscription effect_id={0};
     CHECK(pocket_reactive_effect(&rt,&source,1,feedback_effect,&feedback,&effect_id)==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_flush(&rt,5,&stats)==POCKET_REACTIVE_BUDGET_EXHAUSTED);
     CHECK(stats.work_items==5&&feedback.runs>0);
