@@ -65,3 +65,12 @@ Style runtime rule capacity is explicitly capped at 512 in v1. Resolution uses
 a fixed bounded rule pointer array and performs no allocation. Larger rule sets
 must be rejected at runtime creation rather than accepted and later failing
 during style resolution.
+
+
+Flex allocation re-applies each child's min/max after grow/shrink. Stretch also
+clamps to min/max. An aspect ratio on an auto/content/fill cross axis is
+recomputed after main-axis flex sizing, so flexible growth cannot silently break
+the declared ratio.
+
+The JSON schema distinguishes size lengths from offsets: negative px is rejected
+for width/height but remains valid for absolute offsets, matching the C contract.

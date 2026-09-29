@@ -71,6 +71,22 @@ int main(void){
     CHECK(pocket_layout_result(&l,b,&br)==POCKET_UI_OK);CHECK(pocket_layout_result(&l,c,&cr)==POCKET_UI_OK);
     CHECK(ar.geometry.x==0 && ar.geometry.width==100 && br.geometry.x==108 && br.geometry.width==100 && cr.geometry.y==38);
 
+    /* Flex grow/shrink and stretch cannot violate min/max. */
+    rs.mode=POCKET_LAYOUT_ROW;rs.align_items=POCKET_ALIGN_STRETCH;rs.gap=0;rs.padding=(PocketLayoutInsets){0,0,0,0};
+    CHECK(pocket_layout_set(&l,root,&rs)==POCKET_UI_OK);
+    as=leaf_px(50,10);as.grow=1;as.max_width=60;as.max_height=20;
+    bs=leaf_px(100,10);bs.shrink=1;bs.min_width=90;bs.max_height=20;
+    cs=leaf_px(50,10);cs.grow=1;cs.max_width=60;cs.max_height=20;
+    CHECK(pocket_layout_set(&l,a,&as)==POCKET_UI_OK);CHECK(pocket_layout_set(&l,b,&bs)==POCKET_UI_OK);CHECK(pocket_layout_set(&l,c,&cs)==POCKET_UI_OK);
+    CHECK(pocket_layout_run(&l,root,300,80)==POCKET_UI_OK);CHECK(pocket_layout_result(&l,a,&ar)==POCKET_UI_OK);CHECK(pocket_layout_result(&l,b,&br)==POCKET_UI_OK);
+    CHECK(ar.geometry.width==60&&ar.geometry.height==10&&br.geometry.width==100);
+    CHECK(pocket_layout_run(&l,root,180,80)==POCKET_UI_OK);CHECK(pocket_layout_result(&l,b,&br)==POCKET_UI_OK);
+    CHECK(br.geometry.width>=90);
+
+    PocketLayoutSpec ratio=leaf_px(80,10);ratio.height.kind=POCKET_LENGTH_AUTO;ratio.aspect_num=2;ratio.aspect_den=1;
+    CHECK(pocket_layout_set(&l,a,&ratio)==POCKET_UI_OK);CHECK(pocket_layout_run(&l,root,300,80)==POCKET_UI_OK);CHECK(pocket_layout_result(&l,a,&ar)==POCKET_UI_OK);
+    CHECK(ar.geometry.height==40);
+
     PocketLayoutSpec bad=pocket_layout_spec_default();bad.width=(PocketLength){POCKET_LENGTH_PERCENT,10001};
     CHECK(pocket_layout_set(&l,a,&bad)==POCKET_UI_INVALID_ARGUMENT);
     lc.safe_area=(PocketLayoutInsets){101,0,100,0}; /* existing context unchanged */

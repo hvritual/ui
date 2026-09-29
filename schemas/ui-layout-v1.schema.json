@@ -7,10 +7,10 @@
   "required": ["mode"],
   "properties": {
     "mode": {"enum": ["leaf", "row", "column", "stack", "grid", "absolute"]},
-    "width": {"$ref": "#/$defs/length"},
-    "height": {"$ref": "#/$defs/length"},
-    "offsetX": {"$ref": "#/$defs/length"},
-    "offsetY": {"$ref": "#/$defs/length"},
+    "width": {"$ref": "#/$defs/sizeLength"},
+    "height": {"$ref": "#/$defs/sizeLength"},
+    "offsetX": {"$ref": "#/$defs/offsetLength"},
+    "offsetY": {"$ref": "#/$defs/offsetLength"},
     "minWidth": {"type": "integer", "minimum": 0},
     "minHeight": {"type": "integer", "minimum": 0},
     "maxWidth": {"type": "integer", "minimum": -1},
@@ -36,9 +36,15 @@
     "overflow": {"enum": ["visible", "clip"]}
   },
   "$defs": {
-    "length": {
+    "sizeLength": {
       "oneOf": [
         {"type": "object", "additionalProperties": false, "required": ["kind"], "properties": {"kind": {"enum": ["auto", "content", "fill"]}}},
+        {"type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": {"kind": {"const": "px"}, "value": {"type": "integer", "minimum": 0}}},
+        {"type": "object", "additionalProperties": false, "required": ["kind", "basisPoints"], "properties": {"kind": {"const": "percent"}, "basisPoints": {"type": "integer", "minimum": 0, "maximum": 10000}}}
+      ]
+    },
+    "offsetLength": {
+      "oneOf": [
         {"type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": {"kind": {"const": "px"}, "value": {"type": "integer"}}},
         {"type": "object", "additionalProperties": false, "required": ["kind", "basisPoints"], "properties": {"kind": {"const": "percent"}, "basisPoints": {"type": "integer", "minimum": 0, "maximum": 10000}}}
       ]

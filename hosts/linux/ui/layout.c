@@ -29,6 +29,7 @@ typedef struct {
     int32_t main, cross;
     int32_t before_main, after_main, before_cross, after_cross;
     uint32_t flex_grow, flex_shrink;
+    int32_t min_main, max_main, min_cross, max_cross;
 } FlexChild;
 
 static LayoutImpl *li(PocketLayoutContext *context) {
@@ -259,7 +260,8 @@ static void distribute_flex(FlexChild *items, uint32_t start, uint32_t end,
             seen+=items[i].flex_grow;
             int64_t target=(free*(int64_t)seen)/(int64_t)grow;
             int64_t add=target-distributed; distributed=target;
-            items[i].main=clamp_i32((int64_t)items[i].main+add);
+            items[i].main=clamp_size(clamp_i32((int64_t)items[i].main+add),
+                                     items[i].min_main,items[i].max_main);
         }
     } else if(free<0 && shrink){
         int64_t need=-free,distributed=0; uint64_t seen=0;
@@ -267,7 +269,8 @@ static void distribute_flex(FlexChild *items, uint32_t start, uint32_t end,
             seen+=items[i].flex_shrink;
             int64_t target=(need*(int64_t)seen)/(int64_t)shrink;
             int64_t sub=target-distributed; distributed=target;
-            items[i].main=items[i].main>sub?items[i].main-(int32_t)sub:0;
+            items[i].main=clamp_size(items[i].main>sub?items[i].main-(int32_t)sub:0,
+                                     items[i].min_main,items[i].max_main);
         }
     }
 }
@@ -287,6 +290,10 @@ static PocketUiStatus layout_flex(LayoutImpl *impl, PocketUiHandle *children, ui
         items[i].after_cross=row?s.margin.bottom:s.margin.right;
         items[i].flex_grow=s.grow+(row?s.width.kind==POCKET_LENGTH_FILL:s.height.kind==POCKET_LENGTH_FILL);
         items[i].flex_shrink=s.shrink;
+        items[i].min_main=row?s.min_width:s.min_height;
+        items[i].max_main=row?s.max_width:s.max_height;
+        items[i].min_cross=row?s.min_height:s.min_width;
+        items[i].max_cross=row?s.max_height:s.max_width;
     }
     int32_t available_main=row?inner.width:inner.height;
     int32_t available_cross=row?inner.height:inner.width;
@@ -321,7 +328,15 @@ static PocketUiStatus layout_flex(LayoutImpl *impl, PocketUiHandle *children, ui
             int32_t cross_space=line_cross-items[i].before_cross-items[i].after_cross;
             if(align==POCKET_ALIGN_STRETCH &&
                (row?items[i].spec.height.kind:items[i].spec.width.kind) != POCKET_LENGTH_PX &&
-               cross_space>0)cross=cross_space;
+               cross_space>0)
+                cross=clamp_size(cross_space,items[i].min_cross,items[i].max_cross);
+            if(items[i].spec.aspect_num && items[i].spec.aspect_den &&
+               (row?items[i].spec.height.kind:items[i].spec.width.kind) != POCKET_LENGTH_PX) {
+                int32_t aspect_cross=row?
+                    clamp_i32((int64_t)items[i].main*items[i].spec.aspect_den/items[i].spec.aspect_num):
+                    clamp_i32((int64_t)items[i].main*items[i].spec.aspect_num/items[i].spec.aspect_den);
+                cross=clamp_size(aspect_cross,items[i].min_cross,items[i].max_cross);
+            }
             int32_t cross_offset=items[i].before_cross;
             if(align==POCKET_ALIGN_CENTER && cross_space>cross)cross_offset+=(cross_space-cross)/2;
             else if(align==POCKET_ALIGN_END && cross_space>cross)cross_offset+=cross_space-cross;
@@ -350,8 +365,8 @@ static PocketUiStatus layout_stack(LayoutImpl *impl, PocketUiHandle *children, u
         int32_t aw=inner.width-s.margin.left-s.margin.right;
         int32_t ah=inner.height-s.margin.top-s.margin.bottom;
         if(align==POCKET_ALIGN_STRETCH){
-            if(s.width.kind!=POCKET_LENGTH_PX)w=aw>0?aw:0;
-            if(s.height.kind!=POCKET_LENGTH_PX)h=ah>0?ah:0;
+            if(s.width.kind!=POCKET_LENGTH_PX)w=clamp_size(aw>0?aw:0,s.min_width,s.max_width);
+            if(s.height.kind!=POCKET_LENGTH_PX)h=clamp_size(ah>0?ah:0,s.min_height,s.max_height);
         }
         int32_t x=inner.x+s.margin.left,y=inner.y+s.margin.top;
         if(align==POCKET_ALIGN_CENTER){if(aw>w)x+=(aw-w)/2;if(ah>h)y+=(ah-h)/2;}
@@ -395,7 +410,8 @@ static PocketUiStatus layout_grid(LayoutImpl *impl, PocketUiHandle *children, ui
             uint32_t col=i-index;int32_t cellx=inner.x+(int32_t)col*(cellw+parent.gap);
             int32_t aw=cellw-s.margin.left-s.margin.right,ah=rowh-s.margin.top-s.margin.bottom;
             PocketLayoutAlign align=effective_align(s,parent);
-            if(align==POCKET_ALIGN_STRETCH && s.width.kind!=POCKET_LENGTH_PX)w=aw>0?aw:0;
+            if(align==POCKET_ALIGN_STRETCH && s.width.kind!=POCKET_LENGTH_PX)
+                w=clamp_size(aw>0?aw:0,s.min_width,s.max_width);
             int32_t x=cellx+s.margin.left,y0=y+s.margin.top;
             if(align==POCKET_ALIGN_CENTER){if(aw>w)x+=(aw-w)/2;if(ah>h)y0+=(ah-h)/2;}
             else if(align==POCKET_ALIGN_END){if(aw>w)x+=aw-w;if(ah>h)y0+=ah-h;}
