@@ -11,8 +11,10 @@ static int measure(void *ctx,PocketUiHandle node,int32_t mw,int32_t mh,int32_t *
     return 1;
 }
 static PocketUiHandle add(PocketUiTree *tree,PocketUiHandle parent,PocketUiNodeType type){
-    PocketUiHandle h={0};CHECK(pocket_ui_create(tree,type,parent,&h)==POCKET_UI_OK);
-    CHECK(pocket_ui_mount(tree,h)==POCKET_UI_OK);return h;
+    PocketUiHandle h={0};
+    if(pocket_ui_create(tree,type,parent,&h)!=POCKET_UI_OK)return (PocketUiHandle){0};
+    if(pocket_ui_mount(tree,h)!=POCKET_UI_OK)return (PocketUiHandle){0};
+    return h;
 }
 static PocketLayoutSpec leaf_px(int w,int h){
     PocketLayoutSpec s=pocket_layout_spec_default();s.width=(PocketLength){POCKET_LENGTH_PX,w};
@@ -21,8 +23,9 @@ static PocketLayoutSpec leaf_px(int w,int h){
 int main(void){
     PocketUiTree tree={0};PocketUiTreeConfig tc={.initial_capacity=8,.update_queue_capacity=8,.update_budget=4};
     CHECK(pocket_ui_tree_init(&tree,&tc)==POCKET_UI_OK);
-    PocketUiHandle root=add(&tree,(PocketUiHandle){0},POCKET_UI_CONTAINER);
+    PocketUiHandle root=add(&tree,(PocketUiHandle){0},POCKET_UI_CONTAINER);CHECK(pocket_ui_handle_valid(root));
     PocketUiHandle a=add(&tree,root,POCKET_UI_COMPONENT),b=add(&tree,root,POCKET_UI_COMPONENT),c=add(&tree,root,POCKET_UI_COMPONENT);
+    CHECK(pocket_ui_handle_valid(a)&&pocket_ui_handle_valid(b)&&pocket_ui_handle_valid(c));
 
     PocketLayoutContext l={0};PocketLayoutConfig lc={.tree=&tree,.record_capacity=32,.measure=measure};
     CHECK(pocket_layout_init(&l,&lc)==POCKET_UI_OK);

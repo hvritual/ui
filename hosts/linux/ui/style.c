@@ -57,7 +57,7 @@ PocketStyleStatus pocket_style_runtime_init(PocketStyleRuntime *runtime,
     uint32_t tc=config&&config->theme_capacity?config->theme_capacity:STYLE_DEFAULT_THEMES;
     uint32_t kc=config&&config->token_capacity?config->token_capacity:STYLE_DEFAULT_TOKENS;
     uint32_t rc=config&&config->rule_capacity?config->rule_capacity:STYLE_DEFAULT_RULES;
-    if(!tc||!kc||!rc||tc>256U||kc>65535U||rc>65535U)return POCKET_STYLE_INVALID_ARGUMENT;
+    if(!tc||!kc||!rc||tc>256U||kc>65535U||rc>512U)return POCKET_STYLE_INVALID_ARGUMENT;
     StyleImpl *impl=calloc(1,sizeof(*impl));if(!impl)return POCKET_STYLE_RESOURCE_EXHAUSTED;
     impl->themes=calloc(tc,sizeof(*impl->themes));impl->tokens=calloc(kc,sizeof(*impl->tokens));
     impl->rules=calloc(rc,sizeof(*impl->rules));
@@ -163,9 +163,8 @@ PocketStyleStatus pocket_style_resolve(const PocketStyleRuntime *runtime,
         if((POCKET_STYLE_INHERITED&POCKET_STYLE_BIT(i))&&(parent->set_mask&POCKET_STYLE_BIT(i))){
             out->fields[i]=parent->fields[i];out->set_mask|=POCKET_STYLE_BIT(i);
         }
-    const RuleRecord *ordered[STYLE_DEFAULT_RULES > 512U ? STYLE_DEFAULT_RULES : 512U];
+    const RuleRecord *ordered[512];
     uint32_t count=0;
-    if(impl->rule_capacity>512U)return POCKET_STYLE_RESOURCE_EXHAUSTED;
     for(uint32_t i=0;i<impl->rule_capacity;i++){
         const RuleRecord *r=&impl->rules[i];
         if(!r->used||r->rule.style_ref!=style_ref)continue;

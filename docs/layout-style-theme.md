@@ -59,3 +59,9 @@ therefore not accepted as a scalar transform of the 600 profile.
 No schema or public semantic refers to LVGL selector IDs, Flex/Grid enums,
 fbdev, evdev or native engine handles. A future LVGL adapter translates these
 Pocket semantics privately.
+
+
+Style runtime rule capacity is explicitly capped at 512 in v1. Resolution uses
+a fixed bounded rule pointer array and performs no allocation. Larger rule sets
+must be rejected at runtime creation rather than accepted and later failing
+during style resolution.
