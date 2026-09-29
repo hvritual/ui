@@ -311,14 +311,16 @@ void pocket_ui_tree_dispose(PocketUiTree *tree) {
 PocketUiStatus pocket_ui_create(PocketUiTree *tree, PocketUiNodeType type,
                                 PocketUiHandle parent, PocketUiHandle *out) {
     UiImpl *ui = impl(tree);
-    UiNode *parent_node = NULL, *node = NULL;
+    UiNode *node = NULL;
     PocketUiHandle handle = {0};
     PocketUiStatus status;
     if(!ui || !out || !type_valid(type)) return POCKET_UI_INVALID_ARGUMENT;
-    if(pocket_ui_handle_valid(parent)) {
-        parent_node = find_node(ui, parent);
-        if(!parent_node) return POCKET_UI_STALE_HANDLE;
-    }
+
+    /* Never retain an arena pointer across allocate_node(): it may realloc the
+     * node table. Validate the parent handle first, then resolve it again after
+     * the potentially-growing allocation. */
+    if(pocket_ui_handle_valid(parent) && !find_node(ui, parent))
+        return POCKET_UI_STALE_HANDLE;
 
     status = allocate_node(ui, &node, &handle);
     if(status != POCKET_UI_OK) return status;
@@ -326,6 +328,12 @@ PocketUiStatus pocket_ui_create(PocketUiTree *tree, PocketUiNodeType type,
     node->phase = POCKET_UI_PHASE_CREATED;
     node->stable_id = ui->next_stable_id++;
     if(ui->next_stable_id == 0) ui->next_stable_id = 1;
+
+    UiNode *parent_node = pocket_ui_handle_valid(parent) ? find_node(ui, parent) : NULL;
+    if(pocket_ui_handle_valid(parent) && !parent_node) {
+        node->live = 0;
+        return POCKET_UI_STALE_HANDLE;
+    }
 
     if(ui->engine_api && (ui->engine_api->capabilities & POCKET_ENGINE_CAP_NODE_TREE)) {
         if(!ui->engine_api->node_create) {
@@ -345,6 +353,8 @@ PocketUiStatus pocket_ui_create(PocketUiTree *tree, PocketUiNodeType type,
 
     if(parent_node) {
         link_child(ui, parent_node, handle);
+        /* link_child can only mutate existing slots; no allocation occurs, so
+         * parent_node remains valid for this operation. */
         mark_dirty(ui, parent_node, POCKET_UI_DIRTY_STRUCTURE | POCKET_UI_DIRTY_LAYOUT | POCKET_UI_DIRTY_PAINT);
     }
     node->dirty = POCKET_UI_DIRTY_STRUCTURE | POCKET_UI_DIRTY_LAYOUT | POCKET_UI_DIRTY_PAINT;
