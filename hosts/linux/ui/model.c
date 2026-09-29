@@ -92,7 +92,9 @@ static int model_contains_key(const PocketModelApi *model,uint64_t key) {
 }
 PocketModelStatus pocket_repeater_init(PocketRepeater *repeater,const PocketRepeaterConfig *config) {
     if(!repeater||repeater->impl||!config||!model_valid(&config->model)||
-       !pocket_component_handle_valid(config->parent))
+       !pocket_component_handle_valid(config->parent)||
+       config->item_kind<POCKET_COMPONENT_VIEW||
+       config->item_kind>=POCKET_COMPONENT_KIND_COUNT)
         return POCKET_MODEL_INVALID_ARGUMENT;
     PocketModelStatus parent=parent_valid(config->components,config->parent,0);
     if(parent!=POCKET_MODEL_OK)return parent;
@@ -157,7 +159,9 @@ uint64_t pocket_repeater_bind_calls(const PocketRepeater *repeater) {
 PocketModelStatus pocket_virtual_collection_init(PocketVirtualCollection *collection,
                                                   const PocketVirtualCollectionConfig *config) {
     if(!collection||collection->impl||!config||!model_valid(&config->model)||
-       !pocket_component_handle_valid(config->parent))
+       !pocket_component_handle_valid(config->parent)||
+       config->item_kind<POCKET_COMPONENT_VIEW||
+       config->item_kind>=POCKET_COMPONENT_KIND_COUNT)
         return POCKET_MODEL_INVALID_ARGUMENT;
     PocketModelStatus parent=parent_valid(config->components,config->parent,1);
     if(parent!=POCKET_MODEL_OK)return parent;

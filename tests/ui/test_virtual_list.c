@@ -76,6 +76,7 @@ int main(void) {
     CHECK(pocket_component_snapshot(&components,selected_component,&selected_snapshot)==POCKET_COMPONENT_OK);
     CHECK(selected_snapshot.props.states&POCKET_STATE_SELECTED);
     CHECK(selected_snapshot.props.disabled);
+    CHECK(pocket_virtual_collection_stats(&collection,&stats)==POCKET_MODEL_OK);
 
     drinks.revision=1;
     uint64_t before=stats.bind_calls;
