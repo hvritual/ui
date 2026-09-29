@@ -52,9 +52,6 @@ static PocketUiHandle zero_handle(void) {
     PocketUiHandle h = {0, 0};
     return h;
 }
-static int handle_equal(PocketUiHandle a, PocketUiHandle b) {
-    return a.slot == b.slot && a.generation == b.generation;
-}
 int pocket_ui_handle_valid(PocketUiHandle handle) {
     return handle.slot != 0U && handle.generation != 0U;
 }
