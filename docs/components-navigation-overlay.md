@@ -60,3 +60,18 @@ layer. Same-layer ordering therefore does not wrap after hundreds of
 present/dismiss cycles. Removing a lower focus-capturing overlay also repairs
 the saved focus chain of any upper overlay, so later dismissal cannot restore a
 focus token owned by an already-destroyed surface.
+
+
+## Semantic root invariants
+
+A navigation page must be a top-level `View` component. This prevents a child
+control or overlay surface from being accidentally promoted into the page
+ownership stack.
+
+An owned overlay root must also be top-level. Modal, Dialog, Toast and Loading
+overlay kinds require their matching semantic component kind. Modal/Dialog/
+Loading overlays additionally require background input capture; a semantic
+modal is never allowed to become click-through by configuration.
+
+Grid maps to a container node with Grid layout semantics, not to Scroll. Scroll
+and List remain the explicitly scroll-oriented component kinds.

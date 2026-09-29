@@ -24,6 +24,9 @@ int main(void){
  Trace trace={0};PocketNavigationStack nav={0};PocketNavigationConfig nc={.components=&components,.capacity=8,.lifecycle=life,.lifecycle_context=&trace};CHECK(pocket_navigation_init(&nav,&nc)==POCKET_NAV_OK);
  PocketComponentHandle home=page(&components),detail=page(&components),making=page(&components),success=page(&components);
  CHECK(pocket_component_handle_valid(home)&&pocket_component_handle_valid(success));
+ PocketComponentHandle invalid_page_child={0};
+ CHECK(pocket_component_create(&components,POCKET_COMPONENT_VIEW,home,NULL,&invalid_page_child)==POCKET_COMPONENT_OK);
+ CHECK(pocket_navigation_push(&nav,&(PocketNavigationPage){88,invalid_page_child,0})==POCKET_NAV_INVALID_ARGUMENT);
  CHECK(pocket_navigation_push(&nav,&(PocketNavigationPage){1,home,1})==POCKET_NAV_OK);
  CHECK(pocket_navigation_push(&nav,&(PocketNavigationPage){2,detail,1})==POCKET_NAV_OK);
  PocketComponentHandle blocked=page(&components);CHECK(pocket_component_handle_valid(blocked));

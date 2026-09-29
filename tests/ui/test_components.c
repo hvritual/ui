@@ -24,6 +24,10 @@ int main(void){
    CHECK(pocket_component_create(&rt,(PocketComponentKind)k,root,&p,&all[k])==POCKET_COMPONENT_OK);
    PocketComponentSnapshot s;CHECK(pocket_component_snapshot(&rt,all[k],&s)==POCKET_COMPONENT_OK);
    CHECK(s.kind==(PocketComponentKind)k&&s.props.style_ref==pocket_component_default_style_ref((PocketComponentKind)k));
+   if(k==POCKET_COMPONENT_GRID){
+     PocketUiSnapshot ui;CHECK(pocket_ui_snapshot(&tree,s.root,&ui)==POCKET_UI_OK);
+     CHECK(ui.type==POCKET_UI_CONTAINER);
+   }
  }
  CHECK(pocket_component_live_count(&rt)==(size_t)(POCKET_COMPONENT_KIND_COUNT-1));
 

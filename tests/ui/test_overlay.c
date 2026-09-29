@@ -13,6 +13,9 @@ int main(void){
  PocketComponentRuntime components={0};PocketComponentRuntimeConfig cc={.tree=&tree,.layout=&layout,.capacity=32};CHECK(pocket_component_runtime_init(&components,&cc)==POCKET_COMPONENT_OK);
  PocketOverlayManager overlays={0};PocketOverlayConfig oc={.components=&components,.capacity=8};CHECK(pocket_overlay_init(&overlays,&oc)==POCKET_OVERLAY_OK);
  PocketComponentHandle toast=root(&components,POCKET_COMPONENT_TOAST),modal=root(&components,POCKET_COMPONENT_MODAL),keyboard=root(&components,POCKET_COMPONENT_VIEW);
+ PocketComponentHandle bad_modal=root(&components,POCKET_COMPONENT_MODAL);
+ CHECK(pocket_overlay_present(&overlays,&(PocketOverlaySpec){77,10,POCKET_OVERLAY_MODAL,bad_modal,0,1,0,0,1})==POCKET_OVERLAY_INVALID_ARGUMENT);
+ CHECK(pocket_component_destroy(&components,bad_modal)==POCKET_COMPONENT_OK);
  CHECK(pocket_overlay_present(&overlays,&(PocketOverlaySpec){1,10,POCKET_OVERLAY_TOAST,toast,0,1,0,0,1})==POCKET_OVERLAY_OK);
  CHECK(pocket_overlay_present(&overlays,&(PocketOverlaySpec){2,10,POCKET_OVERLAY_MODAL,modal,100,1,1,1,1})==POCKET_OVERLAY_OK);
  CHECK(pocket_overlay_present(&overlays,&(PocketOverlaySpec){3,11,POCKET_OVERLAY_KEYBOARD,keyboard,200,1,1,1,1})==POCKET_OVERLAY_OK);

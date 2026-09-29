@@ -49,6 +49,8 @@ static PocketNavigationStatus validate_page(NavigationImpl *impl,const PocketNav
         return POCKET_NAV_INVALID_ARGUMENT;
     if(pocket_component_snapshot(impl->components,page->root,&snapshot)!=POCKET_COMPONENT_OK)
         return POCKET_NAV_STALE_COMPONENT;
+    if(snapshot.kind!=POCKET_COMPONENT_VIEW || pocket_component_handle_valid(snapshot.parent))
+        return POCKET_NAV_INVALID_ARGUMENT;
     if(route_exists(impl,page->route_id))return POCKET_NAV_DUPLICATE_ROUTE;
     return POCKET_NAV_OK;
 }

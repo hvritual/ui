@@ -99,6 +99,16 @@ PocketOverlayStatus pocket_overlay_present(PocketOverlayManager *manager,const P
     if(by_id(impl,spec->id))return POCKET_OVERLAY_DUPLICATE;
     if(pocket_component_snapshot(impl->components,spec->root,&snapshot)!=POCKET_COMPONENT_OK)
         return POCKET_OVERLAY_STALE_COMPONENT;
+    if(spec->owns_root && pocket_component_handle_valid(snapshot.parent))
+        return POCKET_OVERLAY_INVALID_ARGUMENT;
+    if((spec->kind==POCKET_OVERLAY_MODAL || spec->kind==POCKET_OVERLAY_DIALOG ||
+        spec->kind==POCKET_OVERLAY_LOADING) && !spec->captures_input)
+        return POCKET_OVERLAY_INVALID_ARGUMENT;
+    if((spec->kind==POCKET_OVERLAY_MODAL && snapshot.kind!=POCKET_COMPONENT_MODAL) ||
+       (spec->kind==POCKET_OVERLAY_DIALOG && snapshot.kind!=POCKET_COMPONENT_DIALOG) ||
+       (spec->kind==POCKET_OVERLAY_TOAST && snapshot.kind!=POCKET_COMPONENT_TOAST) ||
+       (spec->kind==POCKET_OVERLAY_LOADING && snapshot.kind!=POCKET_COMPONENT_LOADING))
+        return POCKET_OVERLAY_INVALID_ARGUMENT;
     OverlayRecord *record=NULL;
     for(uint32_t i=0;i<impl->capacity;i++)if(!impl->records[i].live){record=&impl->records[i];break;}
     if(!record)return POCKET_OVERLAY_FULL;
