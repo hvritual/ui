@@ -1,0 +1,29 @@
+name: F5 Reactive State Core
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  reactive:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install ARM functional tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user
+      - name: Reactive graph
+        run: make test-reactive
+      - name: Component binding
+        run: make test-binding
+      - name: Budget and coalescing
+        run: make test-reactive-budget
+      - name: ARM Cortex-A7 parity
+        run: make test-reactive-core-arm
