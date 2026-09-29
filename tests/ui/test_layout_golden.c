@@ -10,7 +10,9 @@ static PocketLayoutSpec fixed_h(int h){
 }
 static void out_rect(const PocketLayoutResult *r){printf("[%d,%d,%d,%d]",r->geometry.x,r->geometry.y,r->geometry.width,r->geometry.height);}
 int main(int argc,char **argv){
- if(argc!=2)return 2;int height=atoi(argv[1]);if(height!=600&&height!=800)return 2;
+ if(argc!=2) return 2;
+ int height=atoi(argv[1]);
+ if(height!=600&&height!=800) return 2;
  PocketUiTree tree={0};PocketUiTreeConfig tc={.initial_capacity=16,.update_queue_capacity=16,.update_budget=8};CHECK(pocket_ui_tree_init(&tree,&tc)==POCKET_UI_OK);
  PocketUiHandle root=add(&tree,(PocketUiHandle){0},POCKET_UI_CONTAINER),header=add(&tree,root,POCKET_UI_CONTAINER),body=add(&tree,root,POCKET_UI_CONTAINER),footer=add(&tree,root,POCKET_UI_CONTAINER);CHECK(pocket_ui_handle_valid(footer));
  PocketUiHandle cards[6];for(int i=0;i<6;i++){cards[i]=add(&tree,body,POCKET_UI_COMPONENT);CHECK(pocket_ui_handle_valid(cards[i]));}
