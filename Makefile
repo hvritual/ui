@@ -121,3 +121,13 @@ verify-video:
 	python3 scripts/video_evidence.py seal
 package-video:
 	python3 scripts/video.py package
+
+.PHONY: test-engine-contract test-engine-adapters check-no-engine-leak test-engine-contract-arm
+test-engine-contract:
+	python3 scripts/engine_contract.py contract --mode native
+test-engine-adapters:
+	python3 scripts/engine_contract.py adapters --mode native
+check-no-engine-leak:
+	python3 scripts/engine_contract.py leak
+test-engine-contract-arm:
+	python3 scripts/engine_contract.py all --mode arm
