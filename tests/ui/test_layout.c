@@ -47,7 +47,7 @@ int main(void){
     CHECK(pocket_layout_set(&l,a,&as)==POCKET_UI_OK);CHECK(pocket_layout_set(&l,b,&bs)==POCKET_UI_OK);CHECK(pocket_layout_set(&l,c,&cs)==POCKET_UI_OK);
     CHECK(pocket_layout_run(&l,root,200,150)==POCKET_UI_OK);
     CHECK(pocket_layout_result(&l,a,&ar)==POCKET_UI_OK);CHECK(pocket_layout_result(&l,b,&br)==POCKET_UI_OK);CHECK(pocket_layout_result(&l,c,&cr)==POCKET_UI_OK);
-    CHECK(ar.geometry.x==0 && ar.geometry.y==0);
+    CHECK(ar.geometry.x==5 && ar.geometry.y==0);
     CHECK(br.geometry.x==0 && br.geometry.y==75);
     CHECK(cr.geometry.x==55 && cr.geometry.y==0);
 
