@@ -119,6 +119,11 @@ typedef struct {
     int consumed;
     int cancelled;
     int default_prevented;
+    /* Numeric interaction payload; never user-entered text. */
+    uint32_t pointer_id;
+    uint64_t timestamp_ms;
+    int32_t delta_x, delta_y;
+    int32_t velocity_x, velocity_y;
 } PocketUiEvent;
 
 typedef PocketUiEventAction (*PocketUiEventHandler)(void *context, PocketUiEvent *event);
