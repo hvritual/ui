@@ -213,7 +213,7 @@ PocketInteractionStatus pocket_interaction_release_capture(PocketInteractionRunt
 PocketInteractionStatus pocket_interaction_pointer(PocketInteractionRuntime *runtime,
                                                     const PocketPointerEvent *event) {
     InteractionImpl *impl=ii(runtime);
-    if(!impl||!event||!event->pointer_id||event->phase<POCKET_POINTER_DOWN||
+    if(!impl||!event||event->phase<POCKET_POINTER_DOWN||
        event->phase>POCKET_POINTER_CANCEL)
         return POCKET_INTERACTION_INVALID_ARGUMENT;
     if(event->phase==POCKET_POINTER_DOWN) {
@@ -241,7 +241,8 @@ PocketInteractionStatus pocket_interaction_pointer(PocketInteractionRuntime *run
         if(hit!=POCKET_INTERACTION_OK)target=slot->down_target;
     }
     PocketInteractionStatus status=dispatch_pointer(impl,target,event);
-    if(event->phase==POCKET_POINTER_UP||event->phase==POCKET_POINTER_CANCEL)
+    if(status==POCKET_INTERACTION_STALE_HANDLE||
+       event->phase==POCKET_POINTER_UP||event->phase==POCKET_POINTER_CANCEL)
         memset(slot,0,sizeof(*slot));
     return status;
 }
