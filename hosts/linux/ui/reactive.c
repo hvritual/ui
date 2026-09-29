@@ -507,14 +507,26 @@ PocketReactiveStatus pocket_reactive_flush(PocketReactiveRuntime *runtime,uint32
             if(!node->dirty&&!dependency_changed(impl,node->deps,node->dep_versions,node->dep_count))
                 continue;
             if(!computed_ready(impl,node))continue;
-            if(local.work_items>=budget){if(stats)*stats=local;return POCKET_REACTIVE_BUDGET_EXHAUSTED;}
+            if(local.work_items>=budget) {
+                if(stats) *stats=local;
+                return POCKET_REACTIVE_BUDGET_EXHAUSTED;
+            }
             PocketReactiveValue values[POCKET_REACTIVE_MAX_DEPS];
             PocketReactiveStatus gathered=gather_values(impl,node->deps,node->dep_count,values);
-            if(gathered!=POCKET_REACTIVE_OK){if(stats)*stats=local;return gathered;}
+            if(gathered!=POCKET_REACTIVE_OK) {
+                if(stats) *stats=local;
+                return gathered;
+            }
             PocketReactiveValue out={node->type,{0}};
             PocketReactiveStatus status=node->compute(node->context,values,node->dep_count,&out);
-            if(status!=POCKET_REACTIVE_OK){if(stats)*stats=local;return status;}
-            if(!value_valid(out)||out.type!=node->type){if(stats)*stats=local;return POCKET_REACTIVE_TYPE_MISMATCH;}
+            if(status!=POCKET_REACTIVE_OK) {
+                if(stats) *stats=local;
+                return status;
+            }
+            if(!value_valid(out)||out.type!=node->type) {
+                if(stats) *stats=local;
+                return POCKET_REACTIVE_TYPE_MISMATCH;
+            }
             if(!node->version||!value_equal(node->value,out)) {
                 node->value=out;node->version++;
                 if(!node->version)node->version=1;
@@ -523,25 +535,37 @@ PocketReactiveStatus pocket_reactive_flush(PocketReactiveRuntime *runtime,uint32
             snapshot_versions(impl,node->deps,node->dep_versions,node->dep_count);
             node->dirty=0;local.work_items++;local.computed_runs++;progress=1;
         }
-        if(pending_computed(impl)&&!progress){if(stats)*stats=local;return POCKET_REACTIVE_CYCLE;}
+        if(pending_computed(impl)&&!progress) {
+            if(stats) *stats=local;
+            return POCKET_REACTIVE_CYCLE;
+        }
         for(uint32_t i=0;i<impl->effect_capacity;i++) {
             ReactiveEffect *effect=&impl->effects[i];
             if(!effect->live||(!effect->initial&&
                !dependency_changed(impl,effect->deps,effect->dep_versions,effect->dep_count)))
                 continue;
-            if(local.work_items>=budget){if(stats)*stats=local;return POCKET_REACTIVE_BUDGET_EXHAUSTED;}
+            if(local.work_items>=budget) {
+                if(stats) *stats=local;
+                return POCKET_REACTIVE_BUDGET_EXHAUSTED;
+            }
             if(++effect->runs_this_flush>REACTIVE_MAX_EFFECT_RUNS_PER_FLUSH) {
                 if(stats) *stats=local;
                 return POCKET_REACTIVE_CYCLE;
             }
             PocketReactiveValue values[POCKET_REACTIVE_MAX_DEPS];
             PocketReactiveStatus gathered=gather_values(impl,effect->deps,effect->dep_count,values);
-            if(gathered!=POCKET_REACTIVE_OK){if(stats)*stats=local;return gathered;}
+            if(gathered!=POCKET_REACTIVE_OK) {
+                if(stats) *stats=local;
+                return gathered;
+            }
             snapshot_versions(impl,effect->deps,effect->dep_versions,effect->dep_count);
             effect->initial=0;
             PocketReactiveStatus status=effect->effect(effect->context,values,effect->dep_count);
             local.work_items++;local.effect_runs++;progress=1;
-            if(status!=POCKET_REACTIVE_OK){if(stats)*stats=local;return status;}
+            if(status!=POCKET_REACTIVE_OK) {
+                if(stats) *stats=local;
+                return status;
+            }
         }
         for(uint32_t i=0;i<impl->binding_capacity;i++) {
             ReactiveBinding *binding=&impl->bindings[i];
@@ -557,13 +581,19 @@ PocketReactiveStatus pocket_reactive_flush(PocketReactiveRuntime *runtime,uint32
                 continue;
             }
             if(!binding->initial&&source->version==binding->source_version)continue;
-            if(local.work_items>=budget){if(stats)*stats=local;return POCKET_REACTIVE_BUDGET_EXHAUSTED;}
+            if(local.work_items>=budget) {
+                if(stats) *stats=local;
+                return POCKET_REACTIVE_BUDGET_EXHAUSTED;
+            }
             PocketReactiveStatus status=apply_binding(impl,binding,source->value);
             if(status==POCKET_REACTIVE_STALE_HANDLE) {
                 binding->live=0;local.work_items++;local.binding_cleanups++;progress=1;
                 continue;
             }
-            if(status!=POCKET_REACTIVE_OK){if(stats)*stats=local;return status;}
+            if(status!=POCKET_REACTIVE_OK) {
+                if(stats) *stats=local;
+                return status;
+            }
             binding->source_version=source->version;binding->initial=0;
             local.work_items++;local.binding_updates++;progress=1;
         }
