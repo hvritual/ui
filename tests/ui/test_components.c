@@ -34,10 +34,22 @@ int main(void){
  Events e={0};PocketComponentHandle button=all[POCKET_COMPONENT_BUTTON];
  CHECK(pocket_component_set_event_handler(&rt,button,event,&e)==POCKET_COMPONENT_OK);
  CHECK(pocket_component_activate(&rt,button)==POCKET_COMPONENT_OK&&e.activate==1);
- CHECK(pocket_component_set_states(&rt,button,POCKET_STATE_DISABLED)==POCKET_COMPONENT_OK);
+ CHECK(pocket_component_set_disabled(&rt,button,1)==POCKET_COMPONENT_OK);
  CHECK(pocket_component_activate(&rt,button)==POCKET_COMPONENT_DISABLED);
- CHECK(pocket_component_set_states(&rt,button,0)==POCKET_COMPONENT_OK);
+ CHECK(pocket_component_set_disabled(&rt,button,0)==POCKET_COMPONENT_OK);
+ CHECK(pocket_component_set_states(&rt,button,POCKET_STATE_FOCUSED)==POCKET_COMPONENT_OK);
  CHECK(pocket_component_activate(&rt,button)==POCKET_COMPONENT_OK&&e.activate==2);
+ CHECK(pocket_component_set_style_ref(&rt,button,0x7777)==POCKET_COMPONENT_OK);
+ CHECK(pocket_component_set_text_ref(&rt,button,0x1234)==POCKET_COMPONENT_OK);
+ CHECK(pocket_component_set_resource_ref(&rt,button,0x5678)==POCKET_COMPONENT_OK);
+ CHECK(pocket_component_set_visible(&rt,button,0)==POCKET_COMPONENT_OK);
+ PocketComponentSnapshot dynamic;CHECK(pocket_component_snapshot(&rt,button,&dynamic)==POCKET_COMPONENT_OK);
+ CHECK(dynamic.props.style_ref==0x7777&&dynamic.props.text_ref==0x1234&&
+       dynamic.props.resource_ref==0x5678&&!dynamic.props.visible&&
+       (dynamic.props.states&POCKET_STATE_FOCUSED));
+ CHECK(pocket_component_set_visible(&rt,button,1)==POCKET_COMPONENT_OK);
+ CHECK(pocket_component_set_style_ref(&rt,button,0)==POCKET_COMPONENT_INVALID_ARGUMENT);
+ CHECK(pocket_component_set_visible(&rt,button,2)==POCKET_COMPONENT_INVALID_ARGUMENT);
 
  PocketComponentHandle toggle=all[POCKET_COMPONENT_TOGGLE];CHECK(pocket_component_set_event_handler(&rt,toggle,event,&e)==POCKET_COMPONENT_OK);
  CHECK(pocket_component_activate(&rt,toggle)==POCKET_COMPONENT_OK&&e.toggle==1);

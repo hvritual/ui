@@ -134,6 +134,21 @@ PocketComponentStatus pocket_component_set_event_handler(PocketComponentRuntime 
 PocketComponentStatus pocket_component_set_states(PocketComponentRuntime *runtime,
                                                    PocketComponentHandle component,
                                                    uint32_t states);
+PocketComponentStatus pocket_component_set_style_ref(PocketComponentRuntime *runtime,
+                                                      PocketComponentHandle component,
+                                                      uint64_t style_ref);
+PocketComponentStatus pocket_component_set_text_ref(PocketComponentRuntime *runtime,
+                                                     PocketComponentHandle component,
+                                                     uint64_t text_ref);
+PocketComponentStatus pocket_component_set_resource_ref(PocketComponentRuntime *runtime,
+                                                         PocketComponentHandle component,
+                                                         uint64_t resource_ref);
+PocketComponentStatus pocket_component_set_visible(PocketComponentRuntime *runtime,
+                                                    PocketComponentHandle component,
+                                                    int visible);
+PocketComponentStatus pocket_component_set_disabled(PocketComponentRuntime *runtime,
+                                                     PocketComponentHandle component,
+                                                     int disabled);
 PocketComponentStatus pocket_component_set_value(PocketComponentRuntime *runtime,
                                                   PocketComponentHandle component,
                                                   int32_t value);

@@ -75,3 +75,13 @@ modal is never allowed to become click-through by configuration.
 
 Grid maps to a container node with Grid layout semantics, not to Scroll. Scroll
 and List remain the explicitly scroll-oriented component kinds.
+
+
+## Dynamic component properties
+
+Applications do not need to bypass the component layer to refresh common UI
+content. F4 provides bounded setters for styleRef, textRef, resourceRef,
+visibility and disabled state in addition to semantic state/value updates.
+Setters update the component record and drive the corresponding Object Model
+dirty semantics. Text/image changes therefore stay inside Pocket component
+contracts rather than exposing Engine-native objects.

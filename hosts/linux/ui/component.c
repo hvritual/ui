@@ -331,6 +331,54 @@ PocketComponentStatus pocket_component_set_states(PocketComponentRuntime *runtim
     record->props.disabled=(states&POCKET_STATE_DISABLED)?1U:0U;
     return sync_ui(impl,record,0);
 }
+PocketComponentStatus pocket_component_set_style_ref(PocketComponentRuntime *runtime,
+                                                      PocketComponentHandle component,
+                                                      uint64_t style_ref) {
+    ComponentImpl *impl=ci(runtime);
+    ComponentRecord *record=find_component(impl,component);
+    if(!record)return POCKET_COMPONENT_STALE_HANDLE;
+    if(!style_ref)return POCKET_COMPONENT_INVALID_ARGUMENT;
+    record->props.style_ref=style_ref;
+    return sync_ui(impl,record,0);
+}
+PocketComponentStatus pocket_component_set_text_ref(PocketComponentRuntime *runtime,
+                                                     PocketComponentHandle component,
+                                                     uint64_t text_ref) {
+    ComponentImpl *impl=ci(runtime);
+    ComponentRecord *record=find_component(impl,component);
+    if(!record)return POCKET_COMPONENT_STALE_HANDLE;
+    record->props.text_ref=text_ref;
+    return sync_ui(impl,record,POCKET_UI_PROP_TEXT);
+}
+PocketComponentStatus pocket_component_set_resource_ref(PocketComponentRuntime *runtime,
+                                                         PocketComponentHandle component,
+                                                         uint64_t resource_ref) {
+    ComponentImpl *impl=ci(runtime);
+    ComponentRecord *record=find_component(impl,component);
+    if(!record)return POCKET_COMPONENT_STALE_HANDLE;
+    record->props.resource_ref=resource_ref;
+    return sync_ui(impl,record,POCKET_UI_PROP_RESOURCE);
+}
+PocketComponentStatus pocket_component_set_visible(PocketComponentRuntime *runtime,
+                                                    PocketComponentHandle component,
+                                                    int visible) {
+    ComponentImpl *impl=ci(runtime);
+    ComponentRecord *record=find_component(impl,component);
+    if(!record)return POCKET_COMPONENT_STALE_HANDLE;
+    if(visible!=0&&visible!=1)return POCKET_COMPONENT_INVALID_ARGUMENT;
+    record->props.visible=(uint8_t)visible;
+    return sync_ui(impl,record,0);
+}
+PocketComponentStatus pocket_component_set_disabled(PocketComponentRuntime *runtime,
+                                                     PocketComponentHandle component,
+                                                     int disabled) {
+    ComponentImpl *impl=ci(runtime);
+    ComponentRecord *record=find_component(impl,component);
+    if(!record)return POCKET_COMPONENT_STALE_HANDLE;
+    if(disabled!=0&&disabled!=1)return POCKET_COMPONENT_INVALID_ARGUMENT;
+    record->props.disabled=(uint8_t)disabled;
+    return sync_ui(impl,record,0);
+}
 static PocketComponentStatus set_checked(ComponentImpl *impl,ComponentRecord *record,int checked) {
     if(checked)record->props.states|=POCKET_STATE_CHECKED;
     else record->props.states&=~POCKET_STATE_CHECKED;
