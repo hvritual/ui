@@ -89,6 +89,8 @@ int main(void){
 
     PocketLayoutSpec bad=pocket_layout_spec_default();bad.width=(PocketLength){POCKET_LENGTH_PERCENT,10001};
     CHECK(pocket_layout_set(&l,a,&bad)==POCKET_UI_INVALID_ARGUMENT);
+    bad=pocket_layout_spec_default();bad.offset_x=(PocketLength){POCKET_LENGTH_AUTO,0};
+    CHECK(pocket_layout_set(&l,a,&bad)==POCKET_UI_INVALID_ARGUMENT);
     lc.safe_area=(PocketLayoutInsets){101,0,100,0}; /* existing context unchanged */
     pocket_layout_dispose(&l);pocket_ui_tree_dispose(&tree);
 

@@ -46,6 +46,7 @@ static int insets_valid(PocketLayoutInsets v) {
 }
 static int length_valid(PocketLength v, int offset) {
     if(v.kind < POCKET_LENGTH_AUTO || v.kind > POCKET_LENGTH_FILL) return 0;
+    if(offset && v.kind != POCKET_LENGTH_PX && v.kind != POCKET_LENGTH_PERCENT) return 0;
     if(v.kind == POCKET_LENGTH_PERCENT) return v.value >= 0 && v.value <= 10000;
     if(v.kind == POCKET_LENGTH_PX) return offset || v.value >= 0;
     return v.value == 0;

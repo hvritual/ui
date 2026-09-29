@@ -88,3 +88,11 @@ opacity is 0..256; border/radius/font/spacing values are non-negative 32-bit
 integers; translations are signed 32-bit. Token references are validated after
 theme lookup with the same rules, so a valid token ID cannot inject an invalid
 field value.
+
+
+Absolute offsets accept only px or percent. Auto/content/fill are sizing
+concepts, not positioning semantics, and are rejected by both Runtime and JSON
+Schema.
+
+The style schema now mirrors Runtime field ranges instead of using one generic
+integer atom for every field.

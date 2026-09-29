@@ -4,51 +4,242 @@
   "title": "Pocket UI Style and Theme v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["themes", "rules"],
+  "required": [
+    "themes",
+    "rules"
+  ],
   "properties": {
     "themes": {
       "type": "array",
       "items": {
-        "type": "object", "additionalProperties": false,
-        "required": ["id", "tokens", "base"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "tokens",
+          "base"
+        ],
         "properties": {
-          "id": {"type": "integer", "minimum": 1},
-          "tokens": {"type": "object", "additionalProperties": {"type": "integer"}},
-          "base": {"$ref": "#/$defs/style"}
+          "id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "tokens": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "base": {
+            "$ref": "#/$defs/style"
+          }
         }
       }
     },
     "rules": {
       "type": "array",
       "items": {
-        "type": "object", "additionalProperties": false,
-        "required": ["styleRef", "states", "priority", "style"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "styleRef",
+          "states",
+          "priority",
+          "style"
+        ],
         "properties": {
-          "styleRef": {"type": "integer", "minimum": 1},
-          "states": {"type": "array", "uniqueItems": true, "items": {"enum": ["pressed", "focused", "disabled", "checked", "selected"]}},
-          "priority": {"type": "integer", "minimum": 0, "maximum": 65535},
-          "style": {"$ref": "#/$defs/style"}
+          "styleRef": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "states": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "pressed",
+                "focused",
+                "disabled",
+                "checked",
+                "selected"
+              ]
+            }
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 65535
+          },
+          "style": {
+            "$ref": "#/$defs/style"
+          }
         }
       }
     }
   },
   "$defs": {
-    "atom": {
+    "style": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "$ref": "#/$defs/colorAtom"
+        },
+        "foreground": {
+          "$ref": "#/$defs/colorAtom"
+        },
+        "borderColor": {
+          "$ref": "#/$defs/colorAtom"
+        },
+        "borderWidth": {
+          "$ref": "#/$defs/nonnegativeAtom"
+        },
+        "radius": {
+          "$ref": "#/$defs/nonnegativeAtom"
+        },
+        "fontId": {
+          "$ref": "#/$defs/nonnegativeAtom"
+        },
+        "fontSize": {
+          "$ref": "#/$defs/nonnegativeAtom"
+        },
+        "spacing": {
+          "$ref": "#/$defs/nonnegativeAtom"
+        },
+        "opacity": {
+          "$ref": "#/$defs/opacityAtom"
+        },
+        "translateX": {
+          "$ref": "#/$defs/translateAtom"
+        },
+        "translateY": {
+          "$ref": "#/$defs/translateAtom"
+        }
+      }
+    },
+    "colorAtom": {
       "oneOf": [
-        {"type": "object", "additionalProperties": false, "required": ["literal"], "properties": {"literal": {"type": "integer"}}},
-        {"type": "object", "additionalProperties": false, "required": ["token"], "properties": {"token": {"type": "integer", "minimum": 1}}}
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "literal"
+          ],
+          "properties": {
+            "literal": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "token"
+          ],
+          "properties": {
+            "token": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
       ]
     },
-    "style": {
-      "type": "object", "additionalProperties": false,
-      "properties": {
-        "background": {"$ref": "#/$defs/atom"}, "foreground": {"$ref": "#/$defs/atom"},
-        "borderColor": {"$ref": "#/$defs/atom"}, "borderWidth": {"$ref": "#/$defs/atom"},
-        "radius": {"$ref": "#/$defs/atom"}, "fontId": {"$ref": "#/$defs/atom"},
-        "fontSize": {"$ref": "#/$defs/atom"}, "spacing": {"$ref": "#/$defs/atom"},
-        "opacity": {"$ref": "#/$defs/atom"}, "translateX": {"$ref": "#/$defs/atom"},
-        "translateY": {"$ref": "#/$defs/atom"}
-      }
+    "nonnegativeAtom": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "literal"
+          ],
+          "properties": {
+            "literal": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 2147483647
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "token"
+          ],
+          "properties": {
+            "token": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      ]
+    },
+    "opacityAtom": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "literal"
+          ],
+          "properties": {
+            "literal": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 256
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "token"
+          ],
+          "properties": {
+            "token": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      ]
+    },
+    "translateAtom": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "literal"
+          ],
+          "properties": {
+            "literal": {
+              "type": "integer",
+              "minimum": -2147483648,
+              "maximum": 2147483647
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "token"
+          ],
+          "properties": {
+            "token": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      ]
     }
   }
 }
