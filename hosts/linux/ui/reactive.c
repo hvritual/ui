@@ -551,13 +551,13 @@ PocketReactiveStatus pocket_reactive_flush(PocketReactiveRuntime *runtime,uint32
                 binding->live=0;local.work_items++;local.binding_cleanups++;progress=1;
                 continue;
             }
-            if(!binding->initial&&source->version==binding->source_version)continue;
-            if(local.work_items>=budget){if(stats)*stats=local;return POCKET_REACTIVE_BUDGET_EXHAUSTED;}
             PocketComponentSnapshot snapshot;
             if(pocket_component_snapshot(impl->components,binding->component,&snapshot)!=POCKET_COMPONENT_OK) {
                 binding->live=0;local.work_items++;local.binding_cleanups++;progress=1;
                 continue;
             }
+            if(!binding->initial&&source->version==binding->source_version)continue;
+            if(local.work_items>=budget){if(stats)*stats=local;return POCKET_REACTIVE_BUDGET_EXHAUSTED;}
             PocketReactiveStatus status=apply_binding(impl,binding,source->value);
             if(status==POCKET_REACTIVE_STALE_HANDLE) {
                 binding->live=0;local.work_items++;local.binding_cleanups++;progress=1;
