@@ -197,6 +197,7 @@ static PocketModelStatus sync_slot_state(VirtualImpl *impl,ModelSlot *slot) {
     if(pocket_component_snapshot(impl->components,slot->component,&snapshot)!=POCKET_COMPONENT_OK)
         return POCKET_MODEL_STALE_COMPONENT;
     uint32_t states=snapshot.props.states&~(POCKET_STATE_SELECTED|POCKET_STATE_FOCUSED);
+    if(snapshot.props.disabled)states|=POCKET_STATE_DISABLED;
     if(slot->bound&&slot->key==impl->selected_key)states|=POCKET_STATE_SELECTED;
     if(slot->bound&&slot->key==impl->focused_key)states|=POCKET_STATE_FOCUSED;
     return pocket_component_set_states(impl->components,slot->component,states)==POCKET_COMPONENT_OK ?
