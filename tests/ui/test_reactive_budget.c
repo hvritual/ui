@@ -6,12 +6,17 @@ typedef struct {
     PocketReactiveRuntime *runtime;
     PocketReactiveHandle signal;
     int runs;
+    PocketReactiveStatus recursive_flush;
+    PocketReactiveStatus batch_begin;
 } Feedback;
 
 static PocketReactiveStatus feedback_effect(void *context,const PocketReactiveValue *deps,uint32_t count) {
     Feedback *f=context;
     if(count!=1||deps[0].type!=POCKET_VALUE_I64)return POCKET_REACTIVE_INVALID_ARGUMENT;
     f->runs++;
+    PocketReactiveFlushStats nested;
+    f->recursive_flush=pocket_reactive_flush(f->runtime,1,&nested);
+    f->batch_begin=pocket_reactive_batch_begin(f->runtime);
     return pocket_reactive_set(f->runtime,f->signal,pocket_value_i64(deps[0].as.i64+1));
 }
 static PocketReactiveStatus identity_compute(void *context,const PocketReactiveValue *deps,
@@ -37,10 +42,11 @@ int main(void) {
     PocketReactiveValue value;
     CHECK(pocket_reactive_get(&rt,derived,&value)==POCKET_REACTIVE_OK&&value.as.i64==1000);
 
-    Feedback feedback={&rt,source,0};PocketReactiveSubscription effect_id={0};
+    Feedback feedback={&rt,source,0,POCKET_REACTIVE_OK,POCKET_REACTIVE_OK};PocketReactiveSubscription effect_id={0};
     CHECK(pocket_reactive_effect(&rt,&source,1,feedback_effect,&feedback,&effect_id)==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_flush(&rt,5,&stats)==POCKET_REACTIVE_BUDGET_EXHAUSTED);
     CHECK(stats.work_items==5&&feedback.runs>0);
+    CHECK(feedback.recursive_flush==POCKET_REACTIVE_BUSY&&feedback.batch_begin==POCKET_REACTIVE_BUSY);
     CHECK(pocket_reactive_remove_effect(&rt,effect_id)==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_flush(&rt,64,&stats)==POCKET_REACTIVE_OK);
 

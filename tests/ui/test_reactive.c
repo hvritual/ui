@@ -4,6 +4,11 @@
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"REACTIVE_FAIL line=%d %s\n",__LINE__,#x);return 1;}}while(0)
 
 typedef struct { int calls; } EffectTrace;
+typedef struct {
+    PocketReactiveRuntime *runtime;
+    PocketReactiveHandle signal;
+    PocketReactiveStatus write_status;
+} PureProbe;
 
 static PocketReactiveStatus sum_compute(void *context,const PocketReactiveValue *deps,
                                         uint32_t count,PocketReactiveValue *out) {
@@ -18,6 +23,14 @@ static PocketReactiveStatus double_compute(void *context,const PocketReactiveVal
     (void)context;
     if(count!=1||deps[0].type!=POCKET_VALUE_I64)return POCKET_REACTIVE_INVALID_ARGUMENT;
     *out=pocket_value_i64(deps[0].as.i64*2);
+    return POCKET_REACTIVE_OK;
+}
+static PocketReactiveStatus pure_probe_compute(void *context,const PocketReactiveValue *deps,
+                                               uint32_t count,PocketReactiveValue *out) {
+    PureProbe *probe=context;
+    if(count!=1||deps[0].type!=POCKET_VALUE_I64)return POCKET_REACTIVE_INVALID_ARGUMENT;
+    probe->write_status=pocket_reactive_set(probe->runtime,probe->signal,pocket_value_i64(999));
+    *out=deps[0];
     return POCKET_REACTIVE_OK;
 }
 static PocketReactiveStatus trace_effect(void *context,const PocketReactiveValue *deps,
@@ -67,8 +80,12 @@ int main(void) {
 
     PocketReactiveHandle doubled_deps[]={total};
     CHECK(pocket_reactive_computed(&rt,POCKET_VALUE_I64,doubled_deps,1,double_compute,NULL,&doubled)==POCKET_REACTIVE_OK);
+    PureProbe probe={&rt,b,POCKET_REACTIVE_OK};PocketReactiveHandle pure_node;
+    CHECK(pocket_reactive_computed(&rt,POCKET_VALUE_I64,&a,1,pure_probe_compute,&probe,&pure_node)==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_flush(&rt,0,&stats)==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_get(&rt,doubled,&value)==POCKET_REACTIVE_OK&&value.as.i64==100);
+    CHECK(probe.write_status==POCKET_REACTIVE_BUSY);
+    CHECK(pocket_reactive_get(&rt,b,&value)==POCKET_REACTIVE_OK&&value.as.i64==30);
     CHECK(pocket_reactive_rewire_computed(&rt,total,&doubled,1)==POCKET_REACTIVE_CYCLE);
 
     PocketExternalStateBinding storage[2];
@@ -81,7 +98,12 @@ int main(void) {
     CHECK(pocket_external_state_ingest(&external,999,pocket_value_i64(1))==POCKET_REACTIVE_STALE_HANDLE);
 
     CHECK(pocket_reactive_remove_effect(&rt,effect_id)==POCKET_REACTIVE_OK);
+    PocketReactiveSubscription replacement={0};
+    CHECK(pocket_reactive_effect(&rt,&total,1,trace_effect,&trace,&replacement)==POCKET_REACTIVE_OK);
+    CHECK(replacement.slot==effect_id.slot&&replacement.generation!=effect_id.generation);
     CHECK(pocket_reactive_remove_effect(&rt,effect_id)==POCKET_REACTIVE_STALE_HANDLE);
+    CHECK(pocket_reactive_remove_effect(&rt,replacement)==POCKET_REACTIVE_OK);
+    CHECK(pocket_reactive_destroy(&rt,pure_node)==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_destroy(&rt,doubled)==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_destroy(&rt,total)==POCKET_REACTIVE_OK);
     pocket_reactive_dispose(&rt);
