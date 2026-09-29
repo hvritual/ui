@@ -4,7 +4,12 @@
 typedef struct{int timer,task,input;int life;} Trace;
 static void cancel(void *ctx,PocketNavigationResourceKind kind){Trace *t=ctx;if(kind==POCKET_NAV_RESOURCE_TIMER)t->timer++;else if(kind==POCKET_NAV_RESOURCE_TASK)t->task++;else if(kind==POCKET_NAV_RESOURCE_INPUT_CAPTURE)t->input++;}
 static void life(void *ctx,uint64_t route,PocketNavigationLifecycle event,PocketNavigationTransition transition){(void)route;(void)event;(void)transition;((Trace *)ctx)->life++;}
-static PocketComponentHandle page(PocketComponentRuntime *rt){PocketComponentHandle h={0};if(pocket_component_create(rt,POCKET_COMPONENT_VIEW,(PocketComponentHandle){0},NULL,&h)!=POCKET_COMPONENT_OK)return (PocketComponentHandle){0};return h;}
+static PocketComponentHandle page(PocketComponentRuntime *rt){
+ PocketComponentHandle h={0};
+ if(pocket_component_create(rt,POCKET_COMPONENT_VIEW,(PocketComponentHandle){0},NULL,&h)!=POCKET_COMPONENT_OK)
+  return (PocketComponentHandle){0};
+ return h;
+}
 int main(void){
  PocketUiTree tree={0};PocketUiTreeConfig tc={.initial_capacity=8,.update_queue_capacity=8,.update_budget=4};CHECK(pocket_ui_tree_init(&tree,&tc)==POCKET_UI_OK);
  PocketLayoutContext layout={0};PocketLayoutConfig lc={.tree=&tree,.record_capacity=32};CHECK(pocket_layout_init(&layout,&lc)==POCKET_UI_OK);

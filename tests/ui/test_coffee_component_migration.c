@@ -4,7 +4,9 @@
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"COFFEE_COMPONENT_FAIL line=%d %s\n",__LINE__,#x);return 1;}}while(0)
 static PocketComponentHandle make(PocketComponentRuntime *rt,PocketComponentKind kind,PocketComponentHandle parent,uint64_t text){
  PocketComponentProps p=pocket_component_props_default(kind);p.text_ref=text;PocketComponentHandle h={0};
- if(pocket_component_create(rt,kind,parent,&p,&h)!=POCKET_COMPONENT_OK)return (PocketComponentHandle){0};return h;
+ if(pocket_component_create(rt,kind,parent,&p,&h)!=POCKET_COMPONENT_OK)
+  return (PocketComponentHandle){0};
+ return h;
 }
 int main(void){
  PocketUiTree tree={0};PocketUiTreeConfig tc={.initial_capacity=32,.update_queue_capacity=32,.update_budget=16};CHECK(pocket_ui_tree_init(&tree,&tc)==POCKET_UI_OK);

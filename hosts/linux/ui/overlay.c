@@ -51,7 +51,8 @@ static const OverlayRecord *by_id_const(const OverlayImpl *impl,uint64_t id){
 static OverlayRecord *top_record(OverlayImpl *impl,int actionable_only){
     OverlayRecord *best=NULL;
     for(uint32_t i=0;i<impl->capacity;i++){
-        OverlayRecord *r=&impl->records[i];if(!r->live)continue;
+        OverlayRecord *r=&impl->records[i];
+        if(!r->live)continue;
         if(actionable_only && !r->spec.dismiss_on_back && !r->spec.captures_input && !r->spec.captures_focus)continue;
         if(!best||r->z_order>best->z_order||(r->z_order==best->z_order&&r->sequence>best->sequence))best=r;
     }
@@ -60,7 +61,8 @@ static OverlayRecord *top_record(OverlayImpl *impl,int actionable_only){
 static const OverlayRecord *top_record_const(const OverlayImpl *impl){
     const OverlayRecord *best=NULL;
     for(uint32_t i=0;i<impl->capacity;i++){
-        const OverlayRecord *r=&impl->records[i];if(!r->live)continue;
+        const OverlayRecord *r=&impl->records[i];
+        if(!r->live)continue;
         if(!best||r->z_order>best->z_order||(r->z_order==best->z_order&&r->sequence>best->sequence))best=r;
     }
     return best;
@@ -69,12 +71,19 @@ PocketOverlayStatus pocket_overlay_init(PocketOverlayManager *manager,const Pock
     if(!manager||manager->impl||!config||!config->components)return POCKET_OVERLAY_INVALID_ARGUMENT;
     uint32_t capacity=config->capacity?config->capacity:OVERLAY_DEFAULT_CAPACITY;
     if(!capacity||capacity>OVERLAY_MAX_CAPACITY)return POCKET_OVERLAY_INVALID_ARGUMENT;
-    OverlayImpl *impl=calloc(1,sizeof(*impl));if(!impl)return POCKET_OVERLAY_FULL;
-    impl->records=calloc(capacity,sizeof(*impl->records));if(!impl->records){free(impl);return POCKET_OVERLAY_FULL;}
-    impl->components=config->components;impl->capacity=capacity;impl->next_sequence=1;manager->impl=impl;return POCKET_OVERLAY_OK;
+    OverlayImpl *impl=calloc(1,sizeof(*impl));
+    if(!impl)return POCKET_OVERLAY_FULL;
+    impl->records=calloc(capacity,sizeof(*impl->records));
+    if(!impl->records){free(impl);return POCKET_OVERLAY_FULL;}
+    impl->components=config->components;
+    impl->capacity=capacity;
+    impl->next_sequence=1;
+    manager->impl=impl;
+    return POCKET_OVERLAY_OK;
 }
 void pocket_overlay_dispose(PocketOverlayManager *manager){
-    OverlayImpl *impl=oi(manager);if(!impl)return;
+    OverlayImpl *impl=oi(manager);
+    if(!impl)return;
     for(uint32_t i=0;i<impl->capacity;i++)if(impl->records[i].live){
         if(impl->records[i].spec.owns_root)(void)pocket_component_destroy(impl->components,impl->records[i].spec.root);
         impl->records[i].live=0;
@@ -97,7 +106,8 @@ PocketOverlayStatus pocket_overlay_present(PocketOverlayManager *manager,const P
     if(!impl->next_sequence)impl->next_sequence=1;
     record->z_order=layer_base(spec->kind)+(record->sequence%900U);
     if(spec->captures_focus){record->previous_focus=impl->current_focus;impl->current_focus=spec->focus_token;}
-    impl->live_count++;return POCKET_OVERLAY_OK;
+    impl->live_count++;
+    return POCKET_OVERLAY_OK;
 }
 PocketOverlayStatus pocket_overlay_dismiss(PocketOverlayManager *manager,uint64_t id){
     OverlayImpl *impl=oi(manager);OverlayRecord *record=by_id(impl,id);
@@ -120,7 +130,8 @@ PocketOverlayStatus pocket_overlay_dismiss(PocketOverlayManager *manager,uint64_
     return POCKET_OVERLAY_OK;
 }
 uint32_t pocket_overlay_dismiss_owner(PocketOverlayManager *manager,uint64_t owner_route){
-    OverlayImpl *impl=oi(manager);if(!impl||!owner_route)return 0;
+    OverlayImpl *impl=oi(manager);
+    if(!impl||!owner_route)return 0;
     uint32_t count=0;
     for(;;){
         OverlayRecord *best=NULL;
@@ -134,27 +145,47 @@ uint32_t pocket_overlay_dismiss_owner(PocketOverlayManager *manager,uint64_t own
     return count;
 }
 PocketOverlayStatus pocket_overlay_top(const PocketOverlayManager *manager,PocketOverlaySnapshot *out){
-    const OverlayImpl *impl=coi(manager);if(!impl||!out)return POCKET_OVERLAY_INVALID_ARGUMENT;
-    const OverlayRecord *r=top_record_const(impl);if(!r)return POCKET_OVERLAY_NOT_FOUND;
-    out->spec=r->spec;out->z_order=r->z_order;out->previous_focus_token=r->previous_focus;return POCKET_OVERLAY_OK;
+    const OverlayImpl *impl=coi(manager);
+    if(!impl||!out)return POCKET_OVERLAY_INVALID_ARGUMENT;
+    const OverlayRecord *r=top_record_const(impl);
+    if(!r)return POCKET_OVERLAY_NOT_FOUND;
+    out->spec=r->spec;
+    out->z_order=r->z_order;
+    out->previous_focus_token=r->previous_focus;
+    return POCKET_OVERLAY_OK;
 }
 PocketOverlayStatus pocket_overlay_snapshot(const PocketOverlayManager *manager,uint64_t id,
                                             PocketOverlaySnapshot *out){
     const OverlayImpl *impl=coi(manager);if(!impl||!out)return POCKET_OVERLAY_INVALID_ARGUMENT;
-    const OverlayRecord *r=by_id_const(impl,id);if(!r)return POCKET_OVERLAY_NOT_FOUND;
-    out->spec=r->spec;out->z_order=r->z_order;out->previous_focus_token=r->previous_focus;return POCKET_OVERLAY_OK;
+    const OverlayRecord *r=by_id_const(impl,id);
+    if(!r)return POCKET_OVERLAY_NOT_FOUND;
+    out->spec=r->spec;
+    out->z_order=r->z_order;
+    out->previous_focus_token=r->previous_focus;
+    return POCKET_OVERLAY_OK;
 }
-size_t pocket_overlay_count(const PocketOverlayManager *manager){const OverlayImpl *impl=coi(manager);return impl?impl->live_count:0;}
+size_t pocket_overlay_count(const PocketOverlayManager *manager){
+    const OverlayImpl *impl=coi(manager);
+    return impl?impl->live_count:0;
+}
 int pocket_overlay_blocks_background(const PocketOverlayManager *manager){
-    const OverlayImpl *impl=coi(manager);if(!impl)return 0;
+    const OverlayImpl *impl=coi(manager);
+    if(!impl)return 0;
     for(uint32_t i=0;i<impl->capacity;i++)if(impl->records[i].live&&impl->records[i].spec.captures_input)return 1;
     return 0;
 }
-uint64_t pocket_overlay_focus_token(const PocketOverlayManager *manager){const OverlayImpl *impl=coi(manager);return impl?impl->current_focus:0;}
+uint64_t pocket_overlay_focus_token(const PocketOverlayManager *manager){
+    const OverlayImpl *impl=coi(manager);
+    return impl?impl->current_focus:0;
+}
 PocketOverlayStatus pocket_overlay_back(PocketOverlayManager *manager,int *consumed){
-    OverlayImpl *impl=oi(manager);if(!impl||!consumed)return POCKET_OVERLAY_INVALID_ARGUMENT;
-    *consumed=0;OverlayRecord *r=top_record(impl,1);if(!r)return POCKET_OVERLAY_OK;
-    *consumed=1;if(r->spec.dismiss_on_back)return pocket_overlay_dismiss(manager,r->spec.id);
+    OverlayImpl *impl=oi(manager);
+    if(!impl||!consumed)return POCKET_OVERLAY_INVALID_ARGUMENT;
+    *consumed=0;
+    OverlayRecord *r=top_record(impl,1);
+    if(!r)return POCKET_OVERLAY_OK;
+    *consumed=1;
+    if(r->spec.dismiss_on_back)return pocket_overlay_dismiss(manager,r->spec.id);
     return POCKET_OVERLAY_OK;
 }
 void pocket_overlay_navigation_cleanup(void *context,uint64_t route_id){
