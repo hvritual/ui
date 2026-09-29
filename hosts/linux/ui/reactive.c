@@ -313,9 +313,9 @@ PocketReactiveStatus pocket_reactive_effect(PocketReactiveRuntime *runtime,
                                              uint32_t dependency_count,
                                              PocketReactiveEffectFn effect,
                                              void *context,
-                                             uint32_t *effect_id) {
+                                             PocketReactiveSubscription *subscription) {
     ReactiveImpl *impl=impl_of(runtime);
-    if(!impl||!effect||!effect_id||!dependency_count||
+    if(!impl||!effect||!subscription||!dependency_count||
        !deps_valid(impl,dependencies,dependency_count))
         return POCKET_REACTIVE_INVALID_ARGUMENT;
     for(uint32_t i=0;i<impl->effect_capacity;i++) {
@@ -326,17 +326,21 @@ PocketReactiveStatus pocket_reactive_effect(PocketReactiveRuntime *runtime,
             memset(record,0,sizeof(*record));record->generation=generation;record->live=1;
             record->dep_count=dependency_count;record->effect=effect;record->context=context;record->initial=1;
             for(uint32_t d=0;d<dependency_count;d++)record->deps[d]=dependencies[d];
-            *effect_id=i+1U;
+            subscription->slot=i+1U;
+            subscription->generation=generation;
             return POCKET_REACTIVE_OK;
         }
     }
     return POCKET_REACTIVE_RESOURCE_EXHAUSTED;
 }
-PocketReactiveStatus pocket_reactive_remove_effect(PocketReactiveRuntime *runtime,uint32_t effect_id) {
+PocketReactiveStatus pocket_reactive_remove_effect(PocketReactiveRuntime *runtime,
+                                                    PocketReactiveSubscription subscription) {
     ReactiveImpl *impl=impl_of(runtime);
-    if(!impl||!effect_id||effect_id>impl->effect_capacity)return POCKET_REACTIVE_INVALID_ARGUMENT;
-    ReactiveEffect *effect=&impl->effects[effect_id-1U];
-    if(!effect->live)return POCKET_REACTIVE_STALE_HANDLE;
+    if(!impl||!subscription.slot||subscription.slot>impl->effect_capacity)
+        return POCKET_REACTIVE_INVALID_ARGUMENT;
+    ReactiveEffect *effect=&impl->effects[subscription.slot-1U];
+    if(!effect->live||effect->generation!=subscription.generation)
+        return POCKET_REACTIVE_STALE_HANDLE;
     effect->live=0;
     return POCKET_REACTIVE_OK;
 }
@@ -353,9 +357,9 @@ PocketReactiveStatus pocket_reactive_bind_component(PocketReactiveRuntime *runti
                                                      PocketReactiveHandle source,
                                                      PocketComponentHandle component,
                                                      PocketBindingTarget target,
-                                                     uint32_t *binding_id) {
+                                                     PocketReactiveSubscription *subscription) {
     ReactiveImpl *impl=impl_of(runtime);ReactiveNode *node=node_at(impl,source);
-    if(!impl||!impl->components||!binding_id||!node||!target_type_ok(node->type,target)||
+    if(!impl||!impl->components||!subscription||!node||!target_type_ok(node->type,target)||
        !pocket_component_handle_valid(component))
         return POCKET_REACTIVE_INVALID_ARGUMENT;
     PocketComponentSnapshot snapshot;
@@ -368,17 +372,21 @@ PocketReactiveStatus pocket_reactive_bind_component(PocketReactiveRuntime *runti
             if(!generation)generation=1U;
             memset(binding,0,sizeof(*binding));binding->generation=generation;binding->live=1;
             binding->source=source;binding->component=component;binding->target=target;binding->initial=1;
-            *binding_id=i+1U;
+            subscription->slot=i+1U;
+            subscription->generation=generation;
             return POCKET_REACTIVE_OK;
         }
     }
     return POCKET_REACTIVE_RESOURCE_EXHAUSTED;
 }
-PocketReactiveStatus pocket_reactive_unbind(PocketReactiveRuntime *runtime,uint32_t binding_id) {
+PocketReactiveStatus pocket_reactive_unbind(PocketReactiveRuntime *runtime,
+                                            PocketReactiveSubscription subscription) {
     ReactiveImpl *impl=impl_of(runtime);
-    if(!impl||!binding_id||binding_id>impl->binding_capacity)return POCKET_REACTIVE_INVALID_ARGUMENT;
-    ReactiveBinding *binding=&impl->bindings[binding_id-1U];
-    if(!binding->live)return POCKET_REACTIVE_STALE_HANDLE;
+    if(!impl||!subscription.slot||subscription.slot>impl->binding_capacity)
+        return POCKET_REACTIVE_INVALID_ARGUMENT;
+    ReactiveBinding *binding=&impl->bindings[subscription.slot-1U];
+    if(!binding->live||binding->generation!=subscription.generation)
+        return POCKET_REACTIVE_STALE_HANDLE;
     binding->live=0;
     return POCKET_REACTIVE_OK;
 }

@@ -39,6 +39,11 @@ typedef struct {
     uint32_t generation;
 } PocketReactiveHandle;
 
+typedef struct {
+    uint32_t slot;
+    uint32_t generation;
+} PocketReactiveSubscription;
+
 typedef PocketReactiveStatus (*PocketReactiveComputeFn)(
     void *context, const PocketReactiveValue *dependencies,
     uint32_t dependency_count, PocketReactiveValue *out);
@@ -113,17 +118,17 @@ PocketReactiveStatus pocket_reactive_effect(PocketReactiveRuntime *runtime,
                                              uint32_t dependency_count,
                                              PocketReactiveEffectFn effect,
                                              void *context,
-                                             uint32_t *effect_id);
+                                             PocketReactiveSubscription *subscription);
 PocketReactiveStatus pocket_reactive_remove_effect(PocketReactiveRuntime *runtime,
-                                                    uint32_t effect_id);
+                                                    PocketReactiveSubscription subscription);
 
 PocketReactiveStatus pocket_reactive_bind_component(PocketReactiveRuntime *runtime,
                                                      PocketReactiveHandle source,
                                                      PocketComponentHandle component,
                                                      PocketBindingTarget target,
-                                                     uint32_t *binding_id);
+                                                     PocketReactiveSubscription *subscription);
 PocketReactiveStatus pocket_reactive_unbind(PocketReactiveRuntime *runtime,
-                                            uint32_t binding_id);
+                                            PocketReactiveSubscription subscription);
 size_t pocket_reactive_binding_count(const PocketReactiveRuntime *runtime);
 
 PocketReactiveStatus pocket_reactive_batch_begin(PocketReactiveRuntime *runtime);
