@@ -80,6 +80,8 @@ PocketModelStatus pocket_virtual_collection_refresh(PocketVirtualCollection *col
                                                      uint64_t revision);
 PocketModelStatus pocket_virtual_collection_select(PocketVirtualCollection *collection,uint64_t key);
 PocketModelStatus pocket_virtual_collection_focus(PocketVirtualCollection *collection,uint64_t key);
+PocketModelStatus pocket_virtual_collection_component_for_key(
+    const PocketVirtualCollection *collection,uint64_t key,PocketComponentHandle *out);
 PocketModelStatus pocket_virtual_collection_stats(const PocketVirtualCollection *collection,
                                                    PocketVirtualCollectionStats *out);
 

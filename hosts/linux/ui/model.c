@@ -192,6 +192,24 @@ static PocketModelStatus ensure_pool(VirtualImpl *impl,uint32_t desired) {
     }
     return POCKET_MODEL_OK;
 }
+static PocketModelStatus sync_slot_state(VirtualImpl *impl,ModelSlot *slot) {
+    PocketComponentSnapshot snapshot;
+    if(pocket_component_snapshot(impl->components,slot->component,&snapshot)!=POCKET_COMPONENT_OK)
+        return POCKET_MODEL_STALE_COMPONENT;
+    uint32_t states=snapshot.props.states&~(POCKET_STATE_SELECTED|POCKET_STATE_FOCUSED);
+    if(slot->bound&&slot->key==impl->selected_key)states|=POCKET_STATE_SELECTED;
+    if(slot->bound&&slot->key==impl->focused_key)states|=POCKET_STATE_FOCUSED;
+    return pocket_component_set_states(impl->components,slot->component,states)==POCKET_COMPONENT_OK ?
+           POCKET_MODEL_OK:POCKET_MODEL_STALE_COMPONENT;
+}
+static PocketModelStatus sync_pool_states(VirtualImpl *impl) {
+    for(uint32_t i=0;i<impl->pool_size;i++) {
+        if(!impl->pool[i].bound)continue;
+        PocketModelStatus status=sync_slot_state(impl,&impl->pool[i]);
+        if(status!=POCKET_MODEL_OK)return status;
+    }
+    return POCKET_MODEL_OK;
+}
 static PocketModelStatus bind_window(VirtualImpl *impl,uint32_t start,uint32_t count,int force) {
     PocketModelStatus keys=validate_window_keys(&impl->model,start,count);
     if(keys!=POCKET_MODEL_OK)return keys;
@@ -215,6 +233,8 @@ static PocketModelStatus bind_window(VirtualImpl *impl,uint32_t start,uint32_t c
                 return POCKET_MODEL_DELEGATE_ERROR;
             slot->key=key;slot->index=index;slot->bound=1;impl->bind_calls++;
         }
+        PocketModelStatus state_status=sync_slot_state(impl,slot);
+        if(state_status!=POCKET_MODEL_OK)return state_status;
     }
     impl->materialized_first=start;impl->materialized_count=count;
     return POCKET_MODEL_OK;
@@ -259,13 +279,26 @@ PocketModelStatus pocket_virtual_collection_select(PocketVirtualCollection *coll
     VirtualImpl *impl=collection?(VirtualImpl *)collection->impl:NULL;
     if(!impl)return POCKET_MODEL_INVALID_ARGUMENT;
     if(key&&!model_contains_key(&impl->model,key))return POCKET_MODEL_KEY_NOT_FOUND;
-    impl->selected_key=key;return POCKET_MODEL_OK;
+    impl->selected_key=key;
+    return sync_pool_states(impl);
 }
 PocketModelStatus pocket_virtual_collection_focus(PocketVirtualCollection *collection,uint64_t key) {
     VirtualImpl *impl=collection?(VirtualImpl *)collection->impl:NULL;
     if(!impl)return POCKET_MODEL_INVALID_ARGUMENT;
     if(key&&!model_contains_key(&impl->model,key))return POCKET_MODEL_KEY_NOT_FOUND;
-    impl->focused_key=key;return POCKET_MODEL_OK;
+    impl->focused_key=key;
+    return sync_pool_states(impl);
+}
+PocketModelStatus pocket_virtual_collection_component_for_key(
+    const PocketVirtualCollection *collection,uint64_t key,PocketComponentHandle *out) {
+    const VirtualImpl *impl=collection?(const VirtualImpl *)collection->impl:NULL;
+    if(!impl||!key||!out)return POCKET_MODEL_INVALID_ARGUMENT;
+    for(uint32_t i=0;i<impl->pool_size;i++)
+        if(impl->pool[i].bound&&impl->pool[i].key==key) {
+            *out=impl->pool[i].component;
+            return POCKET_MODEL_OK;
+        }
+    return POCKET_MODEL_KEY_NOT_FOUND;
 }
 PocketModelStatus pocket_virtual_collection_stats(const PocketVirtualCollection *collection,
                                                    PocketVirtualCollectionStats *out) {
