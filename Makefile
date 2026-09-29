@@ -141,3 +141,7 @@ test-ui-dirty:
 	python3 scripts/ui_object.py dirty --mode native
 test-ui-object-arm:
 	python3 scripts/ui_object.py all --mode arm
+
+.PHONY: test-layout
+test-layout:
+	python3 scripts/ui_platform.py layout --mode native
