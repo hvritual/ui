@@ -167,3 +167,19 @@ test-coffee-component-migration:
 	python3 scripts/ui_components.py coffee_component_migration --mode native
 test-components-arm:
 	python3 scripts/ui_components.py all --mode arm
+
+.PHONY: test-reactive test-binding test-reactive-budget test-reactive-core-arm
+test-reactive:
+	python3 scripts/ui_reactive.py reactive --mode native
+test-binding:
+	python3 scripts/ui_reactive.py binding --mode native
+test-reactive-budget:
+	python3 scripts/ui_reactive.py reactive_budget --mode native
+test-reactive-core-arm:
+	python3 scripts/ui_reactive.py core --mode arm
+
+.PHONY: test-virtual-list test-reactive-all-arm
+test-virtual-list:
+	python3 scripts/ui_reactive.py virtual_list --mode native
+test-reactive-all-arm:
+	python3 scripts/ui_reactive.py all --mode arm
