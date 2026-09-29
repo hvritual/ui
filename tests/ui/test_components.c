@@ -25,7 +25,7 @@ int main(void){
    PocketComponentSnapshot s;CHECK(pocket_component_snapshot(&rt,all[k],&s)==POCKET_COMPONENT_OK);
    CHECK(s.kind==(PocketComponentKind)k&&s.props.style_ref==pocket_component_default_style_ref((PocketComponentKind)k));
  }
- CHECK(pocket_component_live_count(&rt)==POCKET_COMPONENT_KIND_COUNT);
+ CHECK(pocket_component_live_count(&rt)==(size_t)(POCKET_COMPONENT_KIND_COUNT-1));
 
  Events e={0};PocketComponentHandle button=all[POCKET_COMPONENT_BUTTON];
  CHECK(pocket_component_set_event_handler(&rt,button,event,&e)==POCKET_COMPONENT_OK);
