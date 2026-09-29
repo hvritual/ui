@@ -586,19 +586,23 @@ static PocketReactiveStatus reactive_flush_impl(PocketReactiveRuntime *runtime,u
             ReactiveBinding *binding=&impl->bindings[i];
             if(!binding->live)continue;
             const ReactiveNode *source=node_at_const(impl,binding->source);
-            if(!source) {
-                binding->live=0;local.work_items++;local.binding_cleanups++;progress=1;
-                continue;
-            }
             PocketComponentSnapshot snapshot;
-            if(pocket_component_snapshot(impl->components,binding->component,&snapshot)!=POCKET_COMPONENT_OK) {
-                binding->live=0;local.work_items++;local.binding_cleanups++;progress=1;
-                continue;
-            }
-            if(!binding->initial&&source->version==binding->source_version)continue;
+            int stale_source=!source;
+            int stale_component=!impl->components ||
+                pocket_component_snapshot(impl->components,binding->component,&snapshot)!=POCKET_COMPONENT_OK;
+            int needs_update=!stale_source&&!stale_component&&
+                (binding->initial||source->version!=binding->source_version);
+            if(!stale_source&&!stale_component&&!needs_update)continue;
             if(local.work_items>=budget) {
                 if(stats) *stats=local;
                 return POCKET_REACTIVE_BUDGET_EXHAUSTED;
+            }
+            if(stale_source||stale_component) {
+                binding->live=0;
+                local.work_items++;
+                local.binding_cleanups++;
+                progress=1;
+                continue;
             }
             PocketReactiveStatus status=apply_binding(impl,binding,source->value);
             if(status==POCKET_REACTIVE_STALE_HANDLE) {
