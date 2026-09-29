@@ -84,7 +84,8 @@ void pocket_overlay_dispose(PocketOverlayManager *manager){
 PocketOverlayStatus pocket_overlay_present(PocketOverlayManager *manager,const PocketOverlaySpec *spec){
     OverlayImpl *impl=oi(manager);PocketComponentSnapshot snapshot;
     if(!impl||!spec||!spec->id||!kind_valid(spec->kind)||!pocket_component_handle_valid(spec->root)||
-       spec->owns_root>1U||spec->captures_input>1U||spec->captures_focus>1U||spec->dismiss_on_back>1U)
+       spec->owns_root>1U||spec->captures_input>1U||spec->captures_focus>1U||spec->dismiss_on_back>1U||
+       (spec->captures_focus&&!spec->focus_token))
         return POCKET_OVERLAY_INVALID_ARGUMENT;
     if(by_id(impl,spec->id))return POCKET_OVERLAY_DUPLICATE;
     if(pocket_component_snapshot(impl->components,spec->root,&snapshot)!=POCKET_COMPONENT_OK)
@@ -101,9 +102,19 @@ PocketOverlayStatus pocket_overlay_present(PocketOverlayManager *manager,const P
 PocketOverlayStatus pocket_overlay_dismiss(PocketOverlayManager *manager,uint64_t id){
     OverlayImpl *impl=oi(manager);OverlayRecord *record=by_id(impl,id);
     if(!record)return POCKET_OVERLAY_NOT_FOUND;
-    if(record->spec.captures_focus&&impl->current_focus==record->spec.focus_token)
-        impl->current_focus=record->previous_focus;
-    PocketOverlaySpec spec=record->spec;record->live=0;if(impl->live_count)impl->live_count--;
+    if(record->spec.captures_focus){
+        if(impl->current_focus==record->spec.focus_token)
+            impl->current_focus=record->previous_focus;
+        for(uint32_t i=0;i<impl->capacity;i++){
+            OverlayRecord *upper=&impl->records[i];
+            if(upper->live&&upper!=record&&upper->spec.captures_focus&&
+               upper->previous_focus==record->spec.focus_token)
+                upper->previous_focus=record->previous_focus;
+        }
+    }
+    PocketOverlaySpec spec=record->spec;
+    record->live=0;
+    if(impl->live_count)impl->live_count--;
     if(spec.owns_root&&(pocket_component_destroy(impl->components,spec.root)!=POCKET_COMPONENT_OK))
         return POCKET_OVERLAY_STALE_COMPONENT;
     return POCKET_OVERLAY_OK;

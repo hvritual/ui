@@ -23,13 +23,17 @@ int main(void){
    if(k==POCKET_COMPONENT_TEXT_FIELD)p.text_session_id=99;
    CHECK(pocket_component_create(&rt,(PocketComponentKind)k,root,&p,&all[k])==POCKET_COMPONENT_OK);
    PocketComponentSnapshot s;CHECK(pocket_component_snapshot(&rt,all[k],&s)==POCKET_COMPONENT_OK);
-   CHECK(s.kind==k&&s.props.style_ref==pocket_component_default_style_ref((PocketComponentKind)k));
+   CHECK(s.kind==(PocketComponentKind)k&&s.props.style_ref==pocket_component_default_style_ref((PocketComponentKind)k));
  }
  CHECK(pocket_component_live_count(&rt)==POCKET_COMPONENT_KIND_COUNT);
 
  Events e={0};PocketComponentHandle button=all[POCKET_COMPONENT_BUTTON];
  CHECK(pocket_component_set_event_handler(&rt,button,event,&e)==POCKET_COMPONENT_OK);
  CHECK(pocket_component_activate(&rt,button)==POCKET_COMPONENT_OK&&e.activate==1);
+ CHECK(pocket_component_set_states(&rt,button,POCKET_STATE_DISABLED)==POCKET_COMPONENT_OK);
+ CHECK(pocket_component_activate(&rt,button)==POCKET_COMPONENT_DISABLED);
+ CHECK(pocket_component_set_states(&rt,button,0)==POCKET_COMPONENT_OK);
+ CHECK(pocket_component_activate(&rt,button)==POCKET_COMPONENT_OK&&e.activate==2);
 
  PocketComponentHandle toggle=all[POCKET_COMPONENT_TOGGLE];CHECK(pocket_component_set_event_handler(&rt,toggle,event,&e)==POCKET_COMPONENT_OK);
  CHECK(pocket_component_activate(&rt,toggle)==POCKET_COMPONENT_OK&&e.toggle==1);

@@ -13,9 +13,12 @@ int main(void){
  CHECK(pocket_overlay_present(&overlays,&(PocketOverlaySpec){3,11,POCKET_OVERLAY_KEYBOARD,keyboard,200,1,1,1,1})==POCKET_OVERLAY_OK);
  PocketOverlaySnapshot top;CHECK(pocket_overlay_top(&overlays,&top)==POCKET_OVERLAY_OK&&top.spec.id==3);
  CHECK(pocket_overlay_blocks_background(&overlays)&&pocket_overlay_focus_token(&overlays)==200);
+ CHECK(pocket_overlay_dismiss(&overlays,2)==POCKET_OVERLAY_OK);
+ CHECK(pocket_overlay_focus_token(&overlays)==200);
  int consumed=0;CHECK(pocket_overlay_back(&overlays,&consumed)==POCKET_OVERLAY_OK&&consumed==1);
- CHECK(pocket_overlay_focus_token(&overlays)==100);CHECK(pocket_overlay_top(&overlays,&top)==POCKET_OVERLAY_OK&&top.spec.id==2);
- CHECK(pocket_overlay_dismiss_owner(&overlays,10)==2&&pocket_overlay_count(&overlays)==0);
+ CHECK(pocket_overlay_focus_token(&overlays)==0);
+ CHECK(pocket_overlay_top(&overlays,&top)==POCKET_OVERLAY_OK&&top.spec.id==1);
+ CHECK(pocket_overlay_dismiss_owner(&overlays,10)==1&&pocket_overlay_count(&overlays)==0);
  CHECK(!pocket_overlay_blocks_background(&overlays));
  pocket_overlay_dispose(&overlays);CHECK(pocket_component_live_count(&components)==0);
  pocket_component_runtime_dispose(&components);pocket_layout_dispose(&layout);pocket_ui_tree_dispose(&tree);

@@ -24,7 +24,9 @@ int main(void){
  int consumed=0;CHECK(pocket_navigation_back(&nav,&consumed)==POCKET_NAV_OK&&consumed==1);
  CHECK(pocket_navigation_top(&nav,&top)==POCKET_NAV_OK&&top.route_id==1);
  CHECK(pocket_navigation_back(&nav,&consumed)==POCKET_NAV_ROOT);
- CHECK(pocket_navigation_reset(&nav,&(PocketNavigationPage){10,page(&components),1})==POCKET_NAV_OK);
+ CHECK(pocket_navigation_reset(&nav,&(PocketNavigationPage){1,home,0})==POCKET_NAV_DUPLICATE_ROUTE);
+ PocketComponentHandle fresh=page(&components);CHECK(pocket_component_handle_valid(fresh));
+ CHECK(pocket_navigation_reset(&nav,&(PocketNavigationPage){10,fresh,1})==POCKET_NAV_OK);
  CHECK(pocket_navigation_count(&nav)==1&&trace.life>0);
  pocket_navigation_dispose(&nav);CHECK(pocket_component_live_count(&components)==0);
  pocket_component_runtime_dispose(&components);pocket_layout_dispose(&layout);pocket_ui_tree_dispose(&tree);

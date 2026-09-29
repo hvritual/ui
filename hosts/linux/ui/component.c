@@ -95,10 +95,6 @@ static int clickable_kind(PocketComponentKind kind) {
 static int value_kind(PocketComponentKind kind) {
     return kind==POCKET_COMPONENT_SLIDER || kind==POCKET_COMPONENT_PROGRESS;
 }
-static int toggle_kind(PocketComponentKind kind) {
-    return kind==POCKET_COMPONENT_TOGGLE || kind==POCKET_COMPONENT_CHECKBOX ||
-           kind==POCKET_COMPONENT_RADIO;
-}
 uint64_t pocket_component_default_style_ref(PocketComponentKind kind) {
     return kind_valid(kind) ? COMPONENT_STYLE_BASE+(uint64_t)kind : 0;
 }
@@ -256,8 +252,9 @@ PocketComponentStatus pocket_component_create(PocketComponentRuntime *runtime,
         if(!parent_record)return POCKET_COMPONENT_STALE_HANDLE;
     }
     actual=props?*props:pocket_component_props_default(kind);
-    if(!actual.style_ref)actual.style_ref=pocket_component_default_style_ref(kind);
-    if(!props)actual=pocket_component_props_default(kind);
+    if(!actual.style_ref) actual.style_ref=pocket_component_default_style_ref(kind);
+    if(actual.states&POCKET_STATE_DISABLED) actual.disabled=1U;
+    actual.states&=~POCKET_STATE_DISABLED;
     if(!props_valid(kind,&actual))return POCKET_COMPONENT_INVALID_ARGUMENT;
     PocketComponentHandle handle={0};ComponentRecord *record=allocate_record(impl,&handle);
     if(!record)return POCKET_COMPONENT_RESOURCE_EXHAUSTED;
@@ -331,7 +328,7 @@ PocketComponentStatus pocket_component_set_states(PocketComponentRuntime *runtim
     if(!record)return POCKET_COMPONENT_STALE_HANDLE;
     if(states&~POCKET_STATE_ALL)return POCKET_COMPONENT_INVALID_ARGUMENT;
     record->props.states=states&~POCKET_STATE_DISABLED;
-    record->props.disabled=(states&POCKET_STATE_DISABLED)?1U:record->props.disabled;
+    record->props.disabled=(states&POCKET_STATE_DISABLED)?1U:0U;
     return sync_ui(impl,record,0);
 }
 static PocketComponentStatus set_checked(ComponentImpl *impl,ComponentRecord *record,int checked) {
