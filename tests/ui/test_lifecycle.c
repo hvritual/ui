@@ -41,7 +41,7 @@ static int expect(int ok, const char *name) {
 int main(void) {
     PocketUiTree tree = {0};
     PocketUiTreeConfig cfg = {0};
-    cfg.initial_capacity = 8; cfg.update_queue_capacity = 5; cfg.update_budget = 2;
+    cfg.initial_capacity = 3; cfg.update_queue_capacity = 5; cfg.update_budget = 2;
     if(!expect(pocket_ui_tree_init(&tree, &cfg) == POCKET_UI_OK, "init")) return 1;
 
     PocketUiHandle root, parent, child;

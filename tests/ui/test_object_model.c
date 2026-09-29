@@ -83,6 +83,23 @@ int main(void) {
         if(!expect(pocket_ui_destroy(&tree, n) == POCKET_UI_OK, "stress-destroy")) return 1;
     }
     if(!expect(pocket_ui_live_count(&tree) == 0U, "stress-no-leak")) return 1;
+
+    PocketUiHandle depth_root={0}, depth_parent={0};
+    if(!expect(pocket_ui_create(&tree,POCKET_UI_CONTAINER,(PocketUiHandle){0},&depth_root)==POCKET_UI_OK &&
+               pocket_ui_mount(&tree,depth_root)==POCKET_UI_OK,"depth-root")) return 1;
+    depth_parent=depth_root;
+    for(int depth=2; depth<=256; ++depth) {
+        PocketUiHandle next={0};
+        if(!expect(pocket_ui_create(&tree,POCKET_UI_CONTAINER,depth_parent,&next)==POCKET_UI_OK &&
+                   pocket_ui_mount(&tree,next)==POCKET_UI_OK,"depth-chain")) return 1;
+        depth_parent=next;
+    }
+    PocketUiHandle too_deep={0};
+    if(!expect(pocket_ui_create(&tree,POCKET_UI_CONTAINER,depth_parent,&too_deep)==
+               POCKET_UI_RESOURCE_EXHAUSTED,"depth-bound")) return 1;
+    if(!expect(pocket_ui_destroy(&tree,depth_root)==POCKET_UI_OK &&
+               pocket_ui_live_count(&tree)==0U,"depth-cleanup")) return 1;
+
     pocket_ui_tree_dispose(&tree);
     if(!expect(tree.impl == NULL, "dispose")) return 1;
     puts("UI_OBJECT_MODEL_OK cycles=1200");
