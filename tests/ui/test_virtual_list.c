@@ -53,12 +53,25 @@ int main(void) {
     CHECK(pocket_component_live_count(&components)==11);
     CHECK(pocket_virtual_collection_select(&collection,1006)==POCKET_MODEL_OK);
     CHECK(pocket_virtual_collection_focus(&collection,1007)==POCKET_MODEL_OK);
+    PocketComponentHandle selected_component={0},focused_component={0};
+    CHECK(pocket_virtual_collection_component_for_key(&collection,1006,&selected_component)==POCKET_MODEL_OK);
+    CHECK(pocket_virtual_collection_component_for_key(&collection,1007,&focused_component)==POCKET_MODEL_OK);
+    PocketComponentSnapshot selected_snapshot,focused_snapshot;
+    CHECK(pocket_component_snapshot(&components,selected_component,&selected_snapshot)==POCKET_COMPONENT_OK);
+    CHECK(pocket_component_snapshot(&components,focused_component,&focused_snapshot)==POCKET_COMPONENT_OK);
+    CHECK(selected_snapshot.props.states&POCKET_STATE_SELECTED);
+    CHECK(focused_snapshot.props.states&POCKET_STATE_FOCUSED);
 
     CHECK(pocket_virtual_collection_set_window(&collection,50,8)==POCKET_MODEL_OK);
     CHECK(pocket_virtual_collection_stats(&collection,&stats)==POCKET_MODEL_OK);
     CHECK(stats.materialized_first==48&&stats.materialized_count==12&&stats.pool_size==12);
     CHECK(stats.selected_key==1006&&stats.focused_key==1007);
+    CHECK(pocket_virtual_collection_component_for_key(&collection,1006,&selected_component)==POCKET_MODEL_KEY_NOT_FOUND);
     CHECK(stats.recycle_count>0&&pocket_component_live_count(&components)==13);
+    CHECK(pocket_virtual_collection_set_window(&collection,0,8)==POCKET_MODEL_OK);
+    CHECK(pocket_virtual_collection_component_for_key(&collection,1006,&selected_component)==POCKET_MODEL_OK);
+    CHECK(pocket_component_snapshot(&components,selected_component,&selected_snapshot)==POCKET_COMPONENT_OK);
+    CHECK(selected_snapshot.props.states&POCKET_STATE_SELECTED);
 
     drinks.revision=1;
     uint64_t before=stats.bind_calls;

@@ -29,3 +29,9 @@ virtualization.
 F5 fixtures cover 100 drinks, 500 logs and a small Wi-Fi AP repeater while
 recording pool size, component count, bind/recycle counts, pool bytes and test
 process peak RSS.
+
+
+Virtual selection/focus is reapplied to every materialized component after
+delegate binding. `component_for_key` is available for runtime diagnostics and
+tests, but identity remains the stable model key rather than the recycled
+component handle.
