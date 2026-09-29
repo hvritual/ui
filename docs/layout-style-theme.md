@@ -74,3 +74,10 @@ the declared ratio.
 
 The JSON schema distinguishes size lengths from offsets: negative px is rejected
 for width/height but remains valid for absolute offsets, matching the C contract.
+
+
+Layout records are generation-scoped and stale records are recycled when the
+Object Model reports that their handle generation no longer exists. A long-lived
+Layout Context therefore has bounded memory even when pages repeatedly
+create/destroy nodes. Querying the layout result of a destroyed handle returns
+`POCKET_UI_STALE_HANDLE`; historical geometry is never exposed as current.

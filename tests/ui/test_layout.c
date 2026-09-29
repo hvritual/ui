@@ -91,6 +91,25 @@ int main(void){
     CHECK(pocket_layout_set(&l,a,&bad)==POCKET_UI_INVALID_ARGUMENT);
     lc.safe_area=(PocketLayoutInsets){101,0,100,0}; /* existing context unchanged */
     pocket_layout_dispose(&l);pocket_ui_tree_dispose(&tree);
+
+    /* Layout records are generation-scoped but must recycle stale history. */
+    PocketUiTree churn={0};PocketUiTreeConfig churn_tc={.initial_capacity=2,.update_queue_capacity=4,.update_budget=2};
+    CHECK(pocket_ui_tree_init(&churn,&churn_tc)==POCKET_UI_OK);
+    PocketUiHandle churn_root=add(&churn,(PocketUiHandle){0},POCKET_UI_CONTAINER);CHECK(pocket_ui_handle_valid(churn_root));
+    PocketLayoutContext churn_layout={0};PocketLayoutConfig churn_cfg={.tree=&churn,.record_capacity=2};
+    CHECK(pocket_layout_init(&churn_layout,&churn_cfg)==POCKET_UI_OK);
+    PocketLayoutSpec churn_root_spec=pocket_layout_spec_default();churn_root_spec.mode=POCKET_LAYOUT_STACK;churn_root_spec.align_items=POCKET_ALIGN_START;
+    CHECK(pocket_layout_set(&churn_layout,churn_root,&churn_root_spec)==POCKET_UI_OK);
+    PocketUiHandle old={0};
+    for(int i=0;i<32;i++){
+        PocketUiHandle child=add(&churn,churn_root,POCKET_UI_COMPONENT);CHECK(pocket_ui_handle_valid(child));
+        PocketLayoutSpec child_spec=leaf_px(10,10);CHECK(pocket_layout_set(&churn_layout,child,&child_spec)==POCKET_UI_OK);
+        CHECK(pocket_layout_run(&churn_layout,churn_root,100,100)==POCKET_UI_OK);
+        PocketLayoutResult result;CHECK(pocket_layout_result(&churn_layout,child,&result)==POCKET_UI_OK);
+        old=child;CHECK(pocket_ui_destroy(&churn,child)==POCKET_UI_OK);
+        CHECK(pocket_layout_result(&churn_layout,old,&result)==POCKET_UI_STALE_HANDLE);
+    }
+    pocket_layout_dispose(&churn_layout);pocket_ui_tree_dispose(&churn);
     puts("LAYOUT_OK");
     return 0;
 }

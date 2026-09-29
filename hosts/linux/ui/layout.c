@@ -91,6 +91,13 @@ static LayoutRecord *find_record(LayoutImpl *impl, PocketUiHandle node, int crea
     for(uint32_t i=0;i<impl->capacity;i++) {
         LayoutRecord *r=&impl->records[i];
         if(r->used && handle_equal(r->node,node)) return r;
+        if(r->used) {
+            PocketUiSnapshot snapshot;
+            PocketUiStatus status=pocket_ui_snapshot(impl->tree,r->node,&snapshot);
+            if(status==POCKET_UI_STALE_HANDLE) {
+                memset(r,0,sizeof(*r));
+            }
+        }
         if(!r->used && !free_record) free_record=r;
     }
     if(!create || !free_record) return NULL;
@@ -148,7 +155,10 @@ PocketUiStatus pocket_layout_get(const PocketLayoutContext *context, PocketUiHan
 PocketUiStatus pocket_layout_result(const PocketLayoutContext *context, PocketUiHandle node,
                                     PocketLayoutResult *out) {
     const LayoutImpl *impl=cli(context);
+    PocketUiSnapshot snapshot;
     if(!impl || !out)return POCKET_UI_INVALID_ARGUMENT;
+    PocketUiStatus live=pocket_ui_snapshot(impl->tree,node,&snapshot);
+    if(live!=POCKET_UI_OK)return live==POCKET_UI_STALE_HANDLE?POCKET_UI_STALE_HANDLE:POCKET_UI_LIFECYCLE_ERROR;
     const LayoutRecord *r=find_record_const(impl,node);
     if(!r || !r->has_result)return POCKET_UI_LIFECYCLE_ERROR;
     *out=r->result; return POCKET_UI_OK;
