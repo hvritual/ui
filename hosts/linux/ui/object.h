@@ -69,7 +69,8 @@ enum {
     POCKET_UI_PROP_FOCUSABLE      = 1U << 6,
     POCKET_UI_PROP_CLICKABLE      = 1U << 7,
     POCKET_UI_PROP_RESOURCE       = 1U << 8,
-    POCKET_UI_PROP_TEXT           = 1U << 9
+    POCKET_UI_PROP_TEXT           = 1U << 9,
+    POCKET_UI_PROP_ALL            = (1U << 10) - 1U
 };
 typedef uint32_t PocketUiPropertyFields;
 

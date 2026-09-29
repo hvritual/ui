@@ -121,3 +121,13 @@ it performs no heap allocation on the input path.
 Update-drain budget counts every dequeued attempt, including stale/error updates.
 This prevents a queue full of invalid callbacks from bypassing the per-tick work
 budget merely because none of them succeeds.
+
+
+Unknown property-field bits fail with `POCKET_UI_INVALID_ARGUMENT`; v1 never
+silently ignores a field from a newer or corrupted caller.
+
+If Engine node removal fails during teardown, the UI Object Model returns
+`POCKET_UI_ENGINE_ERROR` but still invalidates the native/JS-visible handle and
+removes it from the semantic tree. The Engine owner must reclaim any leaked
+implementation object when the Engine context closes. This prevents a backend
+fault from keeping guest-visible UI objects half alive.

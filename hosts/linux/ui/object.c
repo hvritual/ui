@@ -392,7 +392,8 @@ PocketUiStatus pocket_ui_update(PocketUiTree *tree, PocketUiHandle handle,
     UiImpl *ui = impl(tree);
     UiNode *node = find_node(ui, handle);
     if(!node) return POCKET_UI_STALE_HANDLE;
-    if(!properties || !fields) return POCKET_UI_INVALID_ARGUMENT;
+    if(!properties || !fields || (fields & ~POCKET_UI_PROP_ALL))
+        return POCKET_UI_INVALID_ARGUMENT;
     if(!mounted_phase(node->phase)) return POCKET_UI_LIFECYCLE_ERROR;
     if((fields & POCKET_UI_PROP_GEOMETRY) &&
        (properties->geometry.width < 0 || properties->geometry.height < 0))
@@ -557,7 +558,8 @@ PocketUiStatus pocket_ui_enqueue_update(PocketUiTree *tree, PocketUiHandle node,
                                         PocketUiPropertyFields fields,
                                         const PocketUiProperties *properties) {
     UiImpl *ui = impl(tree);
-    if(!ui || !properties || !fields) return POCKET_UI_INVALID_ARGUMENT;
+    if(!ui || !properties || !fields || (fields & ~POCKET_UI_PROP_ALL))
+        return POCKET_UI_INVALID_ARGUMENT;
     if(!find_node(ui, node)) return POCKET_UI_STALE_HANDLE;
     if(ui->queue_count >= ui->queue_capacity) return POCKET_UI_QUEUE_FULL;
     uint32_t tail = (ui->queue_head + ui->queue_count) % ui->queue_capacity;

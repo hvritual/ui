@@ -14,6 +14,33 @@ static unsigned live_engine_nodes(PocketFakeEngine *engine) {
     for(unsigned i=0;i<POCKET_FAKE_ENGINE_MAX_NODES;i++) if(engine->nodes[i].live) count++;
     return count;
 }
+static PocketEngineStatus failing_remove(void *context, PocketEngineNode node) {
+    (void)context; (void)node;
+    return POCKET_ENGINE_BACKEND_FAILED;
+}
+static int test_engine_remove_failure(void) {
+    PocketFakeEngine engine={0};
+    PocketEngineOpenConfig open={32,32,1};
+    if(!expect(pocket_fake_engine_api.open(&engine,&open)==POCKET_ENGINE_OK,"failure-engine-open")) return 0;
+    PocketEngineApi api=pocket_fake_engine_api;
+    api.name="fake-remove-failure";
+    api.node_remove=failing_remove;
+    PocketUiTree tree={0};
+    PocketUiTreeConfig cfg={0};
+    cfg.engine_api=&api; cfg.engine_context=&engine;
+    if(!expect(pocket_ui_tree_init(&tree,&cfg)==POCKET_UI_OK,"failure-tree-init")) return 0;
+    PocketUiHandle root={0};
+    if(!expect(pocket_ui_create(&tree,POCKET_UI_CONTAINER,(PocketUiHandle){0},&root)==POCKET_UI_OK &&
+               pocket_ui_mount(&tree,root)==POCKET_UI_OK,"failure-create")) return 0;
+    if(!expect(pocket_ui_destroy(&tree,root)==POCKET_UI_ENGINE_ERROR,"failure-destroy-status")) return 0;
+    PocketUiSnapshot snap;
+    if(!expect(pocket_ui_snapshot(&tree,root,&snap)==POCKET_UI_STALE_HANDLE &&
+               pocket_ui_live_count(&tree)==0,"failure-native-cleanup")) return 0;
+    if(!expect(live_engine_nodes(&engine)==1,"failure-engine-owned-until-close")) return 0;
+    pocket_ui_tree_dispose(&tree);
+    if(!expect(pocket_fake_engine_api.close(&engine)==POCKET_ENGINE_OK,"failure-engine-close")) return 0;
+    return 1;
+}
 int main(void) {
     PocketFakeEngine engine={0};
     PocketEngineOpenConfig open={100,100,1};
@@ -75,6 +102,7 @@ int main(void) {
 
     pocket_ui_tree_dispose(&tree);
     if(!expect(pocket_fake_engine_api.close(&engine)==POCKET_ENGINE_OK,"engine-close")) return 1;
+    if(!test_engine_remove_failure()) return 1;
     puts("UI_DIRTY_OK");
     return 0;
 }

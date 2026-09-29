@@ -51,6 +51,8 @@ int main(void) {
         POCKET_UI_PROP_STYLE_REF | POCKET_UI_PROP_FOCUSABLE | POCKET_UI_PROP_CLICKABLE |
         POCKET_UI_PROP_RESOURCE | POCKET_UI_PROP_TEXT;
     if(!expect(pocket_ui_update(&tree, handles[3], all, &props) == POCKET_UI_OK, "update")) return 1;
+    if(!expect(pocket_ui_update(&tree, handles[3], (PocketUiPropertyFields)(1U<<31), &props) ==
+               POCKET_UI_INVALID_ARGUMENT, "unknown-property-bit")) return 1;
     PocketUiSnapshot text;
     if(!expect(pocket_ui_snapshot(&tree, handles[3], &text) == POCKET_UI_OK &&
                text.properties.geometry.width == 30 && text.properties.opacity_256 == 200 &&
