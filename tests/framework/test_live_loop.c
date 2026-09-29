@@ -10,7 +10,10 @@
 static uint64_t virtual_ns=1000000000ULL;
 static unsigned unblanks,flushes,reconnections,delivered_index;
 static int hup_sent,invalid_frame;
-static unsigned viewport_height;
+static unsigned viewport_height, discovery_calls;
+static unsigned startup_failures;
+static const char *startup_error;
+static int startup_errno;
 static const unsigned event_ms[]={50,100,150,200,250,300,1300,1350,1400,1450,1600,1650,1700,1750,1800,1850,7200,7250};
 int __wrap_host_monotonic_ns(uint64_t *out){virtual_ns+=100000ULL;*out=virtual_ns;return 1;}
 int __wrap_host_sleep_until(uint64_t when){if(when>virtual_ns)virtual_ns=when;return 1;}
@@ -32,7 +35,10 @@ int __wrap_ioctl(int fd,unsigned long request,...){
     errno=ENOTTY;return -1;
 }
 int __wrap_input_live_discover(InputLive *l,const char *dir,const InputLiveConfig *cfg){
-    (void)dir;memset(l,0,sizeof(*l));l->opened=1;l->fd=91;l->config=*cfg;
+    (void)dir;memset(l,0,sizeof(*l));l->fd=-1;l->config=*cfg;
+    ++discovery_calls;
+    if(discovery_calls<=startup_failures){l->error=startup_error;l->system_errno=startup_errno;return 0;}
+    l->opened=1;l->fd=91;
     InputTransform t={.x={0,16384},.y={0,16384},.width=1024,.height=viewport_height};
     return input_state_init(&l->state,INPUT_PROTOCOL_MT_B,10,&t);
 }
@@ -55,9 +61,33 @@ int __wrap_input_live_drain(InputLive *l,InputFrameSink sink,void *context){
     delivered_index++;l->frames++;
     return sink(context,&f,virtual_ns)?1:-1;
 }
+static int startup_policy_tests(void) {
+    InputLive input={0};
+    InputLiveConfig config={.expected_name="ilitek_ts",.width=1024,.height=600,
+        .expected_raw_min=0,.expected_raw_max=16384,.expected_slots=10};
+    unsigned attempts=0;
+    startup_failures=2;startup_error="INPUT_NAME_MISMATCH";discovery_calls=0;
+    if(!discover_input(&input,"/dev/input",&config,3000,&attempts)||attempts!=3)return 0;
+    __wrap_input_live_close(&input);
+    startup_failures=100;startup_error="INPUT_DEVICE_NOT_FOUND";startup_errno=ENOENT;discovery_calls=0;
+    uint64_t before=virtual_ns;
+    if(discover_input(&input,"/dev/input",&config,1000,&attempts)||attempts!=3||
+       virtual_ns-before>1010000000ULL)return 0;
+    startup_error="INPUT_DEVICE_PERMISSION";startup_errno=EACCES;discovery_calls=0;
+    if(discover_input(&input,"/dev/input",&config,3000,&attempts)||attempts!=1||input.system_errno!=EACCES)return 0;
+    startup_error="INPUT_PROFILE_MISMATCH";startup_errno=0;discovery_calls=0;
+    if(discover_input(&input,"/dev/input",&config,3000,&attempts)||attempts!=1)return 0;
+    startup_error="INPUT_DEVICE_NOT_FOUND";startup_errno=ENOENT;discovery_calls=0;
+    if(discover_input(&input,"/dev/input",&config,0,&attempts)||attempts!=1)return 0;
+    startup_failures=0;startup_error=NULL;startup_errno=0;discovery_calls=0;
+    virtual_ns=1000000000ULL;
+    puts("FRAMEWORK_STARTUP_POLICY_OK delayed-device bounded-timeout terminal-permission terminal-profile zero-wait");
+    return 1;
+}
 int main(int argc,char **argv){
     if(argc!=4)return 2;
     viewport_height=(unsigned)atoi(argv[3]);
+    if(!startup_policy_tests())return 1;
     const char *profile=viewport_height==600?"imx6ul-1024x600":"imx6ul-1024x800";
     char *args[]={"ui-framework","--profile",(char *)profile,"--asset-root",argv[1],"--output",argv[2],"--seconds","8",
       "--allow-write","I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER","--touch-name","ilitek_ts","--raw-min","0","--raw-max","16384",

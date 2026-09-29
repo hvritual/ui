@@ -35,10 +35,42 @@ static FILE *file_at(const char *dir,const char *name){
 static double cpu_seconds(const struct rusage *r){
     return r->ru_utime.tv_sec+r->ru_stime.tv_sec+(r->ru_utime.tv_usec+r->ru_stime.tv_usec)/1000000.0;
 }
+/* Startup tolerates only device appearance/disappearance, not an unverified
+ * name/capability/range fallback. A mismatch on a matched device is terminal. */
+static int discover_input(InputLive *input, const char *directory,
+                          const InputLiveConfig *config, unsigned wait_ms,
+                          unsigned *attempts) {
+    uint64_t begin, now;
+    *attempts = 0;
+    if (!host_monotonic_ns(&begin)) return 0;
+    uint64_t deadline = begin + (uint64_t)wait_ms * 1000000ULL;
+    /* At most 21 scans even if a broken clock does not advance. */
+    unsigned max_attempts = wait_ms / 500U + 1U;
+    if (wait_ms % 500U) ++max_attempts;
+    for (unsigned i = 0; i < max_attempts && !stopping; ++i) {
+        ++*attempts;
+        if (input_live_discover(input, directory, config)) return 1;
+        const char *error = input->error ? input->error : "INPUT_DISCOVERY";
+        int retry = !strcmp(error, "INPUT_DEVICE_NOT_FOUND") ||
+                    !strcmp(error, "INPUT_NAME_MISMATCH") ||
+                    (input->system_errno == ENODEV || input->system_errno == ENXIO);
+        if (!retry || i + 1U == max_attempts || !host_monotonic_ns(&now) || now >= deadline)
+            return 0;
+        uint64_t next = now + 500000000ULL;
+        if (next > deadline) next = deadline;
+        fprintf(stderr, "INPUT_DISCOVERY_RETRY attempt=%u error=%s errno=%d wait_ms=%llu\n",
+                *attempts, error, input->system_errno,
+                (unsigned long long)((next - now) / 1000000ULL));
+        if (!host_sleep_until(next)) return 0;
+    }
+    return 0;
+}
+
 int main(int argc,char **argv){
     const char *profile=NULL,*assets=NULL,*output=NULL,*fbpath="/dev/fb0",*inputdir="/dev/input",*media=NULL,*token=NULL,*touch_name=NULL;
     int headless=0,seconds=60,items=8,rawmin=0,rawmax=16384,slots=10,swap=0,ix=0,iy=0;
-    unsigned touch_fields=0;
+    unsigned touch_fields=0, discovery_attempts=0;
+    int input_wait_ms=3000;
     for(int i=1;i<argc;i++){
         const char *key=argv[i];if(!strcmp(key,"--headless")){headless=1;continue;}
         if(i+1>=argc){fprintf(stderr,"missing value: %s\n",key);return 2;}const char *v=argv[++i];
@@ -47,6 +79,7 @@ int main(int argc,char **argv){
         else if(!strcmp(key,"--input-dir"))inputdir=v;else if(!strcmp(key,"--media-store"))media=v;
         else if(!strcmp(key,"--allow-write"))token=v;
         else if(!strcmp(key,"--touch-name")){touch_name=v;touch_fields|=1;}
+        else if(!strcmp(key,"--input-wait-ms")){if(!number(v,0,10000,&input_wait_ms))return 2;}
         else if(!strcmp(key,"--seconds")){if(!number(v,1,86400,&seconds))return 2;}
         else if(!strcmp(key,"--items")){if(!number(v,8,100,&items)||(items!=8&&items!=100))return 2;}
         else if(!strcmp(key,"--raw-min")){if(!number(v,-65536,65536,&rawmin))return 2;touch_fields|=2;}
@@ -70,7 +103,7 @@ int main(int argc,char **argv){
     FILE *trace=file_at(output,"timeline.csv");if(!trace)return 2;
     fprintf(trace,"sample_ns,input_event_ns,guest_turns,scene_uploads,presents,page,modal,progress,nodes,pool,first,selected,locale,theme\n");
     PocketFramework *r=calloc(1,sizeof(*r));if(!r){fclose(trace);return 1;}
-    FbDevice fb={0};InputLive input={0};int ok=0,unblank_errno=0;const char *failure="INITIALIZATION";
+    FbDevice fb={0};InputLive input={0};int ok=0,unblank_errno=0,pending_input_wait=0;const char *failure="INITIALIZATION";
     uint64_t start=0,now=0,next_reconnect=0;struct rusage before={0},after={0};CoffeeAppStats stats={0};
     if(getrusage(RUSAGE_SELF,&before)){failure="USAGE_START";goto done;}
     if(!host_monotonic_ns(&start))goto done;
@@ -85,9 +118,19 @@ int main(int argc,char **argv){
     }
     PocketDisplayBackend backend={1,sizeof(PocketDisplayBackend),&fb,present};
     if(!pocket_framework_open(r,h,items,assets,media,headless?NULL:&backend)){failure=r->error;goto done;}
-    InputLiveConfig cfg={touch_name,1024,h,swap,ix,iy,rawmin,rawmax,(unsigned)slots};
-    if(!headless&&!input_live_discover(&input,inputdir,&cfg)){failure=input.error?input.error:"INPUT_DISCOVERY";goto done;}
+    InputLiveConfig cfg={.expected_name=touch_name,.width=1024,.height=h,
+        .swap_xy=swap,.invert_x=ix,.invert_y=iy,.expected_raw_min=rawmin,
+        .expected_raw_max=rawmax,.expected_slots=(unsigned)slots};
     signal(SIGINT,stop);signal(SIGTERM,stop);
+    if(!headless){
+        int admitted=discover_input(&input,inputdir,&cfg,(unsigned)input_wait_ms,&discovery_attempts);
+        FILE *input_report=file_at(output,"input.json");
+        if(!input_report){failure="INPUT_REPORT_FILE";goto done;}
+        int wrote=input_live_report(input_report,&input);
+        if(fclose(input_report)||!wrote){failure="INPUT_REPORT_WRITE";goto done;}
+        if(!admitted){failure=stopping?"INPUT_START_INTERRUPTED":input.error?input.error:"INPUT_DISCOVERY";goto done;}
+        fprintf(stderr,"FRAMEWORK_INPUT_READY path=%s name=%s attempts=%u\n",input.path,input.name,discovery_attempts);
+    }
     HostClock clock;host_clock_start(&clock,start);
     if(!pocket_framework_tick(r,start,1)){failure=r->error;goto done;}
     char snapshot[4096];snprintf(snapshot,sizeof(snapshot),"%s/first.ppm",output);
@@ -103,7 +146,11 @@ int main(int argc,char **argv){
         if(now-start>=(uint64_t)seconds*1000000000ULL)break;
         if(!headless){
             if(input.opened){
-                int wait=input_live_wait(&input,0);
+                /* Keep the preceding blocking wait result: terminal poll errors
+                 * must not disappear before the next nonblocking poll. */
+                int wait=pending_input_wait;
+                pending_input_wait=0;
+                if(!wait)wait=input_live_wait(&input,0);
                 if(wait<0|| (wait>0&&input_live_drain(&input,pocket_framework_input,r)<0)){
                     /* poll HUP has no read-side disconnect callback. Count that loss once. */
                     if(!input.state.disconnected){input_state_disconnect(&input.state);input.disconnects++;}
@@ -124,7 +171,7 @@ int main(int argc,char **argv){
         /* Preserve 60 Hz guest clock; input wakes the bounded wait sooner. */
         uint64_t wait_ns=clock.next_ns>now?clock.next_ns-now:0;int ms=(int)(wait_ns/1000000ULL);if(ms>17)ms=17;
         if(ms<1)ms=1;
-        if(!headless&&input.opened)(void)input_live_wait(&input,ms);
+        if(!headless&&input.opened)pending_input_wait=input_live_wait(&input,ms);
         else (void)host_sleep_until(now+(uint64_t)ms*1000000ULL);
     }
     if(!pocket_framework_tick(r,now,1)){failure=r->error;goto done;}
@@ -150,6 +197,8 @@ done:
         fprintf(report,"\"schema\":1,\"commit\":\"%s\",\"profile\":\"%s\",\"ok\":%s,\"physical_io\":%s,\"visual_validated\":false,\"business_commands\":false,\"error\":",
           POCKET_BUILD_COMMIT,profile,ok?"true":"false",physical_io?"true":"false");
         if(failure)fprintf(report,"\"%s\"",failure);else fputs("null",report);
+        fprintf(report,",\"input_errno\":%d,\"input_discovery_attempts\":%u,\"input_wait_ms\":%d",
+                input.system_errno,discovery_attempts,input_wait_ms);
         fprintf(report,",\"wall_seconds\":%.6f,\"cpu_percent_one_core\":%.6f,\"peak_rss_kib\":%ld,\"ticks\":%llu,\"presents\":%llu,\"clean_skips\":%llu,\"bytes_written\":%llu,\"page_mask\":%u,\"modal_seen\":%u,\"completed\":%u,\"pool\":%u,\"nodes\":%u,\"item_count\":%u,\"peak_pool\":%u,\"recycled\":%llu,\"input_frames\":%llu,\"syn_dropped\":%llu,\"disconnects\":%llu,\"reconnects\":%llu,\"timestamp_clamps\":%llu,\"media_applied\":%lu,\"media_rejected\":%lu,\"media_deferred\":%lu,\"unblank_errno\":%d,\"display_cleanup_errno\":%d,\"input_cleanup_errno\":%d,\"core_live_bytes_after_close\":%zu}\n",
          wall,wall>0?100*(cpu_seconds(&after)-cpu_seconds(&before))/wall:0,after.ru_maxrss,
          (unsigned long long)r->ticks,(unsigned long long)r->presents,(unsigned long long)r->clean_skips,

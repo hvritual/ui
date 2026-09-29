@@ -29,6 +29,16 @@ mkdir -p "$STORE" || exit 1
   echo "=== BUILD MANIFEST ==="
   cat "$BASE/manifest.json"
   echo "MEDIA_STORE=$STORE"
+  echo "=== INPUT INVENTORY (read only) ==="
+  echo "INPUT_DIR=${FRAMEWORK_INPUT_DIR:-/dev/input}"
+  ls -ld "${FRAMEWORK_INPUT_DIR:-/dev/input}" 2>/dev/null || true
+  ls -ln "${FRAMEWORK_INPUT_DIR:-/dev/input}" 2>/dev/null || true
+  cat /proc/bus/input/devices 2>/dev/null || true
+  for NAME in /sys/class/input/event*/device/name; do
+    [ -f "$NAME" ] || continue
+    printf '%s: ' "$NAME"
+    cat "$NAME" 2>/dev/null || true
+  done
   "$BASE/ui-framework" --profile "$PROFILE" --asset-root "$BASE/assets" \
      --output "$RUN/runtime" --seconds "$SECONDS" --media-store "$STORE" \
      --fbdev "${FRAMEWORK_FBDEV:-/dev/fb0}" --input-dir "${FRAMEWORK_INPUT_DIR:-/dev/input}" \

@@ -3,6 +3,7 @@
 
 #include "state.h"
 #include <stdint.h>
+#include <stdio.h>
 
 #define INPUT_LIVE_READ_BUDGET 8U
 
@@ -18,6 +19,14 @@ typedef struct {
     unsigned expected_slots;
 } InputLiveConfig;
 
+/* Numeric capability metadata only: never input text or individual events. */
+typedef struct {
+    int name_queried, name_matched, capabilities_queried, axes_queried;
+    int ev_key, ev_abs, btn_touch, mt_slot, mt_tracking, mt_x, mt_y;
+    int slot_min, slot_max, raw_x_min, raw_x_max, raw_y_min, raw_y_max;
+    unsigned scanned, opened_candidates, rejected_candidates;
+} InputLiveDiagnostics;
+
 typedef struct {
     int fd;
     int opened;
@@ -26,6 +35,7 @@ typedef struct {
     char name[256];
     InputState state;
     InputLiveConfig config;
+    InputLiveDiagnostics diagnostics;
     uint64_t frames;
     uint64_t events;
     uint64_t syn_dropped;
@@ -58,5 +68,9 @@ int input_live_drain(InputLive *live, InputFrameSink sink, void *context);
    0 otherwise, and never sleeps or restarts unrelated services. */
 int input_live_reconnect(InputLive *live, const char *input_dir);
 void input_live_close(InputLive *live);
+
+/* One bounded JSON record with expected/observed admission values and errno.
+ * Returns zero on output error. No second probe or relaxed admission path. */
+int input_live_report(FILE *out, const InputLive *live);
 
 #endif
