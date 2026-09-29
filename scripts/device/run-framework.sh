@@ -3,12 +3,6 @@
 set -u
 umask 077
 BASE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 2
-TOKEN=${1:-}
-if [ "$TOKEN" != I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER ]; then
-  echo "Usage: $0 I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER [imx6ul-1024x600|imx6ul-1024x800] [seconds] [explicit touch options]" >&2
-  exit 2
-fi
-shift
 PROFILE=${1:-imx6ul-1024x600}; [ "$#" -eq 0 ] || shift
 SECONDS=${1:-180}; [ "$#" -eq 0 ] || shift
 case "$PROFILE" in imx6ul-1024x600|imx6ul-1024x800) ;; *) exit 2;; esac
@@ -42,7 +36,7 @@ mkdir -p "$STORE" || exit 1
   "$BASE/ui-framework" --profile "$PROFILE" --asset-root "$BASE/assets" \
      --output "$RUN/runtime" --seconds "$SECONDS" --media-store "$STORE" \
      --fbdev "${FRAMEWORK_FBDEV:-/dev/fb0}" --input-dir "${FRAMEWORK_INPUT_DIR:-/dev/input}" \
-     --items "${FRAMEWORK_ITEMS:-8}" --allow-write "$TOKEN" "$@"
+     --items "${FRAMEWORK_ITEMS:-8}" --physical "$@"
   RC=$?
   echo "FRAMEWORK_PROCESS_EXIT=$RC"
   exit "$RC"
