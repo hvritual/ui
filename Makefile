@@ -131,3 +131,13 @@ check-no-engine-leak:
 	python3 scripts/engine_contract.py leak
 test-engine-contract-arm:
 	python3 scripts/engine_contract.py all --mode arm
+
+.PHONY: test-ui-object-model test-ui-lifecycle test-ui-dirty test-ui-object-arm
+test-ui-object-model:
+	python3 scripts/ui_object.py object --mode native
+test-ui-lifecycle:
+	python3 scripts/ui_object.py lifecycle --mode native
+test-ui-dirty:
+	python3 scripts/ui_object.py dirty --mode native
+test-ui-object-arm:
+	python3 scripts/ui_object.py all --mode arm
