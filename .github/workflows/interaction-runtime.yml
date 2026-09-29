@@ -21,5 +21,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user
       - name: Pointer hit-test capture focus overlay
         run: make test-interaction
+      - name: P3 InputFrame bridge and cancel path
+        run: make test-interaction-bridge
       - name: ARM Cortex-A7 parity
         run: make test-interaction-arm
