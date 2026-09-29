@@ -22,7 +22,7 @@ static PocketComponentHandle add(PocketComponentRuntime *components,PocketCompon
         return (PocketComponentHandle){0};
     return h;
 }
-static void absolute(PocketComponentRuntime *components,PocketComponentHandle component,
+static int absolute(PocketComponentRuntime *components,PocketComponentHandle component,
                      int x,int y,int w,int h) {
     PocketLayoutSpec s=pocket_layout_spec_default();
     s.width=(PocketLength){POCKET_LENGTH_PX,w};
@@ -30,6 +30,7 @@ static void absolute(PocketComponentRuntime *components,PocketComponentHandle co
     s.offset_x=(PocketLength){POCKET_LENGTH_PX,x};
     s.offset_y=(PocketLength){POCKET_LENGTH_PX,y};
     CHECK(pocket_component_set_layout(components,component,&s)==POCKET_COMPONENT_OK);
+    return 0;
 }
 int main(void) {
     PocketUiTree tree={0};PocketUiTreeConfig tc={.initial_capacity=16,.update_queue_capacity=16,.update_budget=8};
@@ -47,8 +48,8 @@ int main(void) {
     CHECK(pocket_component_handle_valid(scene)&&pocket_component_handle_valid(field));
     PocketLayoutSpec root=pocket_layout_spec_default();root.mode=POCKET_LAYOUT_ABSOLUTE;
     CHECK(pocket_component_set_layout(&components,scene,&root)==POCKET_COMPONENT_OK);
-    absolute(&components,button,10,10,100,60);
-    absolute(&components,field,10,100,180,50);
+    CHECK(absolute(&components,button,10,10,100,60)==0);
+    CHECK(absolute(&components,field,10,100,180,50)==0);
     PocketComponentSnapshot ss,bs,fs;
     CHECK(pocket_component_snapshot(&components,scene,&ss)==POCKET_COMPONENT_OK);
     CHECK(pocket_component_snapshot(&components,button,&bs)==POCKET_COMPONENT_OK);
@@ -85,7 +86,7 @@ int main(void) {
     PocketComponentHandle modal_button=add(&components,POCKET_COMPONENT_BUTTON,modal);
     PocketLayoutSpec modal_root=pocket_layout_spec_default();modal_root.mode=POCKET_LAYOUT_ABSOLUTE;
     CHECK(pocket_component_set_layout(&components,modal,&modal_root)==POCKET_COMPONENT_OK);
-    absolute(&components,modal_button,10,10,100,60);
+    CHECK(absolute(&components,modal_button,10,10,100,60)==0);
     PocketComponentSnapshot ms,mbs;
     CHECK(pocket_component_snapshot(&components,modal,&ms)==POCKET_COMPONENT_OK);
     CHECK(pocket_component_snapshot(&components,modal_button,&mbs)==POCKET_COMPONENT_OK);
@@ -95,6 +96,25 @@ int main(void) {
     CHECK(pocket_overlay_present(&overlays,&(PocketOverlaySpec){
         .id=99,.kind=POCKET_OVERLAY_MODAL,.root=modal,.owns_root=1,.captures_input=1,.dismiss_on_back=1
     })==POCKET_OVERLAY_OK);
+
+    /* Existing focus must not route Accept through a modal to the background. */
+    CHECK(pocket_interaction_key(&interaction,POCKET_KEY_ACTION_ACCEPT)==POCKET_INTERACTION_NO_TARGET);
+    CHECK(focus_trace.key==1&&focus_trace.focus_lost==1);
+    CHECK(pocket_interaction_snapshot(&interaction,&state)==POCKET_INTERACTION_OK);
+    CHECK(!pocket_ui_handle_valid(state.focused));
+    CHECK(pocket_interaction_focus(&interaction,fs.root)==POCKET_INTERACTION_FOCUS_REJECTED);
+
+    PocketComponentHandle modal_field=add(&components,POCKET_COMPONENT_TEXT_FIELD,modal);
+    CHECK(absolute(&components,modal_field,10,120,180,40)==0);
+    CHECK(pocket_layout_run(&layout,ms.root,320,240)==POCKET_UI_OK);
+    PocketComponentSnapshot mfs;
+    CHECK(pocket_component_snapshot(&components,modal_field,&mfs)==POCKET_COMPONENT_OK);
+    Trace modal_focus={0};
+    CHECK(pocket_ui_set_event_handler(&tree,mfs.root,handler,&modal_focus)==POCKET_UI_OK);
+    CHECK(pocket_interaction_focus(&interaction,mfs.root)==POCKET_INTERACTION_OK);
+    CHECK(pocket_interaction_key(&interaction,POCKET_KEY_ACTION_ACCEPT)==POCKET_INTERACTION_OK);
+    CHECK(modal_focus.key==1&&focus_trace.key==1);
+    CHECK(pocket_interaction_clear_focus(&interaction)==POCKET_INTERACTION_OK);
 
     PocketPointerEvent modal_down={3,POCKET_POINTER_DOWN,20,20,60};
     CHECK(pocket_interaction_pointer(&interaction,&modal_down)==POCKET_INTERACTION_OK);
@@ -109,6 +129,32 @@ int main(void) {
     CHECK(background.cancel==1);
     CHECK(pocket_interaction_snapshot(&interaction,&state)==POCKET_INTERACTION_OK&&state.active_pointers==0);
 
+    /* An enabled field under a hidden/disabled ancestor is not focus eligible. */
+    CHECK(pocket_interaction_focus(&interaction,fs.root)==POCKET_INTERACTION_OK);
+    CHECK(pocket_component_set_disabled(&components,scene,1)==POCKET_COMPONENT_OK);
+    CHECK(pocket_interaction_key(&interaction,POCKET_KEY_ACTION_ACCEPT)==POCKET_INTERACTION_NO_TARGET);
+    CHECK(focus_trace.key==1);
+    CHECK(pocket_interaction_focus(&interaction,fs.root)==POCKET_INTERACTION_FOCUS_REJECTED);
+    CHECK(pocket_component_set_disabled(&components,scene,0)==POCKET_COMPONENT_OK);
+    CHECK(pocket_interaction_focus(&interaction,fs.root)==POCKET_INTERACTION_OK);
+    CHECK(pocket_component_set_visible(&components,scene,0)==POCKET_COMPONENT_OK);
+    CHECK(pocket_interaction_key(&interaction,POCKET_KEY_ACTION_ACCEPT)==POCKET_INTERACTION_NO_TARGET);
+    CHECK(focus_trace.key==1);
+    CHECK(pocket_interaction_focus(&interaction,fs.root)==POCKET_INTERACTION_FOCUS_REJECTED);
+    CHECK(pocket_component_set_visible(&components,scene,1)==POCKET_COMPONENT_OK);
+
+    /* Mounted nodes belonging to a different page cannot receive focus. */
+    PocketComponentHandle other=add(&components,POCKET_COMPONENT_VIEW,(PocketComponentHandle){0});
+    PocketComponentHandle other_field=add(&components,POCKET_COMPONENT_TEXT_FIELD,other);
+    PocketComponentSnapshot ofs;
+    CHECK(pocket_component_snapshot(&components,other_field,&ofs)==POCKET_COMPONENT_OK);
+    CHECK(pocket_interaction_focus(&interaction,ofs.root)==POCKET_INTERACTION_FOCUS_REJECTED);
+    CHECK(pocket_component_destroy(&components,other)==POCKET_COMPONENT_OK);
+
+    CHECK(pocket_interaction_set_focus_scope(&interaction,bs.root)==POCKET_INTERACTION_OK);
+    CHECK(pocket_interaction_focus(&interaction,fs.root)==POCKET_INTERACTION_FOCUS_REJECTED);
+    CHECK(pocket_interaction_set_focus_scope(&interaction,(PocketUiHandle){0})==POCKET_INTERACTION_OK);
+    CHECK(pocket_interaction_focus(&interaction,fs.root)==POCKET_INTERACTION_OK);
     CHECK(pocket_component_destroy(&components,field)==POCKET_COMPONENT_OK);
     CHECK(pocket_interaction_key(&interaction,POCKET_KEY_ACTION_ACCEPT)==POCKET_INTERACTION_STALE_HANDLE);
 

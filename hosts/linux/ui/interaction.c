@@ -66,6 +66,34 @@ static PocketInteractionStatus resolve_overlay_root(InteractionImpl *impl,Pocket
     *root=component.root;
     return POCKET_INTERACTION_OK;
 }
+/* Focus admission is rechecked on every key, not only when focus is acquired.
+ * A modal, route change or ancestor state update can revoke an existing focus.
+ * Walk a bounded ancestor chain; never route a key to a background page.
+ */
+static PocketInteractionStatus focus_status(InteractionImpl *impl,PocketUiHandle target) {
+    PocketUiSnapshot snapshot;
+    if(pocket_ui_snapshot(impl->tree,target,&snapshot)!=POCKET_UI_OK)
+        return POCKET_INTERACTION_STALE_HANDLE;
+    if(!snapshot.properties.focusable)
+        return POCKET_INTERACTION_FOCUS_REJECTED;
+    PocketUiHandle root={0};
+    PocketInteractionStatus status=resolve_overlay_root(impl,&root);
+    if(status!=POCKET_INTERACTION_OK)return status;
+    if(!descendant_of(impl,target,root)||
+       !descendant_of(impl,target,impl->focus_scope))
+        return POCKET_INTERACTION_FOCUS_REJECTED;
+    PocketUiHandle current=target;
+    for(uint32_t depth=0;depth<256U&&pocket_ui_handle_valid(current);depth++) {
+        if(pocket_ui_snapshot(impl->tree,current,&snapshot)!=POCKET_UI_OK)
+            return POCKET_INTERACTION_STALE_HANDLE;
+        if(!snapshot.properties.visible||!snapshot.properties.enabled||
+           !mounted_phase(snapshot.phase))
+            return POCKET_INTERACTION_FOCUS_REJECTED;
+        current=snapshot.parent;
+    }
+    return pocket_ui_handle_valid(current)?POCKET_INTERACTION_FOCUS_REJECTED:
+           POCKET_INTERACTION_OK;
+}
 static PocketInteractionStatus hit_node(InteractionImpl *impl,PocketUiHandle node,
                                         int32_t x,int32_t y,PocketUiHandle *out,
                                         uint32_t depth) {
@@ -274,13 +302,10 @@ PocketInteractionStatus pocket_interaction_set_focus_scope(PocketInteractionRunt
 }
 PocketInteractionStatus pocket_interaction_focus(PocketInteractionRuntime *runtime,
                                                   PocketUiHandle target) {
-    InteractionImpl *impl=ii(runtime);PocketUiSnapshot snapshot;
+    InteractionImpl *impl=ii(runtime);
     if(!impl||!pocket_ui_handle_valid(target))return POCKET_INTERACTION_INVALID_ARGUMENT;
-    if(pocket_ui_snapshot(impl->tree,target,&snapshot)!=POCKET_UI_OK)
-        return POCKET_INTERACTION_STALE_HANDLE;
-    if(!snapshot.properties.visible||!snapshot.properties.enabled||!snapshot.properties.focusable||
-       !mounted_phase(snapshot.phase)||!descendant_of(impl,target,impl->focus_scope))
-        return POCKET_INTERACTION_FOCUS_REJECTED;
+    PocketInteractionStatus eligibility=focus_status(impl,target);
+    if(eligibility!=POCKET_INTERACTION_OK)return eligibility;
     if(handle_equal(impl->focused,target))return POCKET_INTERACTION_OK;
     if(pocket_ui_handle_valid(impl->focused)) {
         PocketUiHandle old=impl->focused;
@@ -318,10 +343,11 @@ PocketInteractionStatus pocket_interaction_key(PocketInteractionRuntime *runtime
     if(!impl||action<POCKET_KEY_ACTION_BACK||action>POCKET_KEY_ACTION_RIGHT)
         return POCKET_INTERACTION_INVALID_ARGUMENT;
     if(!pocket_ui_handle_valid(impl->focused))return POCKET_INTERACTION_NO_TARGET;
-    PocketUiSnapshot snapshot;
-    if(pocket_ui_snapshot(impl->tree,impl->focused,&snapshot)!=POCKET_UI_OK) {
-        impl->focused=(PocketUiHandle){0};
-        return POCKET_INTERACTION_STALE_HANDLE;
+    PocketInteractionStatus eligibility=focus_status(impl,impl->focused);
+    if(eligibility!=POCKET_INTERACTION_OK) {
+        (void)pocket_interaction_clear_focus(runtime);
+        return eligibility==POCKET_INTERACTION_FOCUS_REJECTED?
+               POCKET_INTERACTION_NO_TARGET:eligibility;
     }
     PocketUiEvent event={0};
     event.type=POCKET_UI_EVENT_KEY_ACTION;

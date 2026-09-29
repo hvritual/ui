@@ -42,3 +42,28 @@ up does not create a phantom pointer slot.
 `SYN_DROPPED`, suppressed frames and disconnect all invoke the same
 `pocket_interaction_cancel_all()` path. A stale destroyed target also releases
 its pointer slot immediately.
+
+## Focus admission and semantic key isolation
+
+Programmatic focus is limited to the active scene or the top input-capturing
+Overlay, and to the explicit FocusScope when present. The target must be
+focusable. Every ancestor must remain mounted, visible and enabled. Validation
+walks at most 256 nodes and does not allocate memory or depend on an engine API.
+
+Admission is checked again before each semantic key action. Opening a modal or
+hiding/disabling an ancestor can revoke an existing focus: the runtime clears
+FOCUSED state, emits focus loss and returns NO_TARGET without delivering that
+key to the background field. Stale targets are cleared and reported as stale.
+A valid field inside the modal still accepts focus and keys normally. Invalid
+programmatic focus requests do not replace an existing admissible focus.
+
+`tests/ui/test_interaction.c` covers modal/background isolation, an active modal
+field, ancestor visibility/enabled changes, a different inactive scene,
+FocusScope restrictions and destroyed targets. The setup helper returns an
+explicit status checked by every caller; compiler warnings remain errors.
+
+This is key-routing hardening, not completed gesture arbitration, IME or board
+integration. Focus restoration across navigation/overlay lifecycle and pointer
+capture changes during an active gesture still require the remaining F6
+integration/replay gates. #49 remains the first full Framework-to-board gate;
+#12, #7, #8, #9 and #10 retain IME, performance, business and production scope.
