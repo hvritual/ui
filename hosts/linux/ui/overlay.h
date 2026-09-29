@@ -37,7 +37,7 @@ typedef struct {
 
 typedef struct {
     PocketOverlaySpec spec;
-    uint32_t z_order;
+    uint64_t z_order;
     uint64_t previous_focus_token;
 } PocketOverlaySnapshot;
 

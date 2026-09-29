@@ -2,7 +2,14 @@
 #include <stdio.h>
 #define CHECK(x) do{if(!(x)){fprintf(stderr,"NAV_FAIL line=%d %s\n",__LINE__,#x);return 1;}}while(0)
 typedef struct{int timer,task,input;int life;} Trace;
-static void cancel(void *ctx,PocketNavigationResourceKind kind){Trace *t=ctx;if(kind==POCKET_NAV_RESOURCE_TIMER)t->timer++;else if(kind==POCKET_NAV_RESOURCE_TASK)t->task++;else if(kind==POCKET_NAV_RESOURCE_INPUT_CAPTURE)t->input++;}
+typedef struct{Trace *trace;PocketNavigationStack *nav;PocketNavigationPage page;PocketNavigationStatus reentrant;} CancelContext;
+static void cancel(void *ctx,PocketNavigationResourceKind kind){
+ CancelContext *c=ctx;Trace *t=c->trace;
+ if(kind==POCKET_NAV_RESOURCE_TIMER)t->timer++;
+ else if(kind==POCKET_NAV_RESOURCE_TASK)t->task++;
+ else if(kind==POCKET_NAV_RESOURCE_INPUT_CAPTURE)t->input++;
+ if(kind==POCKET_NAV_RESOURCE_TIMER)c->reentrant=pocket_navigation_push(c->nav,&c->page);
+}
 static void life(void *ctx,uint64_t route,PocketNavigationLifecycle event,PocketNavigationTransition transition){(void)route;(void)event;(void)transition;((Trace *)ctx)->life++;}
 static PocketComponentHandle page(PocketComponentRuntime *rt){
  PocketComponentHandle h={0};
@@ -19,11 +26,15 @@ int main(void){
  CHECK(pocket_component_handle_valid(home)&&pocket_component_handle_valid(success));
  CHECK(pocket_navigation_push(&nav,&(PocketNavigationPage){1,home,1})==POCKET_NAV_OK);
  CHECK(pocket_navigation_push(&nav,&(PocketNavigationPage){2,detail,1})==POCKET_NAV_OK);
- CHECK(pocket_navigation_register_cancel(&nav,2,POCKET_NAV_RESOURCE_TIMER,cancel,&trace)==POCKET_NAV_OK);
- CHECK(pocket_navigation_register_cancel(&nav,2,POCKET_NAV_RESOURCE_TASK,cancel,&trace)==POCKET_NAV_OK);
- CHECK(pocket_navigation_register_cancel(&nav,2,POCKET_NAV_RESOURCE_INPUT_CAPTURE,cancel,&trace)==POCKET_NAV_OK);
+ PocketComponentHandle blocked=page(&components);CHECK(pocket_component_handle_valid(blocked));
+ CancelContext cancel_ctx={&trace,&nav,{99,blocked,1},POCKET_NAV_OK};
+ CHECK(pocket_navigation_register_cancel(&nav,2,POCKET_NAV_RESOURCE_TIMER,cancel,&cancel_ctx)==POCKET_NAV_OK);
+ CHECK(pocket_navigation_register_cancel(&nav,2,POCKET_NAV_RESOURCE_TASK,cancel,&cancel_ctx)==POCKET_NAV_OK);
+ CHECK(pocket_navigation_register_cancel(&nav,2,POCKET_NAV_RESOURCE_INPUT_CAPTURE,cancel,&cancel_ctx)==POCKET_NAV_OK);
  CHECK(pocket_navigation_replace(&nav,&(PocketNavigationPage){3,making,1})==POCKET_NAV_OK);
  CHECK(trace.timer==1&&trace.task==1&&trace.input==1&&pocket_navigation_count(&nav)==2);
+ CHECK(cancel_ctx.reentrant==POCKET_NAV_BUSY);
+ CHECK(pocket_component_destroy(&components,blocked)==POCKET_COMPONENT_OK);
  CHECK(pocket_navigation_replace(&nav,&(PocketNavigationPage){4,success,1})==POCKET_NAV_OK);
  PocketNavigationPage top;CHECK(pocket_navigation_top(&nav,&top)==POCKET_NAV_OK&&top.route_id==4);
  int consumed=0;CHECK(pocket_navigation_back(&nav,&consumed)==POCKET_NAV_OK&&consumed==1);

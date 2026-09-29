@@ -25,6 +25,18 @@ int main(void){
  CHECK(pocket_overlay_top(&overlays,&top)==POCKET_OVERLAY_OK&&top.spec.id==1);
  CHECK(pocket_overlay_dismiss_owner(&overlays,10)==1&&pocket_overlay_count(&overlays)==0);
  CHECK(!pocket_overlay_blocks_background(&overlays));
+
+ PocketComponentHandle persistent=root(&components,POCKET_COMPONENT_TOAST);
+ CHECK(pocket_overlay_present(&overlays,&(PocketOverlaySpec){1000,0,POCKET_OVERLAY_TOAST,persistent,0,1,0,0,0})==POCKET_OVERLAY_OK);
+ for(uint64_t i=0;i<900;i++){
+   PocketComponentHandle temp=root(&components,POCKET_COMPONENT_TOAST);CHECK(pocket_component_handle_valid(temp));
+   uint64_t id=2000+i;
+   CHECK(pocket_overlay_present(&overlays,&(PocketOverlaySpec){id,0,POCKET_OVERLAY_TOAST,temp,0,1,0,0,0})==POCKET_OVERLAY_OK);
+   CHECK(pocket_overlay_dismiss(&overlays,id)==POCKET_OVERLAY_OK);
+ }
+ PocketComponentHandle newest=root(&components,POCKET_COMPONENT_TOAST);
+ CHECK(pocket_overlay_present(&overlays,&(PocketOverlaySpec){9999,0,POCKET_OVERLAY_TOAST,newest,0,1,0,0,0})==POCKET_OVERLAY_OK);
+ CHECK(pocket_overlay_top(&overlays,&top)==POCKET_OVERLAY_OK&&top.spec.id==9999);
  pocket_overlay_dispose(&overlays);CHECK(pocket_component_live_count(&components)==0);
  pocket_component_runtime_dispose(&components);pocket_layout_dispose(&layout);pocket_ui_tree_dispose(&tree);
  puts("OVERLAY_OK");return 0;

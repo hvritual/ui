@@ -31,6 +31,7 @@ typedef struct {
     void *lifecycle_context;
     PocketNavigationOwnerCleanupFn owner_cleanup;
     void *owner_cleanup_context;
+    int mutating;
 } NavigationImpl;
 
 static NavigationImpl *ni(PocketNavigationStack *stack){return stack?(NavigationImpl *)stack->impl:NULL;}
@@ -91,6 +92,7 @@ PocketNavigationStatus pocket_navigation_init(PocketNavigationStack *stack,const
 void pocket_navigation_dispose(PocketNavigationStack *stack){
     NavigationImpl *impl=ni(stack);
     if(!impl)return;
+    impl->mutating=1;
     while(impl->count){
         PageRecord *r=&impl->pages[impl->count-1U];
         uint64_t route=r->page.route_id;
@@ -100,24 +102,39 @@ void pocket_navigation_dispose(PocketNavigationStack *stack){
     }
     free(impl->pages);free(impl);stack->impl=NULL;
 }
-PocketNavigationStatus pocket_navigation_push(PocketNavigationStack *stack,const PocketNavigationPage *page){
-    NavigationImpl *impl=ni(stack);
-    if(!impl)return POCKET_NAV_INVALID_ARGUMENT;
+static PocketNavigationStatus push_impl(NavigationImpl *impl,const PocketNavigationPage *page,
+                                            PocketNavigationTransition transition){
     PocketNavigationStatus valid=validate_page(impl,page);
     if(valid!=POCKET_NAV_OK)return valid;
     if(impl->count>=impl->capacity)return POCKET_NAV_FULL;
-    if(impl->count)life(impl,impl->pages[impl->count-1U].page.route_id,POCKET_NAV_WILL_DISAPPEAR,POCKET_NAV_PUSH);
-    life(impl,page->route_id,POCKET_NAV_WILL_APPEAR,POCKET_NAV_PUSH);
-    PageRecord *r=&impl->pages[impl->count++];memset(r,0,sizeof(*r));r->live=1;r->page=*page;
-    if(impl->count>1)life(impl,impl->pages[impl->count-2U].page.route_id,POCKET_NAV_DID_DISAPPEAR,POCKET_NAV_PUSH);
-    life(impl,page->route_id,POCKET_NAV_DID_APPEAR,POCKET_NAV_PUSH);
+    if(impl->count)
+        life(impl,impl->pages[impl->count-1U].page.route_id,POCKET_NAV_WILL_DISAPPEAR,transition);
+    life(impl,page->route_id,POCKET_NAV_WILL_APPEAR,transition);
+    PageRecord *r=&impl->pages[impl->count++];
+    memset(r,0,sizeof(*r));
+    r->live=1;
+    r->page=*page;
+    if(impl->count>1)
+        life(impl,impl->pages[impl->count-2U].page.route_id,POCKET_NAV_DID_DISAPPEAR,transition);
+    life(impl,page->route_id,POCKET_NAV_DID_APPEAR,transition);
     return POCKET_NAV_OK;
+}
+PocketNavigationStatus pocket_navigation_push(PocketNavigationStack *stack,const PocketNavigationPage *page){
+    NavigationImpl *impl=ni(stack);
+    if(!impl)return POCKET_NAV_INVALID_ARGUMENT;
+    if(impl->mutating)return POCKET_NAV_BUSY;
+    impl->mutating=1;
+    PocketNavigationStatus status=push_impl(impl,page,POCKET_NAV_PUSH);
+    impl->mutating=0;
+    return status;
 }
 PocketNavigationStatus pocket_navigation_pop(PocketNavigationStack *stack){
     NavigationImpl *impl=ni(stack);
     if(!impl)return POCKET_NAV_INVALID_ARGUMENT;
+    if(impl->mutating)return POCKET_NAV_BUSY;
     if(!impl->count)return POCKET_NAV_EMPTY;
     if(impl->count==1)return POCKET_NAV_ROOT;
+    impl->mutating=1;
     PageRecord *old=&impl->pages[impl->count-1U],*next=&impl->pages[impl->count-2U];
     uint64_t old_route=old->page.route_id,next_route=next->page.route_id;
     life(impl,old_route,POCKET_NAV_WILL_DISAPPEAR,POCKET_NAV_POP);life(impl,next_route,POCKET_NAV_WILL_APPEAR,POCKET_NAV_POP);
@@ -126,14 +143,17 @@ PocketNavigationStatus pocket_navigation_pop(PocketNavigationStack *stack){
     life(impl,old_route,POCKET_NAV_DID_DISAPPEAR,POCKET_NAV_POP);
     life(impl,old_route,POCKET_NAV_DESTROYED,POCKET_NAV_POP);
     life(impl,next_route,POCKET_NAV_DID_APPEAR,POCKET_NAV_POP);
+    impl->mutating=0;
     return status;
 }
 PocketNavigationStatus pocket_navigation_replace(PocketNavigationStack *stack,const PocketNavigationPage *page){
     NavigationImpl *impl=ni(stack);
     if(!impl)return POCKET_NAV_INVALID_ARGUMENT;
+    if(impl->mutating)return POCKET_NAV_BUSY;
     if(!impl->count)return pocket_navigation_push(stack,page);
     PocketNavigationStatus valid=validate_page(impl,page);
     if(valid!=POCKET_NAV_OK)return valid;
+    impl->mutating=1;
     PageRecord *old=&impl->pages[impl->count-1U];uint64_t old_route=old->page.route_id;
     life(impl,old_route,POCKET_NAV_WILL_DISAPPEAR,POCKET_NAV_REPLACE);life(impl,page->route_id,POCKET_NAV_WILL_APPEAR,POCKET_NAV_REPLACE);
     PocketNavigationStatus status=cleanup_page(impl,old);
@@ -141,13 +161,16 @@ PocketNavigationStatus pocket_navigation_replace(PocketNavigationStack *stack,co
     life(impl,old_route,POCKET_NAV_DESTROYED,POCKET_NAV_REPLACE);
     memset(old,0,sizeof(*old));old->live=1;old->page=*page;
     life(impl,page->route_id,POCKET_NAV_DID_APPEAR,POCKET_NAV_REPLACE);
+    impl->mutating=0;
     return status;
 }
 PocketNavigationStatus pocket_navigation_reset(PocketNavigationStack *stack,const PocketNavigationPage *page){
     NavigationImpl *impl=ni(stack);
     if(!impl)return POCKET_NAV_INVALID_ARGUMENT;
+    if(impl->mutating)return POCKET_NAV_BUSY;
     PocketNavigationStatus valid=validate_page(impl,page);
     if(valid!=POCKET_NAV_OK)return valid;
+    impl->mutating=1;
     while(impl->count){
         PageRecord *r=&impl->pages[impl->count-1U];
         uint64_t route=r->page.route_id;
@@ -157,13 +180,16 @@ PocketNavigationStatus pocket_navigation_reset(PocketNavigationStack *stack,cons
         life(impl,route,POCKET_NAV_DESTROYED,POCKET_NAV_RESET);
         impl->count--;
     }
-    return pocket_navigation_push(stack,page);
+    PocketNavigationStatus status=push_impl(impl,page,POCKET_NAV_RESET);
+    impl->mutating=0;
+    return status;
 }
 PocketNavigationStatus pocket_navigation_back(PocketNavigationStack *stack,int *consumed){
     if(!consumed)return POCKET_NAV_INVALID_ARGUMENT;
     *consumed=0;
     NavigationImpl *impl=ni(stack);
     if(!impl)return POCKET_NAV_INVALID_ARGUMENT;
+    if(impl->mutating)return POCKET_NAV_BUSY;
     if(!impl->count)return POCKET_NAV_EMPTY;
     if(impl->count==1)return POCKET_NAV_ROOT;
     PocketNavigationStatus status=pocket_navigation_pop(stack);

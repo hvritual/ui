@@ -9,8 +9,8 @@
 typedef struct {
     int live;
     PocketOverlaySpec spec;
-    uint32_t sequence;
-    uint32_t z_order;
+    uint64_t sequence;
+    uint64_t z_order;
     uint64_t previous_focus;
 } OverlayRecord;
 
@@ -18,7 +18,7 @@ typedef struct {
     PocketComponentRuntime *components;
     OverlayRecord *records;
     uint32_t capacity;
-    uint32_t next_sequence;
+    uint64_t next_sequence;
     size_t live_count;
     uint64_t current_focus;
 } OverlayImpl;
@@ -102,9 +102,12 @@ PocketOverlayStatus pocket_overlay_present(PocketOverlayManager *manager,const P
     OverlayRecord *record=NULL;
     for(uint32_t i=0;i<impl->capacity;i++)if(!impl->records[i].live){record=&impl->records[i];break;}
     if(!record)return POCKET_OVERLAY_FULL;
-    memset(record,0,sizeof(*record));record->live=1;record->spec=*spec;record->sequence=impl->next_sequence++;
-    if(!impl->next_sequence)impl->next_sequence=1;
-    record->z_order=layer_base(spec->kind)+(record->sequence%900U);
+    if(impl->next_sequence==UINT64_MAX)return POCKET_OVERLAY_FULL;
+    memset(record,0,sizeof(*record));
+    record->live=1;
+    record->spec=*spec;
+    record->sequence=impl->next_sequence++;
+    record->z_order=(uint64_t)layer_base(spec->kind)*1000000000ULL+record->sequence;
     if(spec->captures_focus){record->previous_focus=impl->current_focus;impl->current_focus=spec->focus_token;}
     impl->live_count++;
     return POCKET_OVERLAY_OK;

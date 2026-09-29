@@ -12,7 +12,8 @@ typedef enum {
     POCKET_NAV_FULL = 4,
     POCKET_NAV_DUPLICATE_ROUTE = 5,
     POCKET_NAV_STALE_COMPONENT = 6,
-    POCKET_NAV_RESOURCE_FULL = 7
+    POCKET_NAV_RESOURCE_FULL = 7,
+    POCKET_NAV_BUSY = 8
 } PocketNavigationStatus;
 
 typedef enum {

@@ -45,3 +45,18 @@ with Success automatically removes it. Back from Success returns to Home.
 
 This fixture is a semantic migration proof, not the final visual rewrite of P4
 Coffee assets.
+
+
+## Mutation safety
+
+Navigation structural operations are non-reentrant. While push/pop/replace/reset
+is invoking lifecycle, resource-cancel or owner-cleanup callbacks, another
+structural navigation request returns `POCKET_NAV_BUSY`. This prevents a timer
+or input-capture cancellation callback from mutating the same page array while
+the current page is being torn down.
+
+Overlay ordering uses a 64-bit monotonic sequence combined with the semantic
+layer. Same-layer ordering therefore does not wrap after hundreds of
+present/dismiss cycles. Removing a lower focus-capturing overlay also repairs
+the saved focus chain of any upper overlay, so later dismissal cannot restore a
+focus token owned by an already-destroyed surface.
