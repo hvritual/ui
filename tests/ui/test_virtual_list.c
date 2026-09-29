@@ -25,7 +25,9 @@ static PocketComponentStatus model_bind(void *context,uint32_t index,uint64_t ke
     Fixture *f=context;f->binds++;
     PocketComponentStatus status=pocket_component_set_text_ref(components,component,key+f->revision*100000U);
     if(status!=POCKET_COMPONENT_OK)return status;
-    return pocket_component_set_resource_ref(components,component,1000U+index);
+    status=pocket_component_set_resource_ref(components,component,1000U+index);
+    if(status!=POCKET_COMPONENT_OK)return status;
+    return pocket_component_set_disabled(components,component,index==5U);
 }
 static PocketComponentHandle make_parent(PocketComponentRuntime *components,PocketComponentKind kind) {
     PocketComponentHandle parent={0};
@@ -60,6 +62,7 @@ int main(void) {
     CHECK(pocket_component_snapshot(&components,selected_component,&selected_snapshot)==POCKET_COMPONENT_OK);
     CHECK(pocket_component_snapshot(&components,focused_component,&focused_snapshot)==POCKET_COMPONENT_OK);
     CHECK(selected_snapshot.props.states&POCKET_STATE_SELECTED);
+    CHECK(selected_snapshot.props.disabled);
     CHECK(focused_snapshot.props.states&POCKET_STATE_FOCUSED);
 
     CHECK(pocket_virtual_collection_set_window(&collection,50,8)==POCKET_MODEL_OK);
@@ -72,12 +75,18 @@ int main(void) {
     CHECK(pocket_virtual_collection_component_for_key(&collection,1006,&selected_component)==POCKET_MODEL_OK);
     CHECK(pocket_component_snapshot(&components,selected_component,&selected_snapshot)==POCKET_COMPONENT_OK);
     CHECK(selected_snapshot.props.states&POCKET_STATE_SELECTED);
+    CHECK(selected_snapshot.props.disabled);
 
     drinks.revision=1;
     uint64_t before=stats.bind_calls;
     CHECK(pocket_virtual_collection_refresh(&collection,1)==POCKET_MODEL_OK);
     CHECK(pocket_virtual_collection_stats(&collection,&stats)==POCKET_MODEL_OK);
     CHECK(stats.bind_calls==before+stats.materialized_count&&stats.revision==1);
+    drinks.count=5;
+    CHECK(pocket_virtual_collection_refresh(&collection,2)==POCKET_MODEL_OK);
+    CHECK(pocket_virtual_collection_stats(&collection,&stats)==POCKET_MODEL_OK);
+    CHECK(stats.selected_key==0&&stats.focused_key==0);
+    drinks.count=100;
 
     Fixture logs={500,5000,0,0};PocketComponentHandle grid=make_parent(&components,POCKET_COMPONENT_GRID);
     CHECK(pocket_component_handle_valid(grid));

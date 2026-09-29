@@ -59,6 +59,11 @@ int main(void) {
     CHECK(pocket_reactive_binding_count(&reactive)==1);
     CHECK(pocket_reactive_unbind(&reactive,ids[4])==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_binding_count(&reactive)==0);
+    PocketReactiveSubscription replacement={0};
+    CHECK(pocket_reactive_bind_component(&reactive,value,slider,POCKET_BIND_VALUE,&replacement)==POCKET_REACTIVE_OK);
+    CHECK(replacement.slot==ids[0].slot&&replacement.generation!=ids[0].generation);
+    CHECK(pocket_reactive_unbind(&reactive,ids[0])==POCKET_REACTIVE_STALE_HANDLE);
+    CHECK(pocket_reactive_unbind(&reactive,replacement)==POCKET_REACTIVE_OK);
 
     pocket_reactive_dispose(&reactive);
     CHECK(pocket_component_destroy(&components,root)==POCKET_COMPONENT_OK);
