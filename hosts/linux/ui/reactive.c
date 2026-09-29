@@ -473,7 +473,12 @@ int pocket_reactive_has_pending(const PocketReactiveRuntime *runtime) {
     for(uint32_t i=0;i<impl->binding_capacity;i++) {
         const ReactiveBinding *binding=&impl->bindings[i];
         const ReactiveNode *source=binding->live?node_at_const(impl,binding->source):NULL;
-        if(binding->live&&(binding->initial||!source||source->version!=binding->source_version))
+        if(!binding->live) continue;
+        PocketComponentSnapshot snapshot;
+        if(!impl->components ||
+           pocket_component_snapshot(impl->components,binding->component,&snapshot)!=POCKET_COMPONENT_OK)
+            return 1;
+        if(binding->initial||!source||source->version!=binding->source_version)
             return 1;
     }
     return 0;
@@ -518,7 +523,8 @@ PocketReactiveStatus pocket_reactive_flush(PocketReactiveRuntime *runtime,uint32
                 continue;
             if(local.work_items>=budget){if(stats)*stats=local;return POCKET_REACTIVE_BUDGET_EXHAUSTED;}
             if(++effect->runs_this_flush>REACTIVE_MAX_EFFECT_RUNS_PER_FLUSH) {
-                if(stats)*stats=local;return POCKET_REACTIVE_CYCLE;
+                if(stats) *stats=local;
+                return POCKET_REACTIVE_CYCLE;
             }
             PocketReactiveValue values[POCKET_REACTIVE_MAX_DEPS];
             PocketReactiveStatus gathered=gather_values(impl,effect->deps,effect->dep_count,values);
@@ -554,7 +560,8 @@ PocketReactiveStatus pocket_reactive_flush(PocketReactiveRuntime *runtime,uint32
             local.work_items++;local.binding_updates++;progress=1;
         }
         if(!progress&&pocket_reactive_has_pending(runtime)) {
-            if(stats)*stats=local;return POCKET_REACTIVE_CYCLE;
+            if(stats) *stats=local;
+            return POCKET_REACTIVE_CYCLE;
         }
     }
     local.mutation_serial=impl->mutation_serial;

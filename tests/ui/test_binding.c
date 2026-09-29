@@ -55,7 +55,7 @@ int main(void) {
 
     CHECK(pocket_component_destroy(&components,button)==POCKET_COMPONENT_OK);
     CHECK(pocket_reactive_set(&reactive,text,pocket_value_u64(300))==POCKET_REACTIVE_OK);
-    CHECK(pocket_reactive_flush(&reactive,0,&stats)==POCKET_REACTIVE_OK&&stats.binding_cleanups>=1);
+    CHECK(pocket_reactive_flush(&reactive,0,&stats)==POCKET_REACTIVE_OK&&stats.binding_cleanups==4);
     CHECK(pocket_reactive_binding_count(&reactive)==1);
     CHECK(pocket_reactive_unbind(&reactive,ids[4])==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_binding_count(&reactive)==0);
