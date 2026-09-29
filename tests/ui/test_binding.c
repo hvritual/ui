@@ -29,7 +29,7 @@ int main(void) {
     CHECK(pocket_reactive_signal(&reactive,pocket_value_bool(0),&disabled)==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_signal(&reactive,pocket_value_i64(25),&value)==POCKET_REACTIVE_OK);
 
-    uint32_t ids[5];
+    PocketReactiveSubscription ids[5];
     CHECK(pocket_reactive_bind_component(&reactive,text,button,POCKET_BIND_TEXT_REF,&ids[0])==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_bind_component(&reactive,style,button,POCKET_BIND_STYLE_REF,&ids[1])==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_bind_component(&reactive,visible,button,POCKET_BIND_VISIBLE,&ids[2])==POCKET_REACTIVE_OK);

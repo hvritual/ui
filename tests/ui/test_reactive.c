@@ -36,7 +36,7 @@ int main(void) {
     CHECK(pocket_reactive_signal(&rt,pocket_value_i64(2),&b)==POCKET_REACTIVE_OK);
     PocketReactiveHandle sum_deps[]={a,b};
     CHECK(pocket_reactive_computed(&rt,POCKET_VALUE_I64,sum_deps,2,sum_compute,NULL,&total)==POCKET_REACTIVE_OK);
-    EffectTrace trace={0};uint32_t effect_id=0;
+    EffectTrace trace={0};PocketReactiveSubscription effect_id={0};
     CHECK(pocket_reactive_effect(&rt,&total,1,trace_effect,&trace,&effect_id)==POCKET_REACTIVE_OK);
     PocketReactiveFlushStats stats;
     CHECK(pocket_reactive_flush(&rt,0,&stats)==POCKET_REACTIVE_OK);
@@ -81,6 +81,7 @@ int main(void) {
     CHECK(pocket_external_state_ingest(&external,999,pocket_value_i64(1))==POCKET_REACTIVE_STALE_HANDLE);
 
     CHECK(pocket_reactive_remove_effect(&rt,effect_id)==POCKET_REACTIVE_OK);
+    CHECK(pocket_reactive_remove_effect(&rt,effect_id)==POCKET_REACTIVE_STALE_HANDLE);
     CHECK(pocket_reactive_destroy(&rt,doubled)==POCKET_REACTIVE_OK);
     CHECK(pocket_reactive_destroy(&rt,total)==POCKET_REACTIVE_OK);
     pocket_reactive_dispose(&rt);
