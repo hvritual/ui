@@ -2,6 +2,7 @@
 #include "framework.h"
 #include "display/fbdev.h"
 #include "input/live.h"
+#include "application/replay.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -72,20 +73,21 @@ static int discover_input(InputLive *input, const char *directory,
 }
 
 int main(int argc,char **argv){
-    const char *profile=NULL,*assets=NULL,*output=NULL,*fbpath="/dev/fb0",*inputdir="/dev/input",*media=NULL,*touch_name=NULL;
-    int headless=0,physical=0,seconds=60,items=8,rawmin=0,rawmax=0,slots=0,swap=0,ix=0,iy=0;
-    unsigned touch_fields=0, discovery_attempts=0;
+    const char *profile=NULL,*assets=NULL,*output=NULL,*fbpath="/dev/fb0",*inputdir="/dev/input",*media=NULL,*touch_name=NULL,*replay=NULL;
+    int headless=0,physical=0,seconds=60,items=0,rawmin=0,rawmax=0,slots=0,swap=0,ix=0,iy=0;
+    unsigned touch_fields=0, discovery_attempts=0,replay_samples=0;
     int input_wait_ms=3000;
     for(int i=1;i<argc;i++){
         const char *key=argv[i];if(!strcmp(key,"--headless")){headless=1;continue;}if(!strcmp(key,"--physical")){physical=1;continue;}
         if(i+1>=argc){fprintf(stderr,"missing value: %s\n",key);return 2;}const char *v=argv[++i];
         if(!strcmp(key,"--profile"))profile=v;else if(!strcmp(key,"--asset-root"))assets=v;
+        else if(!strcmp(key,"--replay-input"))replay=v;
         else if(!strcmp(key,"--output"))output=v;else if(!strcmp(key,"--fbdev"))fbpath=v;
         else if(!strcmp(key,"--input-dir"))inputdir=v;else if(!strcmp(key,"--media-store"))media=v;
         else if(!strcmp(key,"--touch-name")){touch_name=v;touch_fields|=1;}
         else if(!strcmp(key,"--input-wait-ms")){if(!number(v,0,10000,&input_wait_ms))return 2;}
         else if(!strcmp(key,"--seconds")){if(!number(v,1,86400,&seconds))return 2;}
-        else if(!strcmp(key,"--items")){if(!number(v,8,100,&items)||(items!=8&&items!=100))return 2;}
+        else if(!strcmp(key,"--items")){if(!number(v,0,4096,&items))return 2;}
         else if(!strcmp(key,"--raw-min")){if(!number(v,-65536,65536,&rawmin))return 2;touch_fields|=2;}
         else if(!strcmp(key,"--raw-max")){if(!number(v,-65536,65536,&rawmax))return 2;touch_fields|=4;}
         else if(!strcmp(key,"--slots")){if(!number(v,1,32,&slots))return 2;touch_fields|=8;}
@@ -99,6 +101,7 @@ int main(int argc,char **argv){
         fprintf(stderr,"usage: ui-framework --profile imx6ul-1024x600|imx6ul-1024x800 --asset-root DIR --output NEWDIR (--headless | --physical)\n");return 2;
     }
     unsigned h=!strcmp(profile,"imx6ul-1024x600")?600U:800U;
+    if(replay&&!headless){fprintf(stderr,"replay input is headless only\n");return 2;}
     if(headless==physical){fprintf(stderr,"exactly one of --headless or --physical is required\n");return 2;}
     if(!headless&&h==800&&((touch_fields&113U)!=113U||!touch_name||!strcmp(touch_name,"auto"))){fprintf(stderr,"800 target requires its own explicit verified touch configuration\n");return 2;}
     if((touch_fields&6U) && ((touch_fields&6U)!=6U || rawmin>=rawmax))return 2;
@@ -108,7 +111,7 @@ int main(int argc,char **argv){
     fprintf(trace,"sample_ns,input_event_ns,guest_turns,scene_uploads,presents,page,modal,progress,nodes,pool,first,selected,locale,theme,scroll_x,dragging,settling,present_scroll_x,present_dragging,present_settling,present_complete_ns,update_duration_ns,render_duration_ns,present_duration_ns\n");
     PocketFramework *r=calloc(1,sizeof(*r));if(!r){fclose(trace);return 1;}
     FbDevice fb={0};InputLive input={0};int ok=0,unblank_errno=0,pending_input_wait=0;const char *failure="INITIALIZATION";
-    uint64_t start=0,now=0,next_reconnect=0;struct rusage before={0},after={0};CoffeeAppStats stats={0};
+    uint64_t start=0,now=0,next_reconnect=0;struct rusage before={0},after={0};PocketApplicationStats stats={0};
     if(getrusage(RUSAGE_SELF,&before)){failure="USAGE_START";goto done;}
     if(!host_monotonic_ns(&start))goto done;
     now=start;
@@ -139,14 +142,20 @@ int main(int argc,char **argv){
     HostClock clock;host_clock_start(&clock,start);
     if(!pocket_framework_tick(r,start,1)){failure=r->error;goto done;}
     char snapshot[4096];snprintf(snapshot,sizeof(snapshot),"%s/first.ppm",output);
-    if(!pocket_framework_snapshot(r,snapshot)){failure="FIRST_SNAPSHOT";goto done;}
+    if(pocket_framework_can_snapshot(r)){
+        if(!pocket_framework_snapshot(r,snapshot)){failure="FIRST_SNAPSHOT";goto done;}
+    }else fprintf(stderr,"FRAMEWORK_SNAPSHOT_SUPPRESSED text_input_active\n");
 #ifdef POCKET_TEST_SYNTHETIC_IO
     const char *io_mode="synthetic-io";
 #else
     const char *io_mode=headless?"headless":"physical-fbdev";
 #endif
     fprintf(stderr,"FRAMEWORK_FIRST_PRESENT profile=%s mode=%s commit=%s\n",profile,io_mode,POCKET_BUILD_COMMIT);
-    while(!stopping){
+    if(replay){
+        if(!pocket_framework_replay(r,replay,start,&replay_samples)){failure="REPLAY_REJECTED";goto done;}
+        now=r->clock_ns;
+    }
+    while(!replay&&!stopping){
         if(!host_monotonic_ns(&now)){failure="CLOCK";goto done;}
         if(now-start>=(uint64_t)seconds*1000000000ULL)break;
         if(!headless){
@@ -167,7 +176,7 @@ int main(int argc,char **argv){
         int due=host_clock_due(&clock,now);if(due<0){failure="CLOCK_REVERSED";goto done;}
         for(int j=0;j<due;j++)if(!pocket_framework_tick(r,now,0)){failure=r->error;goto done;}
         if(due){
-            if(!coffee_app_stats(&r->app,&stats)){failure="STATS";goto done;}
+            if(!pocket_application_stats(&r->app,&stats)){failure="STATS";goto done;}
             if(fprintf(trace,"%llu,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%d,%u,%u,%d,%u,%u,%llu,%llu,%llu,%llu\n",(unsigned long long)now,(unsigned long long)r->event_ns,
                 (unsigned long long)r->ticks,(unsigned long long)r->engine.scene_uploads,(unsigned long long)r->presents,
                 stats.page,stats.modal,stats.progress,stats.nodes,stats.pool,stats.first,stats.selected,stats.locale,stats.theme,
@@ -188,9 +197,9 @@ int main(int argc,char **argv){
     if(pocket_framework_can_snapshot(r)){
         if(!pocket_framework_snapshot(r,snapshot)){failure="LAST_SNAPSHOT";goto done;}
     }else fprintf(stderr,"FRAMEWORK_SNAPSHOT_SUPPRESSED text_input_active\n");
-    (void)coffee_app_stats(&r->app,&stats);ok=1;failure=NULL;
+    (void)pocket_application_stats(&r->app,&stats);ok=1;failure=NULL;
 done:
-    if(r->opened){(void)coffee_app_stats(&r->app,&stats);if(!pocket_framework_close(r)){ok=0;failure="ENGINE_CLOSE";}}
+    if(r->opened){(void)pocket_application_stats(&r->app,&stats);if(!pocket_framework_close(r)){ok=0;failure="ENGINE_CLOSE";}}
     input_live_close(&input);if(!fbdev_close(&fb)){ok=0;failure="DISPLAY_CLOSE";}
     if(input.cleanup_errno){ok=0;failure="INPUT_CLOSE";}
     if(fclose(trace)){ok=0;failure="TRACE_CLOSE";}
@@ -208,6 +217,8 @@ done:
         fprintf(report,"\"schema\":1,\"commit\":\"%s\",\"profile\":\"%s\",\"ok\":%s,\"physical_io\":%s,\"visual_validated\":false,\"business_commands\":false,\"error\":",
           POCKET_BUILD_COMMIT,profile,ok?"true":"false",physical_io?"true":"false");
         if(failure)fprintf(report,"\"%s\"",failure);else fputs("null",report);
+        fprintf(report,",\"synthetic_input\":%s,\"replay_samples\":%u,\"application_page\":%u,\"application_selection\":%u",
+                replay?"true":"false",replay_samples,stats.page,stats.selected);
         fprintf(report,",\"text_input_open\":%s,\"text_input_opens\":%u,\"text_input_confirms\":%u,\"text_input_cancels\":%u",
                 stats.editor_active?"true":"false",stats.editor_opens,stats.editor_confirms,stats.editor_cancels);
         fprintf(report,",\"scroll_x\":%d,\"scroll_dragging\":%u,\"scroll_settling\":%u,\"motion_presents\":%llu,\"layout_runs\":%llu",

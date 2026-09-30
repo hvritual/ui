@@ -34,7 +34,7 @@ class FrameworkGuardTests(unittest.TestCase):
             return result.stdout.decode()
         fake.run = run
 
-        def compile_binary(mode, test=False, sanitize=False, static=False, loop=False):
+        def compile_binary(mode, test=False, sanitize=False, static=False, loop=False, application_test=False, reference=False):
             (self.root/'out').mkdir(exist_ok=True)
             fake.run(self.command, self.root/'out/build.log')
             return self.root/'out/unit'
@@ -53,6 +53,8 @@ class FrameworkGuardTests(unittest.TestCase):
         self.assertFalse(record['application_separation'])
         self.assertTrue(record['development'])
         self.assertEqual(record['scope'], 'link-input-ownership-only')
+        self.assertEqual(record['consumer'], 'runtime')
+        self.assertTrue(record['runtime_input_policy_passed'])
 
     def test_wrapper_restores_runner_and_never_compiles_rejected_source(self):
         fake = types.ModuleType('framework')

@@ -3,11 +3,11 @@
 #include "engine/scene_runtime.h"
 #include "input/interaction_bridge.h"
 #include "media/store.h"
-#include "application/application.h"
+#include "apps/coffee-framework/app.h"
 #include <stdio.h>
 
 typedef struct {
-    PocketApplication app;
+    CoffeeApp app;
     PocketSceneEngine engine;
     PocketInputInteractionBridge input;
     PocketScene scene;
@@ -25,11 +25,11 @@ typedef struct {
     int opened, valid_frame, frame_capturable;
     const char *error;
 } PocketFramework;
-/* The supplied application directory owns application.js, catalog.json and
- * resources. The executable contains no default application's implementation. */
 int pocket_framework_open(PocketFramework *runtime,unsigned height,unsigned items,
-                          const char *application_root,const char *media_root,
+                          const char *assets,const char *media_root,
                           const PocketDisplayBackend *display);
+/* Input timestamps are preserved separately; dispatch clock never goes backwards.
+ * The same function is used by the live driver and deterministic test replay. */
 int pocket_framework_input(void *runtime,const InputFrame *frame,uint64_t event_ns);
 void pocket_framework_disconnect(PocketFramework *runtime,uint64_t now_ns);
 int pocket_framework_tick(PocketFramework *runtime,uint64_t now_ns,int force_present);

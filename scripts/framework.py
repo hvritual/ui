@@ -26,24 +26,8 @@ def state():
             'source_files':{n:sha(ROOT/n) for n in files if (ROOT/n).is_file()},'development':development}
 
 def assets():
-    src=ROOT/'out/coffee/assets';d=OUT/'assets';d.mkdir(parents=True,exist_ok=True)
-    report=json.loads((ROOT/'out/coffee/assets.json').read_text())
-    if report['font_source']['debug_only']:raise RuntimeError('debug font rejected')
-    for name in ('labels.atlas','builtin.rgba','alternate.rgba','Noto-LICENSE.txt','IMAGE-LICENSE.txt'):
-        shutil.copy2(src/name,d/name)
-    locales=json.loads((ROOT/'apps/coffee-demo/locales.json').read_text())
-    if list(locales)!=['zh-CN','en-US','de-DE','fr-FR','es-ES','pt-PT']:raise RuntimeError('locale ordering changed')
-    keys=['title','subtitle','demo','next','back','cancel','start','confirm','making','done','home','media'];catalogs=[]
-    for locale,labels in locales.items():
-        t={i+1:labels[k] for i,k in enumerate(keys)};t.update({13:locale,14:'Theme'})
-        t.update({100+i:name for i,name in enumerate(labels['names'])})
-        keyboard=json.loads((ROOT/'assets/locales/keyboard-ascii.json').read_text())
-        t.update({keyboard['label_ref_base']+i:label for i,label in enumerate(keyboard['labels'])})
-        t.update({keyboard['ascii_ref_base']+c:chr(c) for c in range(32,127)})
-        catalogs.append(t)
-    (d/'framework.js').write_text('const POCKET_TEXT_CATALOG='+json.dumps(catalogs,ensure_ascii=True,separators=(',',':'))+';\n'+(ROOT/'hosts/linux/engine/scene_guest.js').read_text())
-    write(OUT/'assets.json',{'p4_assets_manifest':sha(ROOT/'out/coffee/assets.json'),
-         'files':{p.name:sha(p) for p in sorted(d.iterdir()) if p.is_file()}})
+    from application_assets import build_assets
+    build_assets(ROOT,OUT)
 
 def runtime_check(mode):
     if os.environ.get('FRAMEWORK_DEVELOPMENT')=='1':return
@@ -51,27 +35,53 @@ def runtime_check(mode):
     rt=importlib.util.module_from_spec(spec);spec.loader.exec_module(rt)
     data,_,_=rt.config();rt.check_build(data,mode)
 
-def compile_binary(mode,test=False,sanitize=False,static=False,loop=False):
+def compile_binary(mode,test=False,sanitize=False,static=False,loop=False,application_test=False,reference=False):
+    if (application_test or reference) and (not test or loop):raise RuntimeError('invalid test build kind')
+    if application_test and reference:raise RuntimeError('test consumers must stay distinct')
     runtime_check(mode);state()
-    import text_input
+    import text_input,port
     unicode_dep=text_input.dependencies()
+    quickjs_source=port.checked_sources(port.configs())
+    quickjs=OUT/'include/quickjs';quickjs.mkdir(parents=True,exist_ok=True)
+    for header in quickjs_source.glob('*.h'):shutil.copy2(header,quickjs/header.name)
     d=OUT/mode;d.mkdir(parents=True,exist_ok=True)
     cc='gcc' if mode=='native' else 'arm-linux-gnueabihf-gcc'
     flags=[] if mode=='native' else ['-mcpu=cortex-a7','-mfpu=neon-vfpv4','-mfloat-abi=hard']
     target='x86_64-unknown-linux-gnu' if mode=='native' else 'armv7-unknown-linux-gnueabihf'
     rt=ROOT/'out/runtime'/mode;core=ROOT/'out/runtime/cargo'/target/'release/libpocketjs_symbian_core.a'
-    sources=[ROOT/'hosts/linux/ui'/f'{n}.c' for n in UI]+[ROOT/'apps/coffee-framework/app.c',ROOT/'apps/coffee-framework/pager.c',ROOT/'hosts/linux/engine/scene_runtime.c',ROOT/'hosts/linux/input/interaction_bridge.c',ROOT/'hosts/linux/framework.c',ROOT/'hosts/linux/input/state.c']
-    sources += [ROOT/'hosts/linux/text-input/session.c', ROOT/'hosts/linux/text-input/keyboard.c', unicode_dep/'utf8proc.c']
-    sources+=[ROOT/('tests/framework/test_live_loop.c' if loop else 'tests/framework/test_framework.c' if test else 'hosts/linux/framework_main.c')]
+    sources=[ROOT/'hosts/linux/ui'/f'{n}.c' for n in UI]
+    sources += [ROOT/'hosts/linux/engine/scene_runtime.c',ROOT/'hosts/linux/input/interaction_bridge.c',ROOT/'hosts/linux/input/state.c']
+    if reference:
+        sources += [ROOT/'apps/coffee-framework/app.c',ROOT/'apps/coffee-framework/pager.c',
+                    ROOT/'tests/application/reference/hosts/linux/framework.c']
+    else:
+        sources += [ROOT/'hosts/linux/framework.c',ROOT/'hosts/linux/application/program.c',
+                    ROOT/'hosts/linux/application/application.c',ROOT/'hosts/linux/application/replay.c']
+    sources += [ROOT/'hosts/linux/text-input/session.c',ROOT/'hosts/linux/text-input/keyboard.c',unicode_dep/'utf8proc.c']
+    if reference:entry='tests/application/reference/test_framework.c';name='native-reference-test'
+    elif application_test:entry='tests/application/test_applications.c';name='application-test'
+    elif loop:entry='tests/framework/test_live_loop.c';name='framework-loop'
+    elif test:entry='tests/framework/test_framework.c';name='framework-test'
+    else:entry='hosts/linux/framework_main.c';name='ui-framework'
+    sources.append(ROOT/entry)
     objects=[rt/n for n in ('host.o','platform.o','runtime-host.o','personality.o','libquickjs.a','media-store.o')]
-    if test:sources += [ROOT/'tests/text-input/test_keyboard_owner.c',ROOT/'tests/framework/test_keyboard.c',ROOT/'tests/framework/test_scene_wire.c',ROOT/'hosts/linux/display/presenter.c']
-    if not test:sources += [ROOT/'hosts/linux/input/live.c',ROOT/'hosts/linux/display/fbdev.c',ROOT/'hosts/linux/display/presenter.c']
-    binary=d/('framework-loop' if loop else 'framework-test' if test else 'ui-framework')
+    if test:
+        sources.append(ROOT/'hosts/linux/display/presenter.c')
+        if not application_test:
+            prefix='tests/application/reference' if reference else 'tests/framework'
+            sources += [ROOT/'tests/text-input/test_keyboard_owner.c',ROOT/prefix/'test_keyboard.c',ROOT/prefix/'test_scene_wire.c']
+    else:
+        sources += [ROOT/'hosts/linux/input/live.c',ROOT/'hosts/linux/display/fbdev.c',ROOT/'hosts/linux/display/presenter.c']
+    binary=d/name
     if sanitize:binary=binary.with_name(binary.name+'-sanitize')
     if static:binary=binary.with_name(binary.name+'-static')
     opts=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-g'] if sanitize else []
-    cmd=[cc,'-std=c11','-Wall','-Wextra','-Werror','-Wpedantic','-O2',*flags,*opts,
-       '-I.','-Ihosts/linux','-I'+str(unicode_dep),'-DUTF8PROC_STATIC','-DPOCKET_BUILD_COMMIT="'+git('rev-parse','HEAD')+'"',
+    # Keep the third-party header treatment used by the accepted program-core
+    # build, while our own C retains strict warnings and ownership checks.
+    includes=['-Itests/application/reference'] if reference else []
+    cmd=[cc,'-std=c11','-Wall','-Wextra','-Werror','-Wpedantic','-O2',*flags,*opts,*includes,
+       '-I.','-Ihosts/linux','-Iout/framework/include','-I'+str(unicode_dep),'-isystem'+str(quickjs),
+       '-DUTF8PROC_STATIC','-DPOCKET_BUILD_COMMIT="'+git('rev-parse','HEAD')+'"',
        '-Iout/runtime/include','-Iout/runtime/source-'+mode+'/engine/quickjs-c',*sources,*objects,core,
        *(['-static'] if static else []),'-Wl,--gc-sections','-lm','-ldl','-lpthread','-lrt','-o',binary]
     if loop:
@@ -136,6 +146,8 @@ def test(mode,sanitize=False):
             text=run([*runner(mode),loop,OUT/'assets',dest,str(height)],d/('loop-'+str(height)+'.log'))
             r=json.loads((dest/'report.json').read_text())
             if 'FRAMEWORK_LOOP_OK' not in text or r.get('synthetic') is not True or r['physical_io'] or not r['ok'] or r['page_mask']!=15 or r['completed']!=1 or r['disconnects']!=1 or r['reconnects']!=1 or r['syn_dropped']!=1:raise RuntimeError('production device loop gate failed')
+    from application_acceptance import test_applications
+    test_applications(mode,sanitize,d,sets[0])
     if before!=state():raise RuntimeError('source changed during test')
     record={**before,'mode':mode,'real_core':True,'physical_hardware':False,'sanitizer':sanitize,
        'run_dir':str(d.relative_to(OUT)),'test_binary_sha256':sha(binary),'assets_sha256':sha(OUT/'assets.json'),
@@ -167,8 +179,12 @@ def verify():
     if sanitized['test_binary_sha256']!=sha(OUT/'native/framework-test-sanitize') or sanitized['assets_sha256']!=sha(OUT/'assets.json'):raise RuntimeError('sanitizer binary/resource drift')
     for n,v in sanitized['logs'].items():
         if sha(OUT/sanitized['run_dir']/n)!=v:raise RuntimeError('sanitizer log evidence drift')
+    from application_acceptance import verify_applications
+    verify_applications(current)
     write(OUT/'verification.json',{'status':'passed',**current,'scope':'software-functional-only','physical_hardware':False,
-          'engine':'current-pocket-scene','image_count':42,'replay_count':6,'motion_pool_limit':12,'test_reports':{m:sha(OUT/m/'test.json') for m in ('native','arm')}})
+          'engine':'current-pocket-scene','image_count':42,'replay_count':6,'motion_pool_limit':12,
+          'application_separation':True,'application_verification_sha256':sha(OUT/'application-verification.json'),
+          'test_reports':{m:sha(OUT/m/'test.json') for m in ('native','arm')}})
     print('FRAMEWORK_VERIFY_OK physical_hardware=false')
 
 def sums(d):
@@ -180,21 +196,28 @@ def package():
     elf=run(['arm-linux-gnueabihf-readelf','-h','-A','-l','-d',binary],d/'elf.log')
     if 'ELF32' not in elf or 'Machine:                           ARM' not in elf or 'Tag_ABI_VFP_args: VFP registers' not in elf or 'INTERP' in elf or 'NEEDED' in elf:raise RuntimeError('ARM static ABI gate')
     symbols=run(['arm-linux-gnueabihf-nm',binary],d/'symbols.log')
-    if any(x in symbols for x in ('__wrap_','pocket_runtime_harness_','fake_fb')):raise RuntimeError('test symbol leak')
-    for name in ('pocket_framework_tick','pocket_interaction_pointer','pocket_reactive_flush','input_live_discover','fbdev_present','JS_Eval'):
+    if any(x in symbols for x in ('__wrap_','pocket_runtime_harness_','fake_fb','coffee_app_','coffee_pager_')):raise RuntimeError('test/application symbol leak')
+    for name in ('pocket_framework_tick','pocket_application_step','pocket_program_call','pocket_interaction_pointer','pocket_reactive_flush','input_live_discover','fbdev_present','JS_Eval'):
         if name not in symbols:raise RuntimeError('missing real chain: '+name)
     cli_checks(binary,'arm',d/'cli',static=True)
+    from application_acceptance import prove_same_binary
+    proof=prove_same_binary(binary,'arm',d/'applications',static=True)
+    write(OUT/'static-application-proof.json',proof)
     dest=OUT/'device/coffee-framework'
     if dest.exists():shutil.rmtree(dest)
     dest.mkdir(parents=True);shutil.copy2(binary,dest/'ui-framework');(dest/'ui-framework').chmod(0o755)
     shutil.copytree(OUT/'assets',dest/'assets');(dest/'assets/alternate.rgba').unlink()
+    shutil.copytree(OUT/'applications/control-panel',dest/'applications/control-panel')
+    (dest/'applications/control-panel/alternate.rgba').unlink()
     shutil.copy2(ROOT/'docs/framework-board.md',dest/'README.md')
+    shutil.copy2(ROOT/'docs/application-runtime.md',dest/'APPLICATIONS.md')
     shutil.copy2(ROOT/'scripts/device/run-framework.sh',dest/'run-framework.sh');(dest/'run-framework.sh').chmod(0o755)
     # Reuse the already signed/validated P4 installer and its public demo packages.
     old=ROOT/'out/coffee/device/coffee-demo'
     shutil.copy2(old/'mediactl',dest/'mediactl');(dest/'mediactl').chmod(0o755)
     shutil.copytree(old/'updates',dest/'updates')
     shutil.copy2(OUT/'verification.json',dest/'software-verification.json')
+    shutil.copy2(OUT/'static-application-proof.json',dest/'application-proof.json')
     shutil.copy2(ROOT/'out/text-input/deps/LICENSE.md',dest/'utf8proc-LICENSE.md')
     shutil.copy2(ROOT/'docs/ascii-keyboard.md',dest/'KEYBOARD.md')
     write(dest/'manifest.json',{'schema':1,'source_commit':git('rev-parse','HEAD'),'source_tree':git('rev-parse','HEAD^{tree}'),
@@ -202,9 +225,12 @@ def package():
        'engine':'current-pocket-scene','p4_package_manifest':sha(old/'manifest.json'),
        'software_verification_sha256':sha(dest/'software-verification.json'),'physical_hardware':False,
        'physical_gate':'pending independent 600 and 800 reports and human review',
-       'business_commands':False,'input_method':False,'ascii_keyboard':True,'keyboard_physical_verified':False,'source_font_included':False})
+       'business_commands':False,'input_method':False,'ascii_keyboard':True,'keyboard_physical_verified':False,'source_font_included':False,
+       'fixed_runtime':True,'application_format':'trusted-directory-v0','pui_admission':False,
+       'applications':['assets','applications/control-panel'],'application_proof_sha256':sha(dest/'application-proof.json')})
     for p in dest.rglob('*'):
         if p.suffix.lower() in ('.ttf','.otf','.ttc','.key','.pem') or 'private' in p.name.lower():raise RuntimeError('private/font asset in package')
+        if p.name=='framework.js':raise RuntimeError('private guest exposed as application asset')
     sums(dest);archive=OUT/'imx6ul-coffee-framework.tar.gz'
     with tarfile.open(archive,'w:gz') as t:t.add(dest,arcname='coffee-framework')
     write(OUT/'package.json',{'commit':git('rev-parse','HEAD'),'archive':archive.name,'sha256':sha(archive),'abi_log':str((d/'elf.log').relative_to(OUT)),
@@ -218,6 +244,8 @@ def package_check():
         digest,name=line.split('  ',1)
         if Path(name).is_absolute() or '..' in Path(name).parts or sha(dest/name)!=digest:raise RuntimeError('package member mismatch')
     if sha(dest/'ui-framework')!=m['static_binary_sha256']:raise RuntimeError('deployed ELF differs')
+    proof=json.loads((dest/'application-proof.json').read_text())
+    if proof['runtime_sha256']!=m['static_binary_sha256'] or not proof['same_binary_interactive_apps']:raise RuntimeError('deployed application proof mismatch')
     print('FRAMEWORK_PACKAGE_VERIFIED physical_hardware=false')
 
 def main():

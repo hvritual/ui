@@ -18,15 +18,11 @@ int pocket_framework_open(PocketFramework *r,unsigned h,unsigned items,const cha
     pocket_scene_engine_init(&r->engine,assets);
     if(pocket_scene_engine_api.open(&r->engine,&(PocketEngineOpenConfig){1024,h,1})!=POCKET_ENGINE_OK)
         return fail(r,"ENGINE_OPEN");
-    HostAsset source={0};
-    int loaded=host_asset_read(assets,"application.js",POCKET_PROGRAM_SOURCE_LIMIT,&source);
-    int opened=loaded&&pocket_application_open(&r->app,h,items,(const char *)source.data,source.length);
-    host_asset_free(&source);
-    if(!opened){
+    if(!coffee_app_init(&r->app,h,items)){
         (void)pocket_scene_engine_api.close(&r->engine);return fail(r,"APP_OPEN");
     }
-    if(!pocket_input_interaction_bridge_init(&r->input,pocket_application_interaction(&r->app))){
-        pocket_application_close(&r->app);(void)pocket_scene_engine_api.close(&r->engine);return fail(r,"INPUT_BRIDGE");
+    if(!pocket_input_interaction_bridge_init(&r->input,coffee_app_interaction(&r->app))){
+        coffee_app_dispose(&r->app);(void)pocket_scene_engine_api.close(&r->engine);return fail(r,"INPUT_BRIDGE");
     }
     r->media.root=media_root;r->opened=1;return 1;
 }
@@ -34,11 +30,10 @@ int pocket_framework_input(void *p,const InputFrame *frame,uint64_t ns){
     PocketFramework *r=p;if(!r||!r->opened||r->error)return 0;
     r->event_ns=ns;
     if(ns<r->clock_ns){ns=r->clock_ns;r->timestamp_clamps++;}
-    if(!pocket_application_prepare_input(&r->app))return fail(r,"INPUT_APP_EVENTS");
     if(!pocket_input_interaction_bridge_frame(&r->input,frame,ns))return fail(r,"INPUT_FRAME_REJECTED");
     r->clock_ns=ns;
     /* Process completed semantic actions after dispatch, never in callbacks. */
-    if(!pocket_application_step(&r->app,ns/1000000ULL))return fail(r,"INPUT_APP_STEP");
+    if(!coffee_app_step(&r->app,ns/1000000ULL))return fail(r,"INPUT_APP_STEP");
     return 1;
 }
 void pocket_framework_disconnect(PocketFramework *r,uint64_t ns){
@@ -53,11 +48,13 @@ int pocket_framework_tick(PocketFramework *r,uint64_t ns,int force){
     r->clock_ns=ns;
     uint64_t begin,updated,rendered,completed;
     if(!host_monotonic_ns(&begin))return fail(r,"MEASURE_CLOCK");
-    if(!pocket_application_step(&r->app,ns/1000000ULL))return fail(r,"APP_STEP");
-    /* Preserve every input/application/Core tick and the accepted presentation cadence. */
+    if(!coffee_app_step(&r->app,ns/1000000ULL))return fail(r,"APP_STEP");
+    /* Keep input/app/Core ticks at 60 Hz. Project and transfer only the newest
+     * scene for a presentation opportunity, not the intermediate skipped tick.
+     * Media admission is evaluated on this same fresh scene, never stale ready. */
     const int paint_due=force||!r->valid_frame||((r->ticks+1U)%2U==0);
     if(paint_due){
-    if(!pocket_application_scene(&r->app,&r->scene))return fail(r,"SCENE_PROJECT");
+    if(!coffee_app_scene(&r->app,&r->scene))return fail(r,"SCENE_PROJECT");
     PocketEngineResource resource;
     if(pocket_scene_engine_api.resource_create(&r->engine,POCKET_SCENE_RESOURCE,&r->scene,sizeof(r->scene),&resource)!=POCKET_ENGINE_OK||
        pocket_scene_engine_api.resource_release(&r->engine,resource)!=POCKET_ENGINE_OK)return fail(r,"SCENE_UPLOAD");
@@ -69,8 +66,7 @@ int pocket_framework_tick(PocketFramework *r,uint64_t ns,int force){
     uint32_t next;
     if(pocket_scene_engine_api.tick(&r->engine,ns/1000000ULL,&next)!=POCKET_ENGINE_OK)return fail(r,"ENGINE_TICK");
     r->ticks++;
-    PocketApplicationStats s;if(!pocket_application_stats(&r->app,&s))return fail(r,"APP_STATS");
-    if(s.page<1||s.page>32)return fail(r,"APP_ROUTE_RANGE");
+    CoffeeAppStats s;if(!coffee_app_stats(&r->app,&s))return fail(r,"APP_STATS");
     r->page_mask|=1U<<(s.page-1U);if(s.modal)r->modal_seen=1;
     if(!paint_due)return 1;
     if(!host_monotonic_ns(&updated))return fail(r,"MEASURE_CLOCK");
@@ -85,7 +81,7 @@ int pocket_framework_tick(PocketFramework *r,uint64_t ns,int force){
     r->present_complete_ns=completed;
     r->presented_scroll_x=s.scroll_x;r->presented_dragging=s.scroll_dragging;r->presented_settling=s.scroll_settling;
     if(s.scroll_dragging||s.scroll_settling)r->motion_presents++;
-    r->frame_capturable=pocket_application_snapshot_allowed(&r->app);
+    r->frame_capturable=coffee_app_snapshot_allowed(&r->app);
     r->valid_frame=1;r->presents++;r->bytes_written+=r->frame.length;
     /* Diagnostic input-to-CPU observation only; never photon/scanout latency. */
     uint64_t end;
@@ -93,7 +89,7 @@ int pocket_framework_tick(PocketFramework *r,uint64_t ns,int force){
     return 1;
 }
 int pocket_framework_can_snapshot(const PocketFramework *r){
-    return r&&r->opened&&r->valid_frame&&r->frame_capturable&&pocket_application_snapshot_allowed(&r->app);
+    return r&&r->opened&&r->valid_frame&&r->frame_capturable&&coffee_app_snapshot_allowed(&r->app);
 }
 int pocket_framework_snapshot(const PocketFramework *r,const char *path){
     if(!path||!pocket_framework_can_snapshot(r))return 0;
@@ -114,6 +110,6 @@ int pocket_framework_snapshot(const PocketFramework *r,const char *path){
 int pocket_framework_close(PocketFramework *r){
     if(!r||!r->opened)return 1;
     pocket_framework_disconnect(r,r->clock_ns);
-    pocket_application_close(&r->app);r->opened=0;
+    coffee_app_dispose(&r->app);r->opened=0;
     return pocket_scene_engine_api.close(&r->engine)==POCKET_ENGINE_OK;
 }

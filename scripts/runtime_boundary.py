@@ -95,6 +95,7 @@ def parse_command(command: list[str], root: Path, policy: dict, consumer: str) -
     if consumer not in CONSUMERS:
         raise BoundaryError('unknown build consumer')
     inputs, preprocessor = [], [command[0], '-MM']
+    system_includes = []
     output = None
     expect = None
     for arg in command[1:]:
@@ -121,17 +122,29 @@ def parse_command(command: list[str], root: Path, policy: dict, consumer: str) -
                 raise BoundaryError('duplicate compiler input: ' + name)
             inputs.append(name)
             continue
-        if arg.startswith('-I'):
-            if len(arg) == 2:
-                raise BoundaryError('use a single explicit -Ipath argument')
-            directory = Path(arg[2:])
+        if arg.startswith(('-I', '-isystem')):
+            prefix = '-isystem' if arg.startswith('-isystem') else '-I'
+            if len(arg) == len(prefix):
+                raise BoundaryError('use a single explicit include-path argument')
+            directory = Path(arg[len(prefix):])
             if not directory.is_absolute():
                 directory = root / directory
             try:
-                directory.resolve(strict=True).relative_to(root.resolve())
+                local_dir = directory.resolve(strict=True).relative_to(root.resolve()).as_posix()
             except (OSError, ValueError) as exc:
                 raise BoundaryError('include directory escapes checkout') from exc
-            preprocessor.append(arg)
+            if not directory.is_dir():
+                raise BoundaryError('include path is not a directory')
+            # Native compilation treats pinned dependency headers as system
+            # headers. For the ownership audit, put the same paths after every
+            # ordinary -I path, preserving lookup order while making -MM expose
+            # their transitive application/test imports instead of hiding them.
+            if prefix == '-isystem' and not local_dir.startswith('out/'):
+                raise BoundaryError('system include must be a locked output dependency')
+            if prefix == '-isystem':
+                system_includes.append('-I'+arg[len(prefix):])
+            else:
+                preprocessor.append(arg)
         elif arg.startswith(('-D', '-U', '-std=', '-mcpu=', '-mfpu=', '-mfloat-abi=')):
             preprocessor.append(arg)
         elif arg in ('-Wall', '-Wextra', '-Werror', '-Wpedantic', '-O2', '-g', '-fno-omit-frame-pointer', '-static', '-Wl,--gc-sections', '-lm', '-ldl', '-lpthread', '-lrt', '-fsanitize=address,undefined'):
@@ -144,7 +157,7 @@ def parse_command(command: list[str], root: Path, policy: dict, consumer: str) -
         raise BoundaryError('incomplete compiler/link invocation')
     if output in inputs or not output.startswith('out/'):
         raise BoundaryError('compiler output must be separate under out/')
-    return inputs, preprocessor, output
+    return inputs, preprocessor+system_includes, output
 
 
 def import_admit(owner: dict, dependency: str, policy: dict, consumer: str) -> None:
