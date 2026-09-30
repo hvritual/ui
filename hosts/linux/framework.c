@@ -46,6 +46,8 @@ int pocket_framework_tick(PocketFramework *r,uint64_t ns,int force){
     if(!r||!r->opened||r->error)return 0;
     if(ns<r->clock_ns)return fail(r,"CLOCK_REVERSED");
     r->clock_ns=ns;
+    uint64_t begin,updated,rendered,completed;
+    if(!host_monotonic_ns(&begin))return fail(r,"MEASURE_CLOCK");
     if(!coffee_app_step(&r->app,ns/1000000ULL)||!coffee_app_scene(&r->app,&r->scene))return fail(r,"SCENE_PROJECT");
     PocketEngineResource resource;
     if(pocket_scene_engine_api.resource_create(&r->engine,POCKET_SCENE_RESOURCE,&r->scene,sizeof(r->scene),&resource)!=POCKET_ENGINE_OK||
@@ -60,9 +62,18 @@ int pocket_framework_tick(PocketFramework *r,uint64_t ns,int force){
     CoffeeAppStats s;if(!coffee_app_stats(&r->app,&s))return fail(r,"APP_STATS");
     r->page_mask|=1U<<(s.page-1U);if(s.modal)r->modal_seen=1;
     if(!force&&r->valid_frame&&(r->ticks%2))return 1;
+    if(!host_monotonic_ns(&updated))return fail(r,"MEASURE_CLOCK");
     if(pocket_scene_engine_api.render(&r->engine,&r->frame)!=POCKET_ENGINE_OK)return fail(r,"ENGINE_RENDER");
+    if(!host_monotonic_ns(&rendered))return fail(r,"MEASURE_CLOCK");
     if(!force&&r->valid_frame&&!r->frame.damage_valid){r->clean_skips++;return 1;}
     if(r->display.present&&r->display.present(r->display.context,&r->frame)!=POCKET_ENGINE_OK)return fail(r,"DISPLAY_PRESENT");
+    if(!host_monotonic_ns(&completed))return fail(r,"MEASURE_CLOCK");
+    r->update_duration_ns=updated>=begin?updated-begin:0;
+    r->render_duration_ns=rendered>=updated?rendered-updated:0;
+    r->present_duration_ns=completed>=rendered?completed-rendered:0;
+    r->present_complete_ns=completed;
+    r->presented_scroll_x=s.scroll_x;r->presented_dragging=s.scroll_dragging;r->presented_settling=s.scroll_settling;
+    if(s.scroll_dragging||s.scroll_settling)r->motion_presents++;
     r->valid_frame=1;r->presents++;r->bytes_written+=r->frame.length;
     /* Diagnostic input-to-CPU observation only; never photon/scanout latency. */
     uint64_t end;

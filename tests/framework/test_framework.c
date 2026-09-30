@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "hosts/linux/framework.h"
+#include "apps/coffee-framework/pager.h"
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -26,7 +27,7 @@ static int contact(Driver *d,int down,int x,int y){
     d->ms+=20;CHECK(pocket_framework_input(d->r,&f,d->ms*1000000ULL));CHECK(step(d,1,1));return 1;
 }
 static int tap(Driver *d,int x,int y){CHECK(contact(d,1,x,y));CHECK(contact(d,0,x,y));return 1;}
-static int state(Driver *d,unsigned page,unsigned modal){CoffeeAppStats s;CHECK(coffee_app_stats(&d->r->app,&s));CHECK(s.page==page&&s.modal==modal);CHECK(s.pool<=6&&s.peak_pool<=6&&s.nodes<=64);return 1;}
+static int state(Driver *d,unsigned page,unsigned modal){CoffeeAppStats s;CHECK(coffee_app_stats(&d->r->app,&s));CHECK(s.page==page&&s.modal==modal);CHECK(s.pool<=COFFEE_PAGE_POOL&&s.peak_pool<=COFFEE_PAGE_POOL&&s.nodes<=64);return 1;}
 static int shot(Driver *d,const char *name){char path[4096];CHECK(snprintf(path,sizeof(path),"%s/%s-%u.ppm",d->out,name,d->height)<(int)sizeof(path));CHECK(pocket_framework_snapshot(d->r,path));CHECK(mark(d,name));return 1;}
 static int begin(Driver *d,const char *assets,const char *out,unsigned height,unsigned items,const char *store){
     memset(d,0,sizeof(*d));d->r=calloc(1,sizeof(*d->r));CHECK(d->r);d->ms=1000;d->height=height;d->out=out;
@@ -110,7 +111,7 @@ static int flow(const char *assets,const char *out,unsigned height,int wrong_pix
 
     /* Drag across rows must not be reinterpreted as a drink selection. */
     CHECK(contact(&d,1,100,200));CHECK(contact(&d,1,100,(int)height-160));CHECK(contact(&d,0,100,(int)height-160));CHECK(state(&d,1,0));
-    CHECK(tap(&d,870,(int)height-36));CoffeeAppStats s;CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==6&&s.pool==6);CHECK(shot(&d,"last-page"));
+    CHECK(tap(&d,870,(int)height-36));CoffeeAppStats s;CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==6&&s.pool==8);CHECK(shot(&d,"last-page"));
     CHECK(tap(&d,100,200));CHECK(state(&d,2,0));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.selected==6);CHECK(shot(&d,"detail"));
     CHECK(tap(&d,330,(int)height-112));CHECK(state(&d,1,0));
     CHECK(tap(&d,870,(int)height-36));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==0);
@@ -159,18 +160,84 @@ static int flow(const char *assets,const char *out,unsigned height,int wrong_pix
         CHECK(tap(&d,100,200));CHECK(tap(&d,640,(int)height-112));CHECK(tap(&d,640,364));CHECK(state(&d,3,0));
         CHECK(step(&d,250,1));CHECK(tap(&d,500,(int)height-91));CHECK(state(&d,1,0));
     }
-    CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.nodes==26&&s.pool==6&&s.completed==1);
+    CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.nodes==32&&s.pool==8&&s.completed==1);
     CHECK(d.r->page_mask==15&&d.r->modal_seen==1);CHECK(mark(&d,"lifecycle-24"));CHECK(raw_a_flow(&d));CHECK(end(&d));return 1;
 }
 static int stress(const char *assets,const char *out,unsigned height){
     Driver d;CHECK(begin(&d,assets,out,height,100,NULL));
     for(unsigned i=0;i<17;i++){
-        CoffeeAppStats s;CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==(i*6)%102&&s.nodes==26&&s.pool==6);CHECK(mark(&d,"virtual-window"));
+        CoffeeAppStats s;CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==(i*6)%102&&s.nodes==44&&s.pool==12);CHECK(mark(&d,"virtual-window"));
         CHECK(tap(&d,870,(int)height-36));
     }
     CoffeeAppStats s;CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==0&&s.recycled>=94);
     CHECK(contact(&d,1,800,200));CHECK(contact(&d,1,620,200));CHECK(contact(&d,1,450,200));CHECK(contact(&d,0,450,200));
-    CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==6&&s.page==1);CHECK(mark(&d,"scroll-arbitration"));CHECK(end(&d));return 1;
+    CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.scroll_x>0&&s.scroll_settling&&s.page==1);CHECK(step(&d,COFFEE_SNAP_MS,1));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==6&&s.page==1);CHECK(mark(&d,"scroll-arbitration"));CHECK(end(&d));return 1;
+}
+static int scroll_flow(const char *assets,const char *out,unsigned height){
+    Driver d;char dir[4096];CHECK(snprintf(dir,sizeof(dir),"%s/scroll-%u",out,height)<(int)sizeof(dir));
+    CHECK(mkdir(dir,0700)==0);CHECK(begin(&d,assets,dir,height,100,NULL));
+    CoffeeAppStats s;CHECK(coffee_app_stats(&d.r->app,&s));
+    uint64_t layouts=s.layout_runs,uploads=d.r->engine.scene_uploads;
+    for(unsigned i=0;i<60;i++)CHECK(step(&d,17,0));
+    CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.layout_runs==layouts&&d.r->engine.scene_uploads==uploads);
+    size_t header_bytes=96*d.r->frame.stride,footer_bytes=60*d.r->frame.stride;
+    uint8_t *header=malloc(header_bytes),*footer=malloc(footer_bytes);CHECK(header&&footer);
+    memcpy(header,d.r->frame.pixels,header_bytes);
+    memcpy(footer,d.r->frame.pixels+(height-60)*d.r->frame.stride,footer_bytes);
+    uint64_t start=hash_frame(&d.r->frame);
+    CHECK(contact(&d,1,800,200));CHECK(contact(&d,1,760,200));
+    CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.scroll_dragging&&s.scroll_x==40&&s.first==0);
+    CHECK(hash_frame(&d.r->frame)!=start);CHECK(shot(&d,"drag-40"));
+    CHECK(contact(&d,1,600,200));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.scroll_x==200&&s.first==0);
+    CHECK(!memcmp(header,d.r->frame.pixels,header_bytes));
+    CHECK(!memcmp(footer,d.r->frame.pixels+(height-60)*d.r->frame.stride,footer_bytes));
+    for(unsigned y=105;y<height-65;y++)for(unsigned x=0;x<32;x++){
+        const uint8_t *l=d.r->frame.pixels+y*d.r->frame.stride+x*4;
+        const uint8_t *r=d.r->frame.pixels+y*d.r->frame.stride+(1023-x)*4;
+        CHECK(!memcmp(l,header,3)&&!memcmp(r,header,3));
+    }
+    CHECK(shot(&d,"drag-neighbor"));
+    /* Neighbor card exists before release; it is clipped inside the viewport. */
+    int neighbor=0;
+    for(unsigned i=0;i<d.r->scene.count;i++){
+        const PocketSceneRecord *n=&d.r->scene.records[i];
+        if(n->kind==POCKET_COMPONENT_BUTTON&&n->bounds.width==304&&n->bounds.x==32+COFFEE_PAGE_WIDTH-200&&n->bounds.y==105){
+            CHECK(n->clip.x>=32&&n->clip.x+n->clip.width<=992);neighbor=1;
+        }
+    }
+    CHECK(neighbor);
+    CHECK(contact(&d,1,450,200));CHECK(contact(&d,0,450,200));
+    CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.scroll_settling&&s.scroll_x>=350&&s.scroll_x<COFFEE_PAGE_WIDTH&&s.first==0);
+    int previous=s.scroll_x;CHECK(step(&d,90,1));CHECK(coffee_app_stats(&d.r->app,&s));
+    CHECK(s.scroll_x>previous&&s.scroll_x<COFFEE_PAGE_WIDTH&&s.scroll_settling);CHECK(shot(&d,"snap-half"));
+    CHECK(step(&d,100,1));CHECK(coffee_app_stats(&d.r->app,&s));
+    CHECK(s.scroll_x==COFFEE_PAGE_WIDTH&&s.first==6&&!s.scroll_settling&&!s.scroll_dragging);CHECK(shot(&d,"snap-end"));
+    /* Hit geometry follows final rendered positions after moving/recycling. */
+    CHECK(tap(&d,100,200));CHECK(state(&d,2,0));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.selected==6);
+    CHECK(tap(&d,330,(int)height-112));CHECK(state(&d,1,0));
+    /* A short drag snaps back rather than becoming a drink tap. */
+    CHECK(contact(&d,1,600,200));CHECK(contact(&d,1,570,200));CHECK(step(&d,200,1));CHECK(contact(&d,0,570,200));
+    CHECK(step(&d,COFFEE_SNAP_MS,1));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==6&&s.scroll_x==COFFEE_PAGE_WIDTH&&s.page==1);
+    /* Cancel during motion restores the settled page, no ghost tap on release. */
+    CHECK(contact(&d,1,600,200));CHECK(contact(&d,1,400,200));
+    d.ms+=20;pocket_framework_disconnect(d.r,d.ms*1000000ULL);CHECK(contact(&d,0,400,200));
+    CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.scroll_x==COFFEE_PAGE_WIDTH&&s.first==6&&s.page==1&&!s.scroll_settling);
+    /* Press during snap stops at the current offset and cannot activate a card. */
+    CHECK(contact(&d,1,800,200));CHECK(contact(&d,1,450,200));CHECK(contact(&d,0,450,200));CHECK(step(&d,40,1));
+    CHECK(contact(&d,1,500,200));CHECK(coffee_app_stats(&d.r->app,&s));previous=s.scroll_x;
+    CHECK(!s.scroll_settling);CHECK(step(&d,50,1));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.scroll_x==previous);
+    CHECK(contact(&d,0,500,200));CHECK(step(&d,COFFEE_SNAP_MS,1));CHECK(state(&d,1,0));
+    CHECK(mark(&d,"interrupt-and-cancel"));
+    /* First/last edges remain bounded and resist overscroll; no wrap-around swipe. */
+    CHECK(coffee_app_stats(&d.r->app,&s));
+    while(s.first){CHECK(tap(&d,870,(int)height-36));CHECK(coffee_app_stats(&d.r->app,&s));}
+    CHECK(contact(&d,1,400,200));CHECK(contact(&d,1,700,200));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.scroll_x>= -80&&s.scroll_x<0);
+    CHECK(contact(&d,0,700,200));CHECK(step(&d,COFFEE_SNAP_MS,1));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==0&&s.scroll_x==0);
+    for(unsigned i=0;i<16;i++)CHECK(tap(&d,870,(int)height-36));
+    CHECK(contact(&d,1,800,200));CHECK(contact(&d,1,400,200));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.scroll_x<=16*COFFEE_PAGE_WIDTH+80);
+    CHECK(contact(&d,0,400,200));CHECK(step(&d,COFFEE_SNAP_MS,1));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==96&&s.scroll_x==16*COFFEE_PAGE_WIDTH);
+    CHECK(s.pool<=12&&s.nodes==44);CHECK(mark(&d,"edges-and-bounded-pool"));
+    free(header);free(footer);CHECK(end(&d));return 1;
 }
 static PocketEngineStatus reject_present(void *p,const PocketEngineFrame *f){unsigned *n=p;(*n)++;return f&&f->pixels?POCKET_ENGINE_BACKEND_FAILED:POCKET_ENGINE_INVALID_ARGUMENT;}
 static int failures(const char *assets){
@@ -182,7 +249,7 @@ static int failures(const char *assets){
 }
 int main(int argc,char **argv){
     if(argc<3||argc>4)return 2;
-    for(unsigned h=600;h<=800;h+=200)if(!flow(argv[1],argv[2],h,argc==4)||!stress(argv[1],argv[2],h))return 1;
+    for(unsigned h=600;h<=800;h+=200)if(!flow(argv[1],argv[2],h,argc==4)||!stress(argv[1],argv[2],h)||!scroll_flow(argv[1],argv[2],h))return 1;
     if(!failures(argv[1]))return 1;
     puts("FRAMEWORK_OK dual-viewport real-core navigation modal reactive model input assets cleanup");return 0;
 }

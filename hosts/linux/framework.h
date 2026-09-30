@@ -17,6 +17,10 @@ typedef struct {
     uint64_t clock_ns, event_ns, ticks, presents, clean_skips, bytes_written;
     uint64_t last_media_ns, timestamp_clamps;
     uint64_t input_to_cpu_present_ns;
+    uint64_t update_duration_ns, render_duration_ns, present_duration_ns, present_complete_ns;
+    uint64_t motion_presents;
+    int presented_scroll_x;
+    unsigned presented_dragging, presented_settling;
     unsigned page_mask, modal_seen;
     int opened, valid_frame;
     const char *error;

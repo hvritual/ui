@@ -1,4 +1,5 @@
 #include "app.h"
+#include "pager.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -11,17 +12,17 @@ enum { TXT_TITLE=1,TXT_SUBTITLE,TXT_DEMO,TXT_NEXT,TXT_BACK,TXT_CANCEL,TXT_START,
 
 typedef struct App App;
 typedef struct {App *app;PocketUiHandle target;unsigned action,index;} Action;
-typedef struct {PocketComponentHandle owner,image,text;} Card;
+typedef struct {PocketComponentHandle owner,image,text;unsigned index;} Card;
 struct App {
     PocketUiTree tree;PocketLayoutContext layout;PocketStyleRuntime styles;
     PocketComponentRuntime components;PocketOverlayManager overlays;
     PocketNavigationStack nav;PocketInteractionRuntime interaction;
     PocketReactiveRuntime reactive;PocketReactiveHandle progress_signal;
     PocketVirtualCollection list;PocketComponentHandle home,grid,page_root,modal,progress;
-    Action bindings[96];Card cards[12];unsigned binding_count;
+    Action bindings[96];Card cards[COFFEE_PAGE_POOL];unsigned binding_count;
     unsigned height,item_count,first,selected,page,locale,theme,completed,actions;
     unsigned pending,pending_index;int failed,dirty;
-    int scroll_active,scroll_start_x;uint32_t scroll_pointer;
+    CoffeePager pager;int viewport_dirty;unsigned materialized_first;uint64_t layout_runs;
     uint64_t now,started,revision;
 };
 static int eq(PocketComponentHandle a,PocketComponentHandle b){return a.slot==b.slot&&a.generation==b.generation;}
@@ -32,18 +33,33 @@ static PocketUiEventAction event(void *context,PocketUiEvent *e){
     Action *b=context;App *a=b->app;
     if(e->phase!=POCKET_UI_EVENT_TARGET)return POCKET_UI_EVENT_CONTINUE;
     if(e->type==POCKET_UI_EVENT_TAP){
+        if(a->page==HOME&&(a->pager.dragging||a->pager.settling||(b->action==SELECT&&a->pager.block_tap)))return POCKET_UI_EVENT_CONSUME;
         /* One transition per input snapshot: the first consumed action wins. */
         if(a->pending)return POCKET_UI_EVENT_CONSUME;
         a->pending=b->action;a->pending_index=b->index;a->actions++;return POCKET_UI_EVENT_CONSUME;
     }
-    if(e->type==POCKET_UI_EVENT_SCROLL_BEGIN&&a->page==HOME){
-        a->scroll_active=1;a->scroll_pointer=e->pointer_id;a->scroll_start_x=e->x-e->delta_x;
+    return POCKET_UI_EVENT_CONTINUE;
+}
+/* Capture-phase DOWN observes the initial coordinate before F6 slop is crossed.
+ * The scroll owner stays mounted; card roots may be recycled underneath it.
+ * Raw cancel to a child during gesture arbitration is NOT a cancelled scroll.
+ */
+static PocketUiEventAction scroll_event(void *context,PocketUiEvent *e){
+    App *a=context;if(a->page!=HOME)return POCKET_UI_EVENT_CONTINUE;
+    if(e->type==POCKET_UI_EVENT_POINTER_DOWN&&e->phase!=POCKET_UI_EVENT_BUBBLE){
+        coffee_pager_press(&a->pager,e->pointer_id,e->x,e->timestamp_ms);
+    }else if(e->type==POCKET_UI_EVENT_POINTER_UP&&e->phase!=POCKET_UI_EVENT_BUBBLE&&!a->pager.dragging){
+        coffee_pager_release(&a->pager,e->pointer_id,e->x,e->timestamp_ms);
+    }else if(e->phase==POCKET_UI_EVENT_TARGET){
+        if(e->type==POCKET_UI_EVENT_SCROLL_BEGIN||e->type==POCKET_UI_EVENT_SCROLL_UPDATE){
+            coffee_pager_move(&a->pager,e->pointer_id,e->x,e->timestamp_ms);
+        }else if(e->type==POCKET_UI_EVENT_SCROLL_END){
+            coffee_pager_release(&a->pager,e->pointer_id,e->x,e->timestamp_ms);
+        }else if(e->type==POCKET_UI_EVENT_POINTER_CANCEL||e->type==POCKET_UI_EVENT_GESTURE_CANCEL){
+            if(a->pager.pointer==e->pointer_id)coffee_pager_cancel(&a->pager);
+        }
     }
-    if(e->type==POCKET_UI_EVENT_SCROLL_END&&a->page==HOME&&a->scroll_active&&a->scroll_pointer==e->pointer_id){
-        int64_t distance=(int64_t)e->x-a->scroll_start_x;a->scroll_active=0;
-        if(!a->pending&&(distance>100||distance< -100)){a->pending=distance<0?NEXT:BACK;a->actions++;}
-    }
-    if(e->type==POCKET_UI_EVENT_POINTER_CANCEL)a->scroll_active=0;
+    a->viewport_dirty=1;
     return POCKET_UI_EVENT_CONTINUE;
 }
 static int bind(App *a,PocketComponentHandle c,unsigned action,unsigned index){
@@ -62,6 +78,7 @@ static int layout(App *a,PocketComponentHandle c,int x,int y,int w,int h,PocketL
     s.width=(PocketLength){POCKET_LENGTH_PX,w};s.height=(PocketLength){POCKET_LENGTH_PX,h};
     s.offset_x=(PocketLength){POCKET_LENGTH_PX,x};s.offset_y=(PocketLength){POCKET_LENGTH_PX,y};
     s.overflow=POCKET_OVERFLOW_CLIP;
+    a->dirty=1;
     return pocket_component_set_layout(&a->components,c,&s)==POCKET_COMPONENT_OK;
 }
 static PocketComponentHandle make(App *a,PocketComponentKind kind,PocketComponentHandle parent,
@@ -108,13 +125,14 @@ static int themes(App *a){
 static uint32_t count(void *p){return ((App *)p)->item_count;}
 static int key(void *p,uint32_t i,uint64_t *out){if(i>=((App *)p)->item_count||!out)return 0;*out=i+1;return 1;}
 static PocketComponentStatus delegate(void *p,uint32_t i,uint64_t k,PocketComponentRuntime *rt,PocketComponentHandle c){
-    App *a=p;(void)k;unsigned pos=i-a->first;int rh=((int)a->height-186)/2;
-    if(pos>=6||!layout(a,c,(int)(pos%3)*328,(int)(pos/3)*(rh+16),304,rh,POCKET_LAYOUT_ABSOLUTE)||
+    App *a=p;(void)k;unsigned pos=i%COFFEE_PAGE_ITEMS;int rh=((int)a->height-186)/2;
+    if(!layout(a,c,(int)(i/COFFEE_PAGE_ITEMS)*COFFEE_PAGE_WIDTH-a->pager.position+(int)(pos%3)*328,(int)(pos/3)*(rh+16),304,rh,POCKET_LAYOUT_ABSOLUTE)||
        pocket_component_set_style_ref(rt,c,STYLE_CARD)!=POCKET_COMPONENT_OK)return POCKET_COMPONENT_UI_ERROR;
     Card *card=NULL;
-    for(unsigned j=0;j<12;j++)if(eq(a->cards[j].owner,c)){card=&a->cards[j];break;}
-    if(!card)for(unsigned j=0;j<12;j++)if(!pocket_component_handle_valid(a->cards[j].owner)){card=&a->cards[j];card->owner=c;break;}
+    for(unsigned j=0;j<COFFEE_PAGE_POOL;j++)if(eq(a->cards[j].owner,c)){card=&a->cards[j];break;}
+    if(!card)for(unsigned j=0;j<COFFEE_PAGE_POOL;j++)if(!pocket_component_handle_valid(a->cards[j].owner)){card=&a->cards[j];card->owner=c;break;}
     if(!card)return POCKET_COMPONENT_RESOURCE_EXHAUSTED;
+    card->index=i;
     if(!pocket_component_handle_valid(card->image)){
         card->image=make(a,POCKET_COMPONENT_IMAGE,c,24,8,256,128,STYLE_CLEAR,0,i%8+1);
         card->text=make(a,POCKET_COMPONENT_TEXT,c,20,rh-42,270,36,STYLE_TEXT,100+i%8,0);
@@ -133,7 +151,9 @@ static int sync_layout(App *a){
     PocketNavigationPage p;
     if(pocket_navigation_top(&a->nav,&p)!=POCKET_NAV_OK)return 0;
     PocketUiHandle r=root_of(a,p.root);
+    if(!a->dirty)return 1;
     if(pocket_layout_run(&a->layout,r,1024,a->height)!=POCKET_UI_OK)return 0;
+    a->layout_runs++;a->dirty=0;
     if(pocket_component_handle_valid(a->modal)&&pocket_layout_run(&a->layout,root_of(a,a->modal),1024,a->height)!=POCKET_UI_OK)return 0;
     return pocket_interaction_set_scene_root(&a->interaction,r)==POCKET_INTERACTION_OK;
 }
@@ -184,12 +204,31 @@ static int success(App *a){
     a->page=SUCCESS;a->page_root=c;a->completed++;
     return !a->failed&&pocket_navigation_replace(&a->nav,&(PocketNavigationPage){SUCCESS,c,1})==POCKET_NAV_OK;
 }
+static int viewport(App *a){
+    int pos=a->pager.position;unsigned last=(a->item_count-1)/COFFEE_PAGE_ITEMS;
+    unsigned page=pos>0?(unsigned)pos/COFFEE_PAGE_WIDTH:0;
+    if(page>=last)page=last?last-1:0;
+    unsigned first=page*COFFEE_PAGE_ITEMS;
+    if(first!=a->materialized_first){
+        unsigned count=a->item_count-first;if(count>COFFEE_PAGE_POOL)count=COFFEE_PAGE_POOL;
+        if(pocket_virtual_collection_set_window(&a->list,first,count)!=POCKET_MODEL_OK)return 0;
+        a->materialized_first=first;
+    }
+    int rh=((int)a->height-186)/2;
+    for(unsigned i=0;i<COFFEE_PAGE_POOL;i++){
+        Card *c=&a->cards[i];if(!pocket_component_handle_valid(c->owner))continue;
+        unsigned n=c->index,cell=n%COFFEE_PAGE_ITEMS;
+        if(!layout(a,c->owner,(int)(n/COFFEE_PAGE_ITEMS)*COFFEE_PAGE_WIDTH-pos+(int)(cell%3)*328,
+                   (int)(cell/3)*(rh+16),304,rh,POCKET_LAYOUT_ABSOLUTE))return 0;
+    }
+    a->viewport_dirty=0;return 1;
+}
 static int window(App *a,unsigned first){
-    /* Recycled roots must not inherit a held pointer from their previous key. */
+    /* Button paging cancels all held contacts before recycling. Dragging itself
+     * captures the permanent scroll container, not a recycled card. */
     if(a->interaction.impl)pocket_interaction_cancel_all(&a->interaction,a->now);
-    a->first=first;unsigned visible=a->item_count-first;if(visible>6)visible=6;
-    if(pocket_virtual_collection_set_window(&a->list,first,visible)!=POCKET_MODEL_OK)return 0;
-    return pocket_virtual_collection_refresh(&a->list,++a->revision)==POCKET_MODEL_OK;
+    coffee_pager_jump(&a->pager,first/COFFEE_PAGE_ITEMS);a->first=first;
+    return viewport(a);
 }
 static int act(App *a,unsigned what,unsigned index){
     a->dirty=1;
@@ -211,6 +250,7 @@ static int act(App *a,unsigned what,unsigned index){
 int coffee_app_init(CoffeeApp *out,unsigned h,unsigned items){
     if(!out||out->impl||(h!=600&&h!=800)||(items!=8&&items!=100))return 0;
     App *a=calloc(1,sizeof(*a));if(!a)return 0;out->impl=a;a->height=h;a->item_count=items;a->page=HOME;
+    coffee_pager_init(&a->pager,items);a->materialized_first=UINT32_MAX;
     PocketUiTreeConfig tc={.initial_capacity=128,.update_queue_capacity=64,.update_budget=64};
     PocketLayoutConfig lc={.tree=&a->tree,.record_capacity=256};
     PocketStyleRuntimeConfig sc={.theme_capacity=2,.token_capacity=32,.rule_capacity=32};
@@ -226,14 +266,15 @@ int coffee_app_init(CoffeeApp *out,unsigned h,unsigned items){
     a->home=page(a,TXT_TITLE);
     make(a,POCKET_COMPONENT_TEXT,a->home,32,55,600,36,STYLE_MUTED,TXT_SUBTITLE,0);
     button(a,a->home,672,24,144,TXT_THEME,THEME,0,0);button(a,a->home,832,24,160,TXT_LOCALE,LOCALE,0,0);
-    a->grid=make(a,POCKET_COMPONENT_GRID,a->home,32,105,960,h-170,STYLE_CLEAR,0,0);
+    a->grid=make(a,POCKET_COMPONENT_SCROLL,a->home,32,105,960,h-170,STYLE_CLEAR,0,0);
     button(a,a->home,784,h-60,208,TXT_NEXT,NEXT,0,0);
     PocketVirtualCollectionConfig vc={.components=&a->components,.parent=a->grid,.item_kind=POCKET_COMPONENT_BUTTON,
-       .overscan=0,.max_pool=6,.model={a,count,key,delegate}};
+       .overscan=0,.max_pool=COFFEE_PAGE_POOL,.model={a,count,key,delegate}};
     if(a->failed||pocket_virtual_collection_init(&a->list,&vc)!=POCKET_MODEL_OK||!window(a,0)||
        pocket_navigation_push(&a->nav,&(PocketNavigationPage){HOME,a->home,1})!=POCKET_NAV_OK)goto fail;
     PocketInteractionConfig ic={.tree=&a->tree,.layout=&a->layout,.components=&a->components,.overlays=&a->overlays,.scene_root=root_of(a,a->home)};
-    if(pocket_interaction_init(&a->interaction,&ic)!=POCKET_INTERACTION_OK||!bind(a,a->grid,NEXT,0)||
+    if(pocket_interaction_init(&a->interaction,&ic)!=POCKET_INTERACTION_OK||
+       pocket_ui_set_event_handler(&a->tree,root_of(a,a->grid),scroll_event,a)!=POCKET_UI_OK||
        pocket_interaction_set_gestures(&a->interaction,root_of(a,a->grid),POCKET_GESTURE_SCROLL_X)!=POCKET_INTERACTION_OK||!sync_layout(a))goto fail;
     return 1;
 fail:coffee_app_dispose(out);return 0;
@@ -241,6 +282,15 @@ fail:coffee_app_dispose(out);return 0;
 int coffee_app_step(CoffeeApp *out,uint64_t ms){
     App *a=out?out->impl:NULL;if(!a||a->failed||ms<a->now)return 0;a->now=ms;
     if(pocket_interaction_tick(&a->interaction,ms)!=POCKET_INTERACTION_OK)return 0;
+    if(a->page==HOME){
+        PocketInteractionSnapshot input;
+        if(pocket_interaction_snapshot(&a->interaction,&input)!=POCKET_INTERACTION_OK)return 0;
+        if(!input.active_pointers&&a->pager.active){coffee_pager_cancel(&a->pager);a->viewport_dirty=1;}
+        int previous=a->pager.position;coffee_pager_tick(&a->pager,ms);
+        if(previous!=a->pager.position)a->viewport_dirty=1;
+        if(a->viewport_dirty&&!viewport(a))return 0;
+        a->first=a->pager.settled_page*COFFEE_PAGE_ITEMS;
+    }
     if(a->pending){unsigned action=a->pending,index=a->pending_index;a->pending=0;if(!act(a,action,index))return 0;}
     if(a->page==MAKING){unsigned progress=(unsigned)((ms-a->started)/50);if(progress>100)progress=100;
       if(pocket_reactive_set(&a->reactive,a->progress_signal,pocket_value_i64(progress))!=POCKET_REACTIVE_OK)return 0;
@@ -256,14 +306,15 @@ int coffee_app_scene(CoffeeApp *out,PocketScene *s){
     if(!a||!s||pocket_navigation_top(&a->nav,&p)!=POCKET_NAV_OK||pocket_interaction_snapshot(&a->interaction,&input)!=POCKET_INTERACTION_OK)return 0;
     PocketSceneSource src={&a->tree,&a->components,&a->layout,&a->styles};
     if(!pocket_scene_begin(s,1024,a->height,a->locale,a->theme?RGBA(23,30,29):RGBA(248,246,240),
-       a->page==HOME&&!input.active_pointers&&!pocket_overlay_count(&a->overlays))||!pocket_scene_append(s,&src,root_of(a,p.root)))return 0;
+       a->page==HOME&&!input.active_pointers&&!a->pager.settling&&!a->pager.dragging&&!pocket_overlay_count(&a->overlays))||!pocket_scene_append(s,&src,root_of(a,p.root)))return 0;
     return !pocket_component_handle_valid(a->modal)||pocket_scene_append(s,&src,root_of(a,a->modal));
 }
 int coffee_app_stats(const CoffeeApp *out,CoffeeAppStats *s){
     const App *a=out?out->impl:NULL;if(!a||!s)return 0;PocketVirtualCollectionStats v;PocketReactiveValue value;
     if(pocket_virtual_collection_stats(&a->list,&v)!=POCKET_MODEL_OK||pocket_reactive_get(&a->reactive,a->progress_signal,&value)!=POCKET_REACTIVE_OK)return 0;
     *s=(CoffeeAppStats){a->page,a->selected,a->first,a->item_count,a->locale,a->theme,(unsigned)value.as.i64,
-      a->completed,(unsigned)pocket_overlay_count(&a->overlays),(unsigned)pocket_ui_live_count(&a->tree),v.pool_size,v.peak_pool_size,a->actions,v.recycle_count};return 1;
+      a->completed,(unsigned)pocket_overlay_count(&a->overlays),(unsigned)pocket_ui_live_count(&a->tree),v.pool_size,v.peak_pool_size,a->actions,v.recycle_count,
+      a->pager.position,(unsigned)a->pager.dragging,(unsigned)a->pager.settling,a->layout_runs};return 1;
 }
 void coffee_app_dispose(CoffeeApp *out){
     App *a=out?out->impl:NULL;if(!a)return;

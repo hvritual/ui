@@ -54,7 +54,7 @@ def compile_binary(mode,test=False,sanitize=False,static=False,loop=False):
     flags=[] if mode=='native' else ['-mcpu=cortex-a7','-mfpu=neon-vfpv4','-mfloat-abi=hard']
     target='x86_64-unknown-linux-gnu' if mode=='native' else 'armv7-unknown-linux-gnueabihf'
     rt=ROOT/'out/runtime'/mode;core=ROOT/'out/runtime/cargo'/target/'release/libpocketjs_symbian_core.a'
-    sources=[ROOT/'hosts/linux/ui'/f'{n}.c' for n in UI]+[ROOT/'apps/coffee-framework/app.c',ROOT/'hosts/linux/engine/scene_runtime.c',ROOT/'hosts/linux/input/interaction_bridge.c',ROOT/'hosts/linux/framework.c',ROOT/'hosts/linux/input/state.c']
+    sources=[ROOT/'hosts/linux/ui'/f'{n}.c' for n in UI]+[ROOT/'apps/coffee-framework/app.c',ROOT/'apps/coffee-framework/pager.c',ROOT/'hosts/linux/engine/scene_runtime.c',ROOT/'hosts/linux/input/interaction_bridge.c',ROOT/'hosts/linux/framework.c',ROOT/'hosts/linux/input/state.c']
     sources+=[ROOT/('tests/framework/test_live_loop.c' if loop else 'tests/framework/test_framework.c' if test else 'hosts/linux/framework_main.c')]
     objects=[rt/n for n in ('host.o','platform.o','runtime-host.o','personality.o','libquickjs.a','media-store.o')]
     if not test:sources += [ROOT/'hosts/linux/input/live.c',ROOT/'hosts/linux/display/fbdev.c',ROOT/'hosts/linux/display/presenter.c']
@@ -73,6 +73,9 @@ def compile_binary(mode,test=False,sanitize=False,static=False,loop=False):
 
 def runner(mode,static=False):return [] if mode=='native' else ['qemu-arm','-cpu','cortex-a7',*([] if static else ['-L','/usr/arm-linux-gnueabihf'])]
 def outputs(d,pattern):return {p.name:sha(p) for p in sorted(d.glob(pattern))}
+def motion_outputs(d):
+    return {str(p.relative_to(d)):sha(p) for p in sorted(d.glob('scroll-*/*')) if p.is_file()}
+
 def fresh(parent,name):
     p=parent/(name+'-'+str(time.time_ns()));p.mkdir(parents=True);return p
 
@@ -107,6 +110,9 @@ def test(mode,sanitize=False):
         elif 'FRAMEWORK_OK dual-viewport real-core' not in text:raise RuntimeError('missing real suite completion')
     for pattern in ('*.ppm','replay-*.txt'):
         if outputs(sets[0],pattern)!=outputs(sets[1],pattern):raise RuntimeError('nondeterministic native/ARM replay')
+    if motion_outputs(sets[0])!=motion_outputs(sets[1]):raise RuntimeError('nondeterministic scroll pixels/replay')
+    motion=motion_outputs(sets[0])
+    if len(motion)!=10:raise RuntimeError('incomplete scroll target matrix')
     images=outputs(sets[0],'*.ppm');replays=outputs(sets[0],'replay-*.txt')
     if len(images)!=18 or len(replays)!=4:raise RuntimeError('incomplete target matrix')
     if not sanitize:
@@ -120,7 +126,7 @@ def test(mode,sanitize=False):
     if before!=state():raise RuntimeError('source changed during test')
     record={**before,'mode':mode,'real_core':True,'physical_hardware':False,'sanitizer':sanitize,
        'run_dir':str(d.relative_to(OUT)),'test_binary_sha256':sha(binary),'assets_sha256':sha(OUT/'assets.json'),
-       'images':images,'replays':replays,'logs':{str(p.relative_to(d)):sha(p) for p in sorted(d.rglob('*.log'))}}
+       'images':images,'replays':replays,'motion':motion,'logs':{str(p.relative_to(d)):sha(p) for p in sorted(d.rglob('*.log'))}}
     write(OUT/mode/('sanitizer.json' if sanitize else 'test.json'),record);print('FRAMEWORK_TEST_OK',mode,'sanitizer='+str(sanitize))
 
 def verify():
@@ -133,17 +139,20 @@ def verify():
         if r['assets_sha256']!=sha(OUT/'assets.json') or r['test_binary_sha256']!=sha(OUT/mode/'framework-test'):raise RuntimeError('binary/resource drift')
         d=OUT/r['run_dir']
         if r['images']!=outputs(d/'cases','*.ppm') or r['replays']!=outputs(d/'cases','replay-*.txt'):raise RuntimeError('output evidence drift')
+        if r['motion']!=motion_outputs(d/'cases'):raise RuntimeError('scroll evidence drift')
         for n,v in r['logs'].items():
             if sha(d/n)!=v:raise RuntimeError('log evidence drift')
         results.append(r)
     if results[0]['images']!=results[1]['images'] or results[0]['replays']!=results[1]['replays']:raise RuntimeError('cross-architecture pixel/replay mismatch')
+    if results[0]['motion']!=results[1]['motion']:raise RuntimeError('cross-architecture scroll pixel/replay mismatch')
     sanitized=json.loads((OUT/'native/sanitizer.json').read_text())
     if any(sanitized[k]!=current[k] for k in current) or not sanitized.get('sanitizer') or sanitized['images']!=results[0]['images'] or sanitized['replays']!=results[0]['replays']:raise RuntimeError('sanitizer evidence incomplete or stale')
+    if sanitized['motion']!=results[0]['motion']:raise RuntimeError('sanitizer scroll evidence mismatch')
     if sanitized['test_binary_sha256']!=sha(OUT/'native/framework-test-sanitize') or sanitized['assets_sha256']!=sha(OUT/'assets.json'):raise RuntimeError('sanitizer binary/resource drift')
     for n,v in sanitized['logs'].items():
         if sha(OUT/sanitized['run_dir']/n)!=v:raise RuntimeError('sanitizer log evidence drift')
     write(OUT/'verification.json',{'status':'passed',**current,'scope':'software-functional-only','physical_hardware':False,
-          'engine':'current-pocket-scene','image_count':18,'replay_count':4,'test_reports':{m:sha(OUT/m/'test.json') for m in ('native','arm')}})
+          'engine':'current-pocket-scene','image_count':26,'replay_count':6,'motion_pool_limit':12,'test_reports':{m:sha(OUT/m/'test.json') for m in ('native','arm')}})
     print('FRAMEWORK_VERIFY_OK physical_hardware=false')
 
 def sums(d):

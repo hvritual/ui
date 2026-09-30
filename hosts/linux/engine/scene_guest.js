@@ -41,13 +41,16 @@ function apply(s){
   }
   const encoded=JSON.stringify(v)+'/'+locale;
   if(r.previous===encoded)continue;
+  // Reassert scissor when restyling a retained wrapper. Moving content must
+  // never retain a previous un-clipped paint state outside the layout clip.
+  ui.setProp(r.root,30,1);
   // Clip each projected object using the layout result, never by cropping text.
   const lx=Math.max(0,cx),ly=Math.max(0,cy),rx=Math.min(W,cx+cw),ry=Math.min(H,cy+ch);
   geom(r.root,lx,ly,Math.max(0,rx-lx),Math.max(0,ry-ly));
   const dx=x-lx,dy=y-ly;
   geom(r.box,dx,dy,w,h);ui.setProp(r.box,64,rgbaAlpha(bg,alpha));ui.setProp(r.box,68,radius);
   if(r.fill){geom(r.fill,dx,dy,w*(value-min)/(max-min),h);ui.setProp(r.fill,64,rgbaAlpha(fg,alpha));ui.setProp(r.fill,68,radius);}
-  if(r.image){geom(r.image,dx,dy,w,h);ui.setImage(r.image,textures[image-1]);r.imageRef=image;}
+  if(r.image){geom(r.image,dx,dy,w,h);if(r.imageRef!==image)ui.setImage(r.image,textures[image-1]);r.imageRef=image;}
   if(r.label){const tx=kind===5?16:0,ty=kind===5?Math.max(0,(h-36)/2):0;
    geom(r.label,dx+tx,dy+ty,Math.max(0,w-tx),h);ui.setProp(r.label,96,rgbaAlpha(fg,alpha));
    const text=textFor(ref);if(r.text!==text){if(r.text===undefined)ui.setText(r.label,text);else ui.replaceText(r.label,text);r.text=text;}}

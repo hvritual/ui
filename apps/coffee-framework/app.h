@@ -12,6 +12,7 @@ typedef struct {
     unsigned page, selected, first, item_count, locale, theme, progress;
     unsigned completed, modal, nodes, pool, peak_pool, actions;
     uint64_t recycled;
+    int scroll_x;unsigned scroll_dragging,scroll_settling;uint64_t layout_runs;
 } CoffeeAppStats;
 int coffee_app_init(CoffeeApp *app,unsigned height,unsigned item_count);
 void coffee_app_dispose(CoffeeApp *app);
