@@ -33,6 +33,8 @@ static int read_eof, poll_ready=1;
 static int close_count, touch_node=1, poll_fault, endless_read;
 static int all_absent, open_error, stat_error, raw_limit=16384, missing_mt, resync_error;
 static const char *touch_name="ilitek_ts";
+static int raw_y_limit, held_touch, key_state_error, slot_queries, key_queries;
+static int duplicate_device, missing_tracking;
 static int mt_tracking[10], mt_x[10], mt_y[10], mt_current_slot;
 
 static void reset_fake(void) {
@@ -40,6 +42,7 @@ static void reset_fake(void) {
     stream_count=stream_pos=0; read_eof=0; poll_ready=1; close_count=0; touch_node=1; poll_fault=0; endless_read=0;
     for(int i=0;i<10;i++){mt_tracking[i]=-1;mt_x[i]=mt_y[i]=0;}
     mt_current_slot=0;
+    raw_y_limit=held_touch=key_state_error=slot_queries=key_queries=duplicate_device=missing_tracking=0;
     all_absent=open_error=stat_error=missing_mt=resync_error=0;raw_limit=16384;touch_name="ilitek_ts";
 }
 static void bit_set(unsigned bit, unsigned long *bits) {
@@ -56,6 +59,7 @@ int __wrap_open(const char *path,int flags,...) {
     if(all_absent){errno=ENOENT;return -1;}
     if(open_error && !strcmp(path,"/dev/input/event1")){errno=open_error;return -1;}
     if(!strcmp(path,"/dev/input/event0")) return 10;
+    if(duplicate_device&&!strcmp(path,"/dev/input/event2"))return 11;
     if((touch_node==1&&!strcmp(path,"/dev/input/event1"))||
        (touch_node==2&&!strcmp(path,"/dev/input/event2"))) return 11;
     errno=ENOENT;return -1;
@@ -73,7 +77,7 @@ static int fill_abs(unsigned code,struct input_absinfo *a) {
     memset(a,0,sizeof(*a));
     if(code==ABS_MT_SLOT){a->minimum=0;a->maximum=9;a->value=mt_current_slot;return 1;}
     if(code==ABS_MT_TRACKING_ID){a->minimum=0;a->maximum=65535;return 1;}
-    if(code==ABS_MT_POSITION_X||code==ABS_MT_POSITION_Y){a->minimum=0;a->maximum=raw_limit;return 1;}
+    if(code==ABS_MT_POSITION_X||code==ABS_MT_POSITION_Y){a->minimum=0;a->maximum=code==ABS_MT_POSITION_Y&&raw_y_limit?raw_y_limit:raw_limit;return 1;}
     return 0;
 }
 int __wrap_ioctl(int fd,unsigned long request,...) {
@@ -85,6 +89,13 @@ int __wrap_ioctl(int fd,unsigned long request,...) {
         strcpy((char *)arg,name);return (int)strlen(name)+1;
     }
     if(request==EVIOCSCLOCKID) return 0;
+    if(_IOC_NR(request)==_IOC_NR(EVIOCGKEY(1))) {
+        ++key_queries;
+        if(key_state_error){errno=key_state_error;return -1;}
+        memset(arg,0,_IOC_SIZE(request));
+        if(held_touch)bit_set(BTN_TOUCH,(unsigned long *)arg);
+        return 0;
+    }
 
     unsigned nr=_IOC_NR(request);
     if(nr>=_IOC_NR(EVIOCGBIT(0,1)) && nr<=_IOC_NR(EVIOCGBIT(EV_MAX,1))) {
@@ -98,7 +109,7 @@ int __wrap_ioctl(int fd,unsigned long request,...) {
         else if(ev==EV_KEY)bit_set(BTN_TOUCH,(unsigned long *)arg);
         else if(ev==EV_ABS){
             if(!missing_mt)bit_set(ABS_MT_SLOT,(unsigned long *)arg);
-            bit_set(ABS_MT_TRACKING_ID,(unsigned long *)arg);
+            if(!missing_tracking)bit_set(ABS_MT_TRACKING_ID,(unsigned long *)arg);
             bit_set(ABS_MT_POSITION_X,(unsigned long *)arg);
             bit_set(ABS_MT_POSITION_Y,(unsigned long *)arg);
         }
@@ -106,10 +117,12 @@ int __wrap_ioctl(int fd,unsigned long request,...) {
     }
     if(nr>=_IOC_NR(EVIOCGABS(0)) && nr<=_IOC_NR(EVIOCGABS(ABS_MAX))) {
         unsigned code=nr-_IOC_NR(EVIOCGABS(0));
+        if(code==ABS_MT_SLOT)++slot_queries;
         if(fill_abs(code,(struct input_absinfo *)arg)) return 0;
         errno=EINVAL;return -1;
     }
     if(nr==_IOC_NR(EVIOCGMTSLOTS(4))) {
+        ++slot_queries;
         if(resync_error){errno=resync_error;return -1;}
         int32_t *values=(int32_t *)arg;
         unsigned code=(unsigned)values[0];
@@ -357,7 +370,147 @@ static void discovery_failures(void) {
     rejection_reason("INPUT_NAME_MISMATCH",0,"live-discovery-preserves-name-mismatch");
 }
 
+/* Fixtures use deliberately asymmetric synthetic ranges, NOT claimed board data. */
+static InputLiveConfig goodix_config(void) {
+    InputLiveConfig c={.expected_name="auto",.width=1024,.height=600};
+    return c;
+}
+static void goodix_reset(void) {
+    reset_fake();touch_name="goodix-ts";missing_mt=1;raw_limit=1023;raw_y_limit=599;
+}
+static void packet(int id,int x,int y) {
+    push(EV_ABS,ABS_MT_TRACKING_ID,id,1000000);
+    push(EV_ABS,ABS_MT_POSITION_X,x,1000000);
+    push(EV_ABS,ABS_MT_POSITION_Y,y,1000000);
+    push(EV_SYN,SYN_MT_REPORT,0,1000000);
+}
+static void report_a(int down) {
+    push(EV_KEY,BTN_TOUCH,down,1000000);
+    push(EV_SYN,SYN_REPORT,0,1000000);
+}
+static void goodix_admission(void) {
+    InputLive l={0};InputLiveConfig c=goodix_config();FILE *report=NULL;
+    goodix_reset();CHECK(input_live_discover(&l,"/dev/input",&c));
+    CHECK(!strcmp(l.name,"goodix-ts")&&l.state.protocol==INPUT_PROTOCOL_MT_A);
+    CHECK(l.state.transform.x.maximum==1023&&l.state.transform.y.maximum==599);
+    CHECK(!slot_queries&&key_queries==1);
+    report=tmpfile();CHECK(report&&input_live_report(report,&l));rewind(report);
+    char text[4096];size_t n=fread(text,1,sizeof(text)-1,report);text[n]=0;
+    CHECK(strstr(text,"\"protocol\":\"mt-a\"")&&strstr(text,"\"axis_source\":\"kernel-probe\""));
+    CHECK(strstr(text,"\"slot_range_present\":false")&&strstr(text,"\"raw_y_max\":599"));
+    puts("CHECKED goodix-admission-queries-independent-axes-without-slots");
+cleanup:if(report)fclose(report);input_live_close(&l);
+}
+static void goodix_frames(void) {
+    InputLive l={0};InputLiveConfig c=goodix_config();Sink out={0};
+    goodix_reset();CHECK(input_live_discover(&l,"/dev/input",&c));
+    packet(0,0,0);packet(7,1023,599);report_a(1);
+    packet(7,900,500);packet(0,200,100);report_a(1); /* reverse packet order */
+    packet(7,800,400);report_a(1); /* release ID zero only */
+    push(EV_SYN,SYN_MT_REPORT,0,1000000);report_a(0);
+    CHECK(input_live_drain(&l,sink,&out)==4&&out.count==4);
+    CHECK(out.frames[0].contact_count==2&&out.frames[0].contacts[0].id==0);
+    CHECK(out.frames[0].contacts[1].x==1023&&out.frames[0].contacts[1].y==599);
+    CHECK(out.frames[1].contacts[0].x==200&&out.frames[1].contacts[1].x==900);
+    CHECK(out.frames[2].contact_count==1&&out.frames[2].contacts[0].id==1);
+    CHECK(!out.frames[3].contact_count&&!out.frames[3].suppressed&&!slot_queries);
+    puts("CHECKED goodix-raw-packets-zero-id-reorder-move-release");
+cleanup:input_live_close(&l);
+}
+static void goodix_held_drop(void) {
+    InputLive l={0};InputLiveConfig c=goodix_config();Sink out={0};
+    goodix_reset();held_touch=1;CHECK(input_live_discover(&l,"/dev/input",&c));
+    packet(0,300,200);report_a(1);report_a(0);
+    packet(0,300,200);report_a(1);
+    CHECK(input_live_drain(&l,sink,&out)==3);
+    CHECK(out.frames[0].suppressed&&!out.frames[0].contact_count);
+    CHECK(!out.frames[1].suppressed&&out.frames[2].contact_count==1);
+    push(EV_SYN,SYN_DROPPED,0,2000000);
+    packet(3,500,400);report_a(1); /* ignored to the report, then query held key */
+    packet(3,500,400);report_a(1);report_a(0);
+    packet(0,100,100);report_a(1);
+    CHECK(input_live_drain(&l,sink,&out)==4&&out.count==7);
+    CHECK(out.frames[3].syn_dropped&&out.frames[3].cancelled_count==1);
+    CHECK(out.frames[4].suppressed&&!out.frames[4].contact_count);
+    CHECK(!out.frames[5].suppressed&&out.frames[6].contact_count==1);
+    CHECK(key_queries==2&&!slot_queries&&l.syn_dropped==1);
+    puts("CHECKED goodix-held-start-syn-dropped-query-key-suppress-until-release");
+cleanup:input_live_close(&l);
+}
+static void goodix_bad_frames(void) {
+    InputLive l={0};InputLiveConfig c=goodix_config();Sink out={0};
+    goodix_reset();CHECK(input_live_discover(&l,"/dev/input",&c));
+    packet(0,100,100);report_a(1);CHECK(input_live_drain(&l,sink,&out)==1);
+    packet(1,200,100);packet(1,250,100);report_a(1);
+    CHECK(input_live_drain(&l,sink,&out)==-1);
+    CHECK(out.frames[out.count-1].suppressed&&out.frames[out.count-1].cancelled_count==1);
+    input_live_close(&l);goodix_reset();out=(Sink){0};
+    CHECK(input_live_discover(&l,"/dev/input",&c));
+    push(EV_ABS,ABS_MT_TRACKING_ID,0,1000000);
+    push(EV_ABS,ABS_MT_POSITION_X,100,1000000);
+    push(EV_SYN,SYN_MT_REPORT,0,1000000);report_a(1);
+    CHECK(input_live_drain(&l,sink,&out)==-1);CHECK(!out.frames[0].contact_count);
+    puts("CHECKED goodix-duplicate-id-incomplete-packet-cancel-not-click");
+cleanup:input_live_close(&l);
+}
+static void goodix_overflow(void) {
+    InputLive l={0};InputLiveConfig c=goodix_config();Sink out={0};
+    goodix_reset();CHECK(input_live_discover(&l,"/dev/input",&c));
+    packet(0,100,100);report_a(1);
+    for(int i=0;i<9;i++)packet(i,100+i,100);
+    report_a(1);packet(0,100,100);report_a(1);report_a(0);
+    packet(0,100,100);report_a(1);
+    CHECK(input_live_drain(&l,sink,&out)==5&&out.count==5);
+    CHECK(out.frames[1].suppressed&&out.frames[1].cancelled_count==1);
+    CHECK(out.frames[2].suppressed&&!out.frames[2].contact_count);
+    CHECK(!out.frames[3].suppressed&&out.frames[4].contact_count==1);
+    puts("CHECKED goodix-contact-overflow-bounded-cancel-recovery");
+cleanup:input_live_close(&l);
+}
+static void goodix_reconnect(void) {
+    InputLive l={0};InputLiveConfig c=goodix_config();Sink out={0};
+    goodix_reset();CHECK(input_live_discover(&l,"/dev/input",&c));
+    packet(0,100,100);report_a(1);CHECK(input_live_drain(&l,sink,&out)==1);
+    read_eof=1;CHECK(input_live_drain(&l,sink,&out)==-1);input_live_close(&l);
+    touch_node=2;read_eof=0;held_touch=1;
+    CHECK(input_live_reconnect(&l,"/dev/input"));CHECK(l.state.suppress_until_all_up);
+    CHECK(!strcmp(l.path,"/dev/input/event2"));input_live_close(&l);
+    raw_y_limit=799;CHECK(!input_live_reconnect(&l,"/dev/input"));
+    CHECK(!l.opened&&!strcmp(l.error,"INPUT_RECONNECT_PROFILE_CHANGED"));
+    puts("CHECKED goodix-reconnect-new-event-index-reject-profile-drift");
+cleanup:input_live_close(&l);
+}
+static void goodix_rejections(void) {
+    InputLive l={0};InputLiveConfig c=goodix_config();
+    goodix_reset();missing_tracking=1;
+    CHECK(!input_live_discover(&l,"/dev/input",&c));CHECK(!strcmp(l.error,"INPUT_MT_CAPABILITIES_MISSING"));
+    goodix_reset();raw_limit=0;
+    CHECK(!input_live_discover(&l,"/dev/input",&c));CHECK(!strcmp(l.error,"INPUT_AXIS_RANGE_INVALID"));
+    goodix_reset();key_state_error=EIO;
+    CHECK(!input_live_discover(&l,"/dev/input",&c));CHECK(!strcmp(l.error,"INPUT_KEY_STATE_QUERY_FAILED"));
+    goodix_reset();c.expected_slots=10;
+    CHECK(!input_live_discover(&l,"/dev/input",&c));CHECK(!strcmp(l.error,"INPUT_SLOT_PROFILE_INAPPLICABLE"));
+    c=goodix_config();c.expected_raw_max=16384;
+    CHECK(!input_live_discover(&l,"/dev/input",&c));CHECK(!strcmp(l.error,"INPUT_PROFILE_MISMATCH"));
+    c=goodix_config();goodix_reset();duplicate_device=1;
+    CHECK(!input_live_discover(&l,"/dev/input",&c));CHECK(!strcmp(l.error,"INPUT_DEVICE_AMBIGUOUS"));
+    CHECK(!l.opened);
+    puts("CHECKED goodix-reject-missing-id-bad-range-key-query-legacy-slots-ambiguity");
+cleanup:input_live_close(&l);
+}
+static void auto_ilitek(void) {
+    InputLive l={0};InputLiveConfig c=goodix_config();reset_fake();
+    CHECK(input_live_discover(&l,"/dev/input",&c));
+    CHECK(l.state.protocol==INPUT_PROTOCOL_MT_B&&l.state.slot_count==10);
+    CHECK(l.state.transform.x.maximum==16384&&slot_queries==5&&!key_queries);
+    puts("CHECKED auto-ilitek-preserves-historical-b-ranges-resync");
+cleanup:input_live_close(&l);
+}
+
 int main(void) {
+    goodix_admission();goodix_frames();goodix_held_drop();goodix_bad_frames();
+    goodix_overflow();goodix_reconnect();goodix_rejections();auto_ilitek();
+    if(!failures)puts("INPUT_MT_A_OK groups=8");
     discovery_failures();discovery_report();alias_config();
     startup_held();reconnect_changed_node();read_budget();hup_error();discovery();normal_frames();dropped_resync_current_slot();disconnect_case();wait_case();
     if(failures){fprintf(stderr,"INPUT_LIVE_FAILED failures=%d\n",failures);return 1;}

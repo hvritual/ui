@@ -59,12 +59,18 @@ static int copy_text(char *dst, size_t size, const char *src) {
 }
 
 static int resync_mt(InputLive *live);
+static int probe_axes(const InputLiveConfig *c) {
+    return c->expected_raw_min == 0 && c->expected_raw_max == 0;
+}
+static int known_touch(const char *name) {
+    return !strcmp(name, "ilitek_ts") || !strcmp(name, "goodix-ts");
+}
 
 static int validate_candidate(InputLive *live, const InputLiveConfig *config) {
     unsigned long ev[NBITS(EV_MAX + 1)];
     unsigned long key[NBITS(KEY_MAX + 1)];
     unsigned long abs[NBITS(ABS_MAX + 1)];
-    struct input_absinfo slot, tracking, pos_x, pos_y;
+    struct input_absinfo slot = {0}, tracking, pos_x, pos_y;
     char name[256] = {0};
 
     if (ioctl(live->fd, EVIOCGNAME(sizeof(name)), name) < 0)
@@ -73,7 +79,8 @@ static int validate_candidate(InputLive *live, const InputLiveConfig *config) {
     live->diagnostics.name_queried = 1;
     if (!copy_text(live->name, sizeof(live->name), name))
         return fail(live, "INPUT_NAME_TOO_LONG", 0);
-    live->diagnostics.name_matched = !strcmp(name, config->expected_name);
+    live->diagnostics.name_matched = !strcmp(config->expected_name, "auto") ?
+        known_touch(name) : !strcmp(name, config->expected_name);
     if (!live->diagnostics.name_matched)
         return fail(live, "INPUT_NAME_MISMATCH", 0);
 
@@ -94,49 +101,59 @@ static int validate_candidate(InputLive *live, const InputLiveConfig *config) {
     live->diagnostics.mt_x = (int)TEST_BIT(ABS_MT_POSITION_X, abs);
     live->diagnostics.mt_y = (int)TEST_BIT(ABS_MT_POSITION_Y, abs);
 
-    if (!TEST_BIT(BTN_TOUCH, key) ||
-        !TEST_BIT(ABS_MT_SLOT, abs) ||
-        !TEST_BIT(ABS_MT_TRACKING_ID, abs) ||
-        !TEST_BIT(ABS_MT_POSITION_X, abs) ||
-        !TEST_BIT(ABS_MT_POSITION_Y, abs))
-        return fail(live, "INPUT_PROTOCOL_B_MISSING", 0);
+    if (!live->diagnostics.btn_touch || !live->diagnostics.mt_tracking ||
+        !live->diagnostics.mt_x || !live->diagnostics.mt_y)
+        return fail(live, "INPUT_MT_CAPABILITIES_MISSING", 0);
 
-    if (!query_abs(live->fd, ABS_MT_SLOT, &slot) ||
-        !query_abs(live->fd, ABS_MT_TRACKING_ID, &tracking) ||
+    /* The observed Goodix BSP has tracking IDs but no ABS_MT_SLOT. It needs
+     * packet-based MT-A, not a relaxed B check followed by B-only resync. */
+    InputProtocol protocol = live->diagnostics.mt_slot ? INPUT_PROTOCOL_MT_B :
+        !strcmp(name, "goodix-ts") ? INPUT_PROTOCOL_MT_A : 0;
+    live->diagnostics.protocol = protocol;
+    if (!query_abs(live->fd, ABS_MT_TRACKING_ID, &tracking) ||
         !query_abs(live->fd, ABS_MT_POSITION_X, &pos_x) ||
-        !query_abs(live->fd, ABS_MT_POSITION_Y, &pos_y))
+        !query_abs(live->fd, ABS_MT_POSITION_Y, &pos_y) ||
+        (live->diagnostics.mt_slot && !query_abs(live->fd, ABS_MT_SLOT, &slot)))
         return fail(live, "INPUT_AXIS_QUERY_FAILED", errno);
 
     live->diagnostics.axes_queried = 1;
-    live->diagnostics.slot_min = slot.minimum;
-    live->diagnostics.slot_max = slot.maximum;
+    live->diagnostics.slot_min = live->diagnostics.mt_slot ? slot.minimum : -1;
+    live->diagnostics.slot_max = live->diagnostics.mt_slot ? slot.maximum : -1;
     live->diagnostics.raw_x_min = pos_x.minimum;
     live->diagnostics.raw_x_max = pos_x.maximum;
     live->diagnostics.raw_y_min = pos_y.minimum;
     live->diagnostics.raw_y_max = pos_y.maximum;
-
-    if (slot.minimum != 0 || slot.maximum < slot.minimum ||
-        (uint64_t)((int64_t)slot.maximum - slot.minimum + 1) != config->expected_slots ||
-        pos_x.minimum != config->expected_raw_min ||
-        pos_x.maximum != config->expected_raw_max ||
-        pos_y.minimum != config->expected_raw_min ||
-        pos_y.maximum != config->expected_raw_max)
+    live->diagnostics.tracking_min = tracking.minimum;
+    live->diagnostics.tracking_max = tracking.maximum;
+    if (!protocol) return fail(live, "INPUT_PROTOCOL_B_MISSING", 0);
+    if (pos_x.maximum <= pos_x.minimum || pos_y.maximum <= pos_y.minimum)
+        return fail(live, "INPUT_AXIS_RANGE_INVALID", 0);
+    if (tracking.minimum < 0 || tracking.maximum < tracking.minimum)
+        return fail(live, "INPUT_TRACKING_RANGE_INVALID", 0);
+    if (!probe_axes(config) &&
+        (pos_x.minimum != config->expected_raw_min || pos_x.maximum != config->expected_raw_max ||
+         pos_y.minimum != config->expected_raw_min || pos_y.maximum != config->expected_raw_max))
         return fail(live, "INPUT_PROFILE_MISMATCH", 0);
 
-    if (tracking.maximum < tracking.minimum)
-        return fail(live, "INPUT_TRACKING_RANGE_INVALID", 0);
+    unsigned capacity = INPUT_HW_MAX_SLOTS; /* bounded A packet capacity, not HW slots */
+    if (protocol == INPUT_PROTOCOL_MT_B) {
+        int64_t slots = (int64_t)slot.maximum - slot.minimum + 1;
+        if (slot.minimum != 0 || slots <= 0 || slots > INPUT_HW_MAX_SLOTS)
+            return fail(live, "INPUT_SLOT_RANGE_INVALID", 0);
+        capacity = (unsigned)slots;
+        if (config->expected_slots && config->expected_slots != capacity)
+            return fail(live, "INPUT_PROFILE_MISMATCH", 0);
+    } else if (config->expected_slots) {
+        return fail(live, "INPUT_SLOT_PROFILE_INAPPLICABLE", 0);
+    }
 
     InputTransform transform = {
         .x = {.minimum = pos_x.minimum, .maximum = pos_x.maximum},
         .y = {.minimum = pos_y.minimum, .maximum = pos_y.maximum},
-        .width = config->width,
-        .height = config->height,
-        .swap_xy = config->swap_xy,
-        .invert_x = config->invert_x,
-        .invert_y = config->invert_y,
+        .width = config->width, .height = config->height,
+        .swap_xy = config->swap_xy, .invert_x = config->invert_x, .invert_y = config->invert_y,
     };
-    if (!input_state_init(&live->state, INPUT_PROTOCOL_MT_B,
-                          config->expected_slots, &transform))
+    if (!input_state_init(&live->state, protocol, capacity, &transform))
         return fail(live, "INPUT_STATE_INIT_FAILED", 0);
 
 #ifdef EVIOCSCLOCKID
@@ -161,9 +178,9 @@ void input_live_close(InputLive *live) {
 
 static int config_valid(const InputLiveConfig *config) {
     return config && config->expected_name && config->expected_name[0] &&
-           config->width && config->height && config->expected_slots &&
+           config->width && config->height && config->width <= 1024 && config->height <= 1024 &&
            config->expected_slots <= INPUT_HW_MAX_SLOTS &&
-           config->expected_raw_max > config->expected_raw_min;
+           (probe_axes(config) || config->expected_raw_max > config->expected_raw_min);
 }
 
 int input_live_open_path(InputLive *live, const char *path, const InputLiveConfig *config) {
@@ -218,6 +235,15 @@ int input_live_report(FILE *out, const InputLive *live) {
     fputs("{\"schema\":1,\"operation\":\"live-input-admission\",\"path\":", out);
     json_text(out, live->path);
     fputs(",\"name\":", out); json_text(out, live->name);
+    fputs(",\"protocol\":", out);
+    json_text(out, d->protocol == INPUT_PROTOCOL_MT_A ? "mt-a" :
+                   d->protocol == INPUT_PROTOCOL_MT_B ? "mt-b" : "unselected");
+    fprintf(out, ",\"axis_source\":\"%s\",\"slot_range_present\":%s,"
+                 "\"contact_capacity\":%u,\"tracking_min\":%d,\"tracking_max\":%d,"
+                 "\"orientation_verified\":false",
+            probe_axes(c) ? "kernel-probe" : "explicit-constraints",
+            d->mt_slot && d->axes_queried ? "true" : "false",
+            live->state.slot_count, d->tracking_min, d->tracking_max);
     fputs(",\"error\":", out);
     if (live->error) json_text(out, live->error); else fputs("null", out);
     fprintf(out, ",\"errno\":%d,\"cleanup_errno\":%d,\"admitted\":%s,"
@@ -249,12 +275,14 @@ int input_live_discover(InputLive *live, const char *input_dir, const InputLiveC
     config = &saved_config;
     InputLive best = {0};
     best.fd = -1; best.config = *config;
+    InputLive selected = {0}; selected.fd = -1;
     unsigned opened = 0, rejected = 0;
     int best_rank = 0;
 
     for (unsigned i = 0; i < 64; ++i) {
         int n = snprintf(path, sizeof(path), "%s/event%u", input_dir, i);
         if (n < 0 || (size_t)n >= sizeof(path)) {
+            input_live_close(&selected);
             *live = best;
             return fail(live, "INPUT_PATH_TOO_LONG", ENAMETOOLONG);
         }
@@ -272,10 +300,20 @@ int input_live_discover(InputLive *live, const char *input_dir, const InputLiveC
         fputs("INPUT_CANDIDATE ", stderr);
         (void)input_live_report(stderr, &candidate);
         if (candidate.cleanup_errno) {
+            input_live_close(&selected);
             *live = candidate;
             return fail(live, "INPUT_CLOSE_FAILED", candidate.cleanup_errno);
         }
-        if (accepted) { *live = candidate; return 1; }
+        if (accepted) {
+            if (strcmp(config->expected_name, "auto")) { *live = candidate; return 1; }
+            if (selected.opened) {
+                input_live_close(&candidate); input_live_close(&selected);
+                *live = selected;
+                return fail(live, "INPUT_DEVICE_AMBIGUOUS", 0);
+            }
+            selected = candidate;
+            continue;
+        }
 
         int permission = candidate.system_errno == EACCES || candidate.system_errno == EPERM;
         int rank = candidate.diagnostics.name_matched ? 4 : permission ? 3 :
@@ -287,6 +325,12 @@ int input_live_discover(InputLive *live, const char *input_dir, const InputLiveC
             if (permission && !candidate.diagnostics.name_matched)
                 best.error = "INPUT_DEVICE_PERMISSION";
         }
+    }
+    if (selected.opened) {
+        selected.diagnostics.scanned = 64;
+        selected.diagnostics.opened_candidates = opened;
+        selected.diagnostics.rejected_candidates = rejected;
+        *live = selected; return 1;
     }
     best.diagnostics.scanned = 64;
     best.diagnostics.opened_candidates = opened;
@@ -339,6 +383,15 @@ static int mt_slots(int fd, unsigned slot_count, unsigned code, int *values) {
 }
 
 static int resync_mt(InputLive *live) {
+    if (live->state.protocol == INPUT_PROTOCOL_MT_A) {
+        unsigned long keys[NBITS(KEY_MAX + 1)] = {0};
+        if (ioctl(live->fd, EVIOCGKEY(sizeof(keys)), keys) < 0)
+            return fail(live, "INPUT_KEY_STATE_QUERY_FAILED", errno);
+        if (!input_state_resync_a(&live->state, (int)TEST_BIT(BTN_TOUCH, keys)))
+            return fail(live, "INPUT_MT_A_RESYNC_REJECTED", 0);
+        ++live->resyncs;
+        return 1;
+    }
     InputMtSnapshot snapshot;
     struct input_absinfo current;
     memset(&snapshot, 0, sizeof(snapshot));
@@ -453,6 +506,16 @@ int input_live_reconnect(InputLive *live, const char *input_dir) {
     ++live->reconnect_attempts;
     InputLive next = {0};
     if (!input_live_discover(&next, input_dir, &live->config)) return 0;
+    if (live->name[0] &&
+        (strcmp(next.name, live->name) || next.state.protocol != live->state.protocol ||
+         next.state.slot_count != live->state.slot_count ||
+         next.state.transform.x.minimum != live->state.transform.x.minimum ||
+         next.state.transform.x.maximum != live->state.transform.x.maximum ||
+         next.state.transform.y.minimum != live->state.transform.y.minimum ||
+         next.state.transform.y.maximum != live->state.transform.y.maximum)) {
+        input_live_close(&next);
+        return fail(live, "INPUT_RECONNECT_PROFILE_CHANGED", 0);
+    }
     next.frames += live->frames;
     next.events += live->events;
     next.syn_dropped += live->syn_dropped;

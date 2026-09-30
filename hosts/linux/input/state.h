@@ -9,7 +9,8 @@
 
 typedef enum {
     INPUT_PROTOCOL_SINGLE = 1,
-    INPUT_PROTOCOL_MT_B = 2
+    INPUT_PROTOCOL_MT_B = 2,
+    INPUT_PROTOCOL_MT_A = 3
 } InputProtocol;
 
 typedef struct {
@@ -60,6 +61,12 @@ typedef struct {
     int current_slot;
     InputSlot slots[INPUT_HW_MAX_SLOTS];
 
+    /* Type A assembles complete packets; slots retain logical IDs across reorder. */
+    InputSlot a_packet;
+    InputSlot a_contacts[INPUT_HW_MAX_SLOTS];
+    unsigned a_fields, a_count;
+    int a_touch_down;
+
     int legacy_raw_x;
     int legacy_raw_y;
     int legacy_have_x;
@@ -96,6 +103,8 @@ int input_state_init(InputState *state, InputProtocol protocol, unsigned slot_co
 /* feed: 0 invalid/error, 1 accepted-no-frame, 2 committed-frame, 3 caller-must-resync-after-SYN_DROPPED. */
 int input_state_feed(InputState *state, uint16_t type, uint16_t code, int32_t value);
 int input_state_resync_mt(InputState *state, const InputMtSnapshot *snapshot);
+/* Type A has no slot snapshot ioctl. Re-arm after querying BTN_TOUCH. */
+int input_state_resync_a(InputState *state, int touching);
 void input_state_disconnect(InputState *state);
 const InputFrame *input_state_frame(const InputState *state);
 

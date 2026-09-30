@@ -54,10 +54,10 @@ def compile_binary(mode,test=False,sanitize=False,static=False,loop=False):
     flags=[] if mode=='native' else ['-mcpu=cortex-a7','-mfpu=neon-vfpv4','-mfloat-abi=hard']
     target='x86_64-unknown-linux-gnu' if mode=='native' else 'armv7-unknown-linux-gnueabihf'
     rt=ROOT/'out/runtime'/mode;core=ROOT/'out/runtime/cargo'/target/'release/libpocketjs_symbian_core.a'
-    sources=[ROOT/'hosts/linux/ui'/f'{n}.c' for n in UI]+[ROOT/'apps/coffee-framework/app.c',ROOT/'hosts/linux/engine/scene_runtime.c',ROOT/'hosts/linux/input/interaction_bridge.c',ROOT/'hosts/linux/framework.c']
+    sources=[ROOT/'hosts/linux/ui'/f'{n}.c' for n in UI]+[ROOT/'apps/coffee-framework/app.c',ROOT/'hosts/linux/engine/scene_runtime.c',ROOT/'hosts/linux/input/interaction_bridge.c',ROOT/'hosts/linux/framework.c',ROOT/'hosts/linux/input/state.c']
     sources+=[ROOT/('tests/framework/test_live_loop.c' if loop else 'tests/framework/test_framework.c' if test else 'hosts/linux/framework_main.c')]
     objects=[rt/n for n in ('host.o','platform.o','runtime-host.o','personality.o','libquickjs.a','media-store.o')]
-    if not test:sources += [ROOT/'hosts/linux/input/live.c',ROOT/'hosts/linux/input/state.c',ROOT/'hosts/linux/display/fbdev.c',ROOT/'hosts/linux/display/presenter.c']
+    if not test:sources += [ROOT/'hosts/linux/input/live.c',ROOT/'hosts/linux/display/fbdev.c',ROOT/'hosts/linux/display/presenter.c']
     binary=d/('framework-loop' if loop else 'framework-test' if test else 'ui-framework')
     if sanitize:binary=binary.with_name(binary.name+'-sanitize')
     if static:binary=binary.with_name(binary.name+'-static')

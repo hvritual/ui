@@ -68,7 +68,7 @@ static int discover_input(InputLive *input, const char *directory,
 
 int main(int argc,char **argv){
     const char *profile=NULL,*assets=NULL,*output=NULL,*fbpath="/dev/fb0",*inputdir="/dev/input",*media=NULL,*touch_name=NULL;
-    int headless=0,physical=0,seconds=60,items=8,rawmin=0,rawmax=16384,slots=10,swap=0,ix=0,iy=0;
+    int headless=0,physical=0,seconds=60,items=8,rawmin=0,rawmax=0,slots=0,swap=0,ix=0,iy=0;
     unsigned touch_fields=0, discovery_attempts=0;
     int input_wait_ms=3000;
     for(int i=1;i<argc;i++){
@@ -95,9 +95,9 @@ int main(int argc,char **argv){
     }
     unsigned h=!strcmp(profile,"imx6ul-1024x600")?600U:800U;
     if(headless==physical){fprintf(stderr,"exactly one of --headless or --physical is required\n");return 2;}
-    if(!headless&&h==800&&touch_fields!=127){fprintf(stderr,"800 target requires its own explicit verified touch configuration\n");return 2;}
-    if(rawmin>=rawmax)return 2;
-    if(!touch_name)touch_name="ilitek_ts";
+    if(!headless&&h==800&&((touch_fields&113U)!=113U||!touch_name||!strcmp(touch_name,"auto"))){fprintf(stderr,"800 target requires its own explicit verified touch configuration\n");return 2;}
+    if((touch_fields&6U) && ((touch_fields&6U)!=6U || rawmin>=rawmax))return 2;
+    if(!touch_name)touch_name="auto";
     if(mkdir(output,0700)){perror("new output directory");return 2;}
     FILE *trace=file_at(output,"timeline.csv");if(!trace)return 2;
     fprintf(trace,"sample_ns,input_event_ns,guest_turns,scene_uploads,presents,page,modal,progress,nodes,pool,first,selected,locale,theme\n");
@@ -128,7 +128,8 @@ int main(int argc,char **argv){
         int wrote=input_live_report(input_report,&input);
         if(fclose(input_report)||!wrote){failure="INPUT_REPORT_WRITE";goto done;}
         if(!admitted){failure=stopping?"INPUT_START_INTERRUPTED":input.error?input.error:"INPUT_DISCOVERY";goto done;}
-        fprintf(stderr,"FRAMEWORK_INPUT_READY path=%s name=%s attempts=%u\n",input.path,input.name,discovery_attempts);
+        fprintf(stderr,"FRAMEWORK_INPUT_READY path=%s name=%s protocol=%s attempts=%u\n",input.path,input.name,
+                input.state.protocol==INPUT_PROTOCOL_MT_A?"mt-a":"mt-b",discovery_attempts);
     }
     HostClock clock;host_clock_start(&clock,start);
     if(!pocket_framework_tick(r,start,1)){failure=r->error;goto done;}

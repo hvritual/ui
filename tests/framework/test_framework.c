@@ -58,6 +58,34 @@ static int invalid_scene(Driver *d){
     CHECK(pocket_scene_engine_api.resource_release(&d->r->engine,(PocketEngineResource){1,0})==POCKET_ENGINE_STALE_HANDLE);
     CHECK(step(d,17,1));CHECK(hash_frame(&d->r->frame)==before&&d->r->engine.scene_uploads==uploads);free(s);return 1;
 }
+/* Packet protocol integration uses the production state parser, F6 bridge and
+ * real renderer. Synthetic axes here are not this board's calibration. */
+static int raw_a_tap(Driver *d,InputState *raw,int x,int y) {
+    CHECK(input_state_feed(raw,EV_KEY,BTN_TOUCH,1)==1);
+    CHECK(input_state_feed(raw,EV_ABS,ABS_MT_TRACKING_ID,0)==1);
+    CHECK(input_state_feed(raw,EV_ABS,ABS_MT_POSITION_X,x)==1);
+    CHECK(input_state_feed(raw,EV_ABS,ABS_MT_POSITION_Y,y)==1);
+    CHECK(input_state_feed(raw,EV_SYN,SYN_MT_REPORT,0)==1);
+    CHECK(input_state_feed(raw,EV_SYN,SYN_REPORT,0)==2);
+    d->ms+=20;CHECK(pocket_framework_input(d->r,input_state_frame(raw),d->ms*1000000ULL));
+    CHECK(step(d,1,1));
+    CHECK(input_state_feed(raw,EV_KEY,BTN_TOUCH,0)==1);
+    CHECK(input_state_feed(raw,EV_SYN,SYN_REPORT,0)==2);
+    d->ms+=20;CHECK(pocket_framework_input(d->r,input_state_frame(raw),d->ms*1000000ULL));
+    CHECK(step(d,1,1));return 1;
+}
+static int raw_a_flow(Driver *d) {
+    InputState raw;
+    InputTransform t={.x={0,1023},.y={0,(int)d->height-1},.width=1024,.height=d->height};
+    CHECK(input_state_init(&raw,INPUT_PROTOCOL_MT_A,INPUT_HW_MAX_SLOTS,&t));
+    CHECK(raw_a_tap(d,&raw,100,200));CHECK(state(d,2,0));
+    CHECK(raw_a_tap(d,&raw,640,(int)d->height-112));CHECK(state(d,2,1));
+    CHECK(raw_a_tap(d,&raw,330,(int)d->height-112));CHECK(state(d,2,1));
+    CHECK(raw_a_tap(d,&raw,640,364));CHECK(state(d,3,0));
+    CHECK(step(d,5001,1));CHECK(state(d,4,0));
+    CHECK(raw_a_tap(d,&raw,500,(int)d->height-91));CHECK(state(d,1,0));
+    CHECK(mark(d,"raw-mt-a-full-ui"));return 1;
+}
 static int flow(const char *assets,const char *out,unsigned height,int wrong_pixel){
     Driver d;char store[4096],a[4096],b[4096];
     CHECK(snprintf(store,sizeof(store),"%s/store-%u",out,height)<(int)sizeof(store));CHECK(mkdir(store,0700)==0);
@@ -132,7 +160,7 @@ static int flow(const char *assets,const char *out,unsigned height,int wrong_pix
         CHECK(step(&d,250,1));CHECK(tap(&d,500,(int)height-91));CHECK(state(&d,1,0));
     }
     CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.nodes==26&&s.pool==6&&s.completed==1);
-    CHECK(d.r->page_mask==15&&d.r->modal_seen==1);CHECK(mark(&d,"lifecycle-24"));CHECK(end(&d));return 1;
+    CHECK(d.r->page_mask==15&&d.r->modal_seen==1);CHECK(mark(&d,"lifecycle-24"));CHECK(raw_a_flow(&d));CHECK(end(&d));return 1;
 }
 static int stress(const char *assets,const char *out,unsigned height){
     Driver d;CHECK(begin(&d,assets,out,height,100,NULL));
