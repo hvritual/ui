@@ -19,8 +19,9 @@ not an end-to-end damage optimization or a physical FPS guarantee.
 Application: Home -> Detail -> confirmation Modal -> simulated Making -> Success.
 Back/cancel, six fixed P4 display locales, two themes and horizontal card paging
 share the same state. The standard workload has 8 drinks; `--items 100` is a
-separate list-stress fixture. Both use six recycled card roots, with 26 live
-component nodes on Home. The 600/800 layouts are computed independently, not
+separate list-stress fixture. The viewport materializes at most two adjacent pages (12 card roots).
+The 8-drink workload has 32 live Home component nodes; the 100-item workload
+has at most 44. This replaces the old six-root, release-only page switch. The 600/800 layouts are computed independently, not
 rescaled screenshots. No keyboard, editable text/IME, payment, hardware command,
 video, or final public TS SDK is added. No actuator, control/network or OTA process
 is modified. This is not the complete coffee-machine product UI.
@@ -50,7 +51,7 @@ make test-board-framework-verifier
 ```
 
 `test-framework` executes the real production C/JS renderer, two viewports,
-18 full-frame images and 4 numeric replay logs, then repeats them byte-for-byte.
+18 baseline plus 8 in-motion full-frame images and 6 numeric replay logs, then repeats them byte-for-byte.
 It runs an intentionally failing assertion, production headless CLI on both
 profiles, refusal without an explicit physical/headless mode, rejection of `/dev/null`, refusal of
 unverified 800 input defaults and refusal to overwrite evidence. The test suite
@@ -269,3 +270,60 @@ Run on the isolated 600 test board without the former confirmation string:
 The startup record now includes `protocol`, `axis_source`, `slot_range_present`,
 actual axis bounds and `contact_capacity`. Keep the exact new package, input.json,
 report.json and LCD/touch evidence together; #49 still needs physical acceptance.
+
+
+## Direct horizontal manipulation after the Goodix return
+
+The returned 88a0da6 board report and operator feedback established visible,
+working Coffee navigation on the Goodix 1024x600 board. The exact measured raw
+bounds are X 0..1024, Y 0..600, MT-A. The original app nevertheless ignored
+SCROLL_UPDATE: it changed pages only on SCROLL_END. This was not evidence of a
+slow touchscreen. The mean 8.315159% CPU from a 177.266601-second mixed session
+is neither idle CPU nor an active-scroll benchmark. Zero drops/reconnects/media
+updates cannot prove those fault/asset gates. Original report flags stay intact.
+
+The pager now tracks the pointer's original X after F6 wins horizontal slop,
+uses logical-pixel offsets for both layout/hit testing and scene paint, keeps
+an adjacent page available, and settles with a bounded 180 ms cubic ease-out.
+Page stride is 984px (960px viewport plus 24px gutter). Boundary overscroll is
+resisted and capped at 80px. A quarter-page displacement or a recent >=600px/s
+flick over at least 48px selects the neighbor; stale velocity after a pause does
+not select a page. A new press interrupts settling and does not activate a card.
+Cancel restores the previously settled page; drag never creates a drink command.
+The More button retains instant cyclic paging; swipes stop at either end.
+
+Only the permanent scroll container owns an active drag; recycled card identities
+cannot steal it. Viewport updates run after event dispatch. Idle turns do not
+repeat application layout. Retained engine wrappers reassert clipping during
+restyle; tests assert every pixel in the outer margins remains unchanged during
+motion, as do the header/footer. Existing image textures are reused, not uploaded
+or rebound every movement. No BSP, renderer revision, display mode, touch axis,
+VSync or machine-control change is included. The existing 30Hz presentation
+schedule is retained; no 60fps or photon-latency claim is made.
+
+The two-page pool bound intentionally replaces the previous six-card bound.
+Small eight-item catalogs fit entirely in that bound and need not recycle on
+every page; the independent 100-item test proves bounded recycling. The hardware
+verifier keeps its existing 64-node bound and requires recycling for larger
+catalogs. These are explicit workload changes, not a relaxed hardware pass.
+
+New timeline columns: scroll_x, dragging, settling; present_scroll_x,
+present_dragging, present_settling; present_complete_ns, update_duration_ns,
+render_duration_ns, present_duration_ns. Duration fields are monotonic elapsed
+wall times around update/render/CPU framebuffer submission, not CPU-utilization
+samples or scanout/photon latency. They describe the LAST successful present:
+deduplicate rows by presents before computing intervals or percentiles. The
+report adds motion_presents and layout_runs. Empty/idle intervals must not be
+reported as animation FPS. Package software checks cannot substitute the board.
+
+Retest with the same clean command, initially with all fingers released:
+
+```sh
+./run-framework.sh imx6ul-1024x600 180
+```
+
+Drag slowly in both directions before releasing; verify content moves before UP,
+the neighbor appears inside the clipped viewport, short drags return, long drags
+settle, and a new press stops settling without selecting a drink. Then confirm
+normal tap navigation and return the complete log directory and LCD/finger video.
+#49 stays open for the remaining separate target, asset and fault evidence.

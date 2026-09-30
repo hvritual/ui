@@ -100,7 +100,7 @@ int main(int argc,char **argv){
     if(!touch_name)touch_name="auto";
     if(mkdir(output,0700)){perror("new output directory");return 2;}
     FILE *trace=file_at(output,"timeline.csv");if(!trace)return 2;
-    fprintf(trace,"sample_ns,input_event_ns,guest_turns,scene_uploads,presents,page,modal,progress,nodes,pool,first,selected,locale,theme\n");
+    fprintf(trace,"sample_ns,input_event_ns,guest_turns,scene_uploads,presents,page,modal,progress,nodes,pool,first,selected,locale,theme,scroll_x,dragging,settling,present_scroll_x,present_dragging,present_settling,present_complete_ns,update_duration_ns,render_duration_ns,present_duration_ns\n");
     PocketFramework *r=calloc(1,sizeof(*r));if(!r){fclose(trace);return 1;}
     FbDevice fb={0};InputLive input={0};int ok=0,unblank_errno=0,pending_input_wait=0;const char *failure="INITIALIZATION";
     uint64_t start=0,now=0,next_reconnect=0;struct rusage before={0},after={0};CoffeeAppStats stats={0};
@@ -163,9 +163,13 @@ int main(int argc,char **argv){
         for(int j=0;j<due;j++)if(!pocket_framework_tick(r,now,0)){failure=r->error;goto done;}
         if(due){
             if(!coffee_app_stats(&r->app,&stats)){failure="STATS";goto done;}
-            if(fprintf(trace,"%llu,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",(unsigned long long)now,(unsigned long long)r->event_ns,
+            if(fprintf(trace,"%llu,%llu,%llu,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%d,%u,%u,%d,%u,%u,%llu,%llu,%llu,%llu\n",(unsigned long long)now,(unsigned long long)r->event_ns,
                 (unsigned long long)r->ticks,(unsigned long long)r->engine.scene_uploads,(unsigned long long)r->presents,
-                stats.page,stats.modal,stats.progress,stats.nodes,stats.pool,stats.first,stats.selected,stats.locale,stats.theme)<0){failure="TRACE_WRITE";goto done;}
+                stats.page,stats.modal,stats.progress,stats.nodes,stats.pool,stats.first,stats.selected,stats.locale,stats.theme,
+                stats.scroll_x,stats.scroll_dragging,stats.scroll_settling,
+                r->presented_scroll_x,r->presented_dragging,r->presented_settling,
+                (unsigned long long)r->present_complete_ns,(unsigned long long)r->update_duration_ns,
+                (unsigned long long)r->render_duration_ns,(unsigned long long)r->present_duration_ns)<0){failure="TRACE_WRITE";goto done;}
         }
         if(r->error){failure=r->error;goto done;}
         /* Preserve 60 Hz guest clock; input wakes the bounded wait sooner. */
@@ -197,6 +201,9 @@ done:
         fprintf(report,"\"schema\":1,\"commit\":\"%s\",\"profile\":\"%s\",\"ok\":%s,\"physical_io\":%s,\"visual_validated\":false,\"business_commands\":false,\"error\":",
           POCKET_BUILD_COMMIT,profile,ok?"true":"false",physical_io?"true":"false");
         if(failure)fprintf(report,"\"%s\"",failure);else fputs("null",report);
+        fprintf(report,",\"scroll_x\":%d,\"scroll_dragging\":%u,\"scroll_settling\":%u,\"motion_presents\":%llu,\"layout_runs\":%llu",
+                stats.scroll_x,stats.scroll_dragging,stats.scroll_settling,
+                (unsigned long long)r->motion_presents,(unsigned long long)stats.layout_runs);
         fprintf(report,",\"input_errno\":%d,\"input_discovery_attempts\":%u,\"input_wait_ms\":%d",
                 input.system_errno,discovery_attempts,input_wait_ms);
         fprintf(report,",\"wall_seconds\":%.6f,\"cpu_percent_one_core\":%.6f,\"peak_rss_kib\":%ld,\"ticks\":%llu,\"presents\":%llu,\"clean_skips\":%llu,\"bytes_written\":%llu,\"page_mask\":%u,\"modal_seen\":%u,\"completed\":%u,\"pool\":%u,\"nodes\":%u,\"item_count\":%u,\"peak_pool\":%u,\"recycled\":%llu,\"input_frames\":%llu,\"syn_dropped\":%llu,\"disconnects\":%llu,\"reconnects\":%llu,\"timestamp_clamps\":%llu,\"media_applied\":%lu,\"media_rejected\":%lu,\"media_deferred\":%lu,\"unblank_errno\":%d,\"display_cleanup_errno\":%d,\"input_cleanup_errno\":%d,\"core_live_bytes_after_close\":%zu}\n",

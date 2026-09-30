@@ -29,7 +29,8 @@ def runtime_gate(r,profile,commit):
         require(r.get(key)==0,'cleanup error: '+key)
     require(r.get('page_mask')==15 and r.get('modal_seen')==1 and r.get('completed',0)>=1,'incomplete page flow')
     require(r.get('input_frames',0)>10 and r.get('presents',0)>1,'missing physical input/display work')
-    require(0<r.get('pool',0)<=6 and r.get('peak_pool',99)<=6 and 0<r.get('nodes',0)<=64 and r.get('recycled',0)>=2,'virtualization evidence missing')
+    require(type(r.get('item_count')) is int and r['item_count'] in (8,100),'unknown catalog workload')
+    require(0<r.get('pool',0)<=min(12,r['item_count']) and r.get('peak_pool',99)<=12 and 0<r.get('nodes',0)<=64 and (r.get('item_count',0)<=12 or r.get('recycled',0)>=2),'virtualization evidence missing')
     require(r.get('media_applied',0)>=1,'dynamic resource evidence missing')
     require(r.get('disconnects',0)>=1 and r.get('reconnects',0)>=1 and r.get('syn_dropped',0)>=1,'independent input fault evidence missing')
     require(r.get('wall_seconds',0)>0 and r.get('peak_rss_kib',0)>0 and r.get('cpu_percent_one_core',-1)>=0,'usage data missing')
@@ -60,6 +61,17 @@ class GateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'physical'):runtime_gate(r,PROFILES[0],'x')
     def test_stale(self):
         with self.assertRaisesRegex(ValueError,'source'):runtime_gate({'schema':1,'commit':'old','profile':PROFILES[0]},PROFILES[0],'new')
+    def test_motion_pool_not_unbounded(self):
+        r=dict(schema=1,profile=PROFILES[0],commit='x',ok=True,error=None,
+               physical_io=True,visual_validated=False,business_commands=False,
+               unblank_errno=0,display_cleanup_errno=0,input_cleanup_errno=0,
+               core_live_bytes_after_close=0,page_mask=15,modal_seen=1,completed=1,
+               input_frames=20,presents=20,pool=13,peak_pool=13,nodes=44,item_count=100,recycled=94)
+        with self.assertRaisesRegex(ValueError,'virtualization'):runtime_gate(r,PROFILES[0],'x')
+        r['pool']=12;r['peak_pool']=12;r['recycled']=0
+        with self.assertRaisesRegex(ValueError,'virtualization'):runtime_gate(r,PROFILES[0],'x')
+        del r['item_count']
+        with self.assertRaisesRegex(ValueError,'workload'):runtime_gate(r,PROFILES[0],'x')
     def test_other_profile(self):
         with self.assertRaisesRegex(ValueError,'profile'):runtime_gate({'schema':1,'commit':'x','profile':PROFILES[0]},PROFILES[1],'x')
 def main():
