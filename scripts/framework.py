@@ -90,11 +90,11 @@ def cli_checks(binary,mode,dir,static=False):
         if sha(dest/'report.json')!=before:raise RuntimeError('old report was overwritten')
     common=['--profile',PROFILES[0],'--asset-root',assets_dir,'--seconds','1']
     run([*base,*common,'--output',dir/'no-consent'],dir/'no-consent.log',2)
-    if (dir/'no-consent').exists():raise RuntimeError('write admitted without token')
-    run([*base,*common,'--allow-write','I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER','--fbdev','/dev/null','--output',dir/'not-fb'],dir/'not-fb.log',1)
+    if (dir/'no-consent').exists():raise RuntimeError('write admitted without explicit mode')
+    run([*base,*common,'--physical','--fbdev','/dev/null','--output',dir/'not-fb'],dir/'not-fb.log',1)
     r=json.loads((dir/'not-fb/report.json').read_text())
     if r['ok'] or r['physical_io'] or r['presents']:raise RuntimeError('invalid framebuffer admitted')
-    run([*base,'--profile',PROFILES[1],'--asset-root',assets_dir,'--output',dir/'unknown-board','--allow-write','I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER'],dir/'unknown-board.log',2)
+    run([*base,'--profile',PROFILES[1],'--asset-root',assets_dir,'--output',dir/'unknown-board','--physical'],dir/'unknown-board.log',2)
 
 def test(mode,sanitize=False):
     assets();before=state();binary=compile_binary(mode,True,sanitize);d=fresh(OUT/mode,'sanitizer' if sanitize else 'test')

@@ -67,17 +67,16 @@ static int discover_input(InputLive *input, const char *directory,
 }
 
 int main(int argc,char **argv){
-    const char *profile=NULL,*assets=NULL,*output=NULL,*fbpath="/dev/fb0",*inputdir="/dev/input",*media=NULL,*token=NULL,*touch_name=NULL;
-    int headless=0,seconds=60,items=8,rawmin=0,rawmax=16384,slots=10,swap=0,ix=0,iy=0;
+    const char *profile=NULL,*assets=NULL,*output=NULL,*fbpath="/dev/fb0",*inputdir="/dev/input",*media=NULL,*touch_name=NULL;
+    int headless=0,physical=0,seconds=60,items=8,rawmin=0,rawmax=16384,slots=10,swap=0,ix=0,iy=0;
     unsigned touch_fields=0, discovery_attempts=0;
     int input_wait_ms=3000;
     for(int i=1;i<argc;i++){
-        const char *key=argv[i];if(!strcmp(key,"--headless")){headless=1;continue;}
+        const char *key=argv[i];if(!strcmp(key,"--headless")){headless=1;continue;}if(!strcmp(key,"--physical")){physical=1;continue;}
         if(i+1>=argc){fprintf(stderr,"missing value: %s\n",key);return 2;}const char *v=argv[++i];
         if(!strcmp(key,"--profile"))profile=v;else if(!strcmp(key,"--asset-root"))assets=v;
         else if(!strcmp(key,"--output"))output=v;else if(!strcmp(key,"--fbdev"))fbpath=v;
         else if(!strcmp(key,"--input-dir"))inputdir=v;else if(!strcmp(key,"--media-store"))media=v;
-        else if(!strcmp(key,"--allow-write"))token=v;
         else if(!strcmp(key,"--touch-name")){touch_name=v;touch_fields|=1;}
         else if(!strcmp(key,"--input-wait-ms")){if(!number(v,0,10000,&input_wait_ms))return 2;}
         else if(!strcmp(key,"--seconds")){if(!number(v,1,86400,&seconds))return 2;}
@@ -92,10 +91,10 @@ int main(int argc,char **argv){
     }
     if(!profile||!assets||!output||strlen(output)>3800||
        (strcmp(profile,"imx6ul-1024x600")&&strcmp(profile,"imx6ul-1024x800"))){
-        fprintf(stderr,"usage: ui-framework --profile imx6ul-1024x600|imx6ul-1024x800 --asset-root DIR --output NEWDIR [--headless | --allow-write I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER]\n");return 2;
+        fprintf(stderr,"usage: ui-framework --profile imx6ul-1024x600|imx6ul-1024x800 --asset-root DIR --output NEWDIR (--headless | --physical)\n");return 2;
     }
     unsigned h=!strcmp(profile,"imx6ul-1024x600")?600U:800U;
-    if(!headless&&(!token||strcmp(token,"I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER")))return 2;
+    if(headless==physical){fprintf(stderr,"exactly one of --headless or --physical is required\n");return 2;}
     if(!headless&&h==800&&touch_fields!=127){fprintf(stderr,"800 target requires its own explicit verified touch configuration\n");return 2;}
     if(rawmin>=rawmax)return 2;
     if(!touch_name)touch_name="ilitek_ts";

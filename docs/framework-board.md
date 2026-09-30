@@ -52,7 +52,7 @@ make test-board-framework-verifier
 `test-framework` executes the real production C/JS renderer, two viewports,
 18 full-frame images and 4 numeric replay logs, then repeats them byte-for-byte.
 It runs an intentionally failing assertion, production headless CLI on both
-profiles, refusal without write consent, rejection of `/dev/null`, refusal of
+profiles, refusal without an explicit physical/headless mode, rejection of `/dev/null`, refusal of
 unverified 800 input defaults and refusal to overwrite evidence. The test suite
 uses production InputFrame delivery, not real kernel devices. It covers modal
 blocking, reactive progress with an independent pixel oracle, 24 navigation/
@@ -90,7 +90,7 @@ Do not use this diagnostic on a machine serving customers.
 
 ```sh
 cd coffee-framework
-./run-framework.sh I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER imx6ul-1024x600 180
+./run-framework.sh imx6ul-1024x600 180
 ```
 
 Known default input selector is `ilitek_ts` plus Protocol B capabilities, not a
@@ -203,3 +203,19 @@ Unpack a repaired bundle in a new approved test directory; never mix its binarie
 resources or demo signing public key with an older bundle. Keep the original
 failure log for version comparison. No system clock, kernel, libc, unrelated
 service, actuator or display-mode change is part of this repair.
+
+
+## Startup CLI convention
+
+The legacy magic confirmation string is retired from the F6A and subsequent
+startup path. User-facing startup is now:
+
+```sh
+./run-framework.sh imx6ul-1024x600 180
+```
+
+The runner selects the binary's explicit `--physical` mode internally.
+Direct binary execution must choose exactly one of `--physical` or
+`--headless`; neither implicit framebuffer writes nor a magic-word token are
+accepted. Existing profile, framebuffer, input admission, package hash and HIL
+checks remain unchanged.

@@ -90,7 +90,7 @@ int main(int argc,char **argv){
     if(!startup_policy_tests())return 1;
     const char *profile=viewport_height==600?"imx6ul-1024x600":"imx6ul-1024x800";
     char *args[]={"ui-framework","--profile",(char *)profile,"--asset-root",argv[1],"--output",argv[2],"--seconds","8",
-      "--allow-write","I_UNDERSTAND_THIS_WRITES_FRAMEBUFFER","--touch-name","ilitek_ts","--raw-min","0","--raw-max","16384",
+      "--physical","--touch-name","ilitek_ts","--raw-min","0","--raw-max","16384",
       "--slots","10","--swap-xy","0","--invert-x","0","--invert-y","0"};
     int rc=framework_program_main((int)(sizeof(args)/sizeof(args[0])),args);
     if(rc||unblanks!=1||invalid_frame||flushes<4||reconnections!=1||delivered_index!=18||host_alloc_stats().live_bytes){
