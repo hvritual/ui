@@ -1,24 +1,28 @@
-# PocketJS on i.MX6UL
+# Pocket Embedded UI on i.MX6UL
 
-Coffee-machine UI port workspace for **1024×600** and **1024×800** Embedded Linux displays.
+Coffee-machine UI workspace for **1024×600** and **1024×800** Embedded Linux displays.
 
-The repository contains an independent **P0 ARMv7 toolchain smoke** and a **P1 real PocketJS Linux headless host**. P1 executes QuickJS, the upstream C runtime, UI core/layout/DrawList and software rendering into memory. P2 adds an explicit fbdev Presenter/probe/display-test path; physical panels remain untested. Input devices, IME and compatibility with the deployed coffee-machine BSP are not certified. Actual acceptance evidence lives in the issues and Actions results, not in this README.
+## Implemented baseline and admission boundaries
 
-## Roadmap
+At the reviewed main commit `b5881d3e7c54f5e5ba75a49dc079263249d9e830` (2026-09-30), this repository contains the real PocketJS/QuickJS Linux host, fbdev/evdev backends, Pocket framework object/layout/style/component/navigation/overlay/reactive/model/interaction layers, and a native Coffee reference application. [PR #57](https://github.com/hvritual/ui/pull/57) adds the Unicode text-session core; [PR #58](https://github.com/hvritual/ui/pull/58) adds visible printable-ASCII, integer, password and PIN touch input.
 
-[Master roadmap #1](https://github.com/hvritual/ui/issues/1) · [P0 #2](https://github.com/hvritual/ui/issues/2) · [P1 #3](https://github.com/hvritual/ui/issues/3) · [P2 #4](https://github.com/hvritual/ui/issues/4) · [Stage/dependency index](docs/roadmap.md)
+These are separate claims:
 
-- MVP: P0 toolchain → P1 core/host → P2 display + P3 input → P4 multilingual resources/demo → P4A text editing/keyboard/offline IME.
-- Full Runtime: P5 measured rendering and IME performance → P6 device-service integration.
-- Production: P7 lifecycle/language-pack release/rollback → P8 hardware reliability and release review.
+- **Software implementation:** the accepted PRs and their exact-commit tests establish the implemented scope.
+- **Physical acceptance:** [#49](https://github.com/hvritual/ui/issues/49) preserves positive Goodix 600 evidence and the remaining independent 600/800, media, fault and human-review gates. A merged PR is not physical acceptance.
+- **Production admission:** performance, real device IPC, recovery and long-soak acceptance remain in P5–P8. The reference app only simulates making a drink.
 
-## P0 gates
+The current `ui-framework` still links Coffee-specific C code. It is **not yet a fixed runtime with independently replaceable applications**; [#56](https://github.com/hvritual/ui/issues/56) owns that separation. Basic ASCII input is not a genuine offline Chinese IME or admission of every Unicode input language. [#12](https://github.com/hvritual/ui/issues/12) remains open. The LVGL spike is separate and is not the mainline renderer.
 
-The supported **cloud development baseline** is Ubuntu 22.04 x86_64, GNU ARM hard-float GCC 11, Rust 1.90.0 and QEMU user mode. It is not the device root filesystem.
+Start with [the execution/dependency route](docs/roadmap.md), [framework/board operation](docs/framework-board.md), [ASCII keyboard scope](docs/ascii-keyboard.md), and [text-session semantics](docs/text-session.md). Issue checkboxes, software evidence, physical acceptance and production admission must not be conflated.
+
+## Build foundations
+
+The cloud development baseline is Ubuntu 22.04 x86_64, GNU ARM hard-float GCC 11, Rust 1.90.0 and QEMU user mode. It is not the device root filesystem. Run from a **clean, committed checkout**; missing prerequisites fail rather than skip.
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y --no-install-recommends make git python3 gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user
+sudo apt-get install -y --no-install-recommends make git python3 patch gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user
 rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target armv7-unknown-linux-gnueabihf
 make check
 make fetch
@@ -27,14 +31,11 @@ make smoke
 make verify
 ```
 
-Run from a **clean, committed checkout**. `make fetch` downloads the locked QuickJS source for P0. `make build` compiles five real QuickJS C files, a C ABI bridge and a Rust executable. `make smoke` runs ten real ARM/QEMU cases and checks an intentional failure. Missing prerequisites fail rather than skip.
+P0 compiles the locked QuickJS C source, a C ABI bridge and a Rust smoke executable. Its tests do not establish UI or physical-board performance.
 
-## P1 Linux Host
-
-See [build and acceptance](docs/linux-host.md), [observed board baseline](docs/board-baseline.md), and [text/IME capability audit](docs/text-input-audit.md). P1 uses the upstream-pinned `nightly-2026-07-02` standalone UI C ABI workspace, separately from P0's Rust compiler.
+P1 uses the separately pinned UI C ABI workspace:
 
 ```sh
-sudo apt-get install -y patch
 rustup toolchain install nightly-2026-07-02 --profile minimal --component rust-src --target armv7-unknown-linux-gnueabihf
 make check-targets
 make fetch-runtime
@@ -43,26 +44,33 @@ make test-runtime-arm
 make verify-runtime
 ```
 
-The host uses bounded trusted local assets, a single UI owner, monotonic time, 60 guest/core turns and one offscreen render per two turns. Tests validate actual pixels/layout, Promise ordering, pause/resume, errors and repeated cleanup. The test fixture uses native HostOps, not yet the component compiler. Output and evidence are in `out/runtime/`; an Actions artifact preserves successful results and failure logs.
+See [Linux host gates](docs/linux-host.md), [board observations](docs/board-baseline.md), [source/license records](docs/third-party.md) and [P0 operation](docs/toolchain.md). The single-owner host preserves guest/jobs/core timing while rendering on separate opportunities. Tests execute actual layout, DrawList and pixels, not a replacement renderer.
 
-## P2 framebuffer Presenter
-
-See [display contracts, gates and safe device operation](docs/display.md). The Presenter accepts validated 32-bit RGB888 bitfields or exact RGB565, using queried stride, offsets and mapping limits without changing display modes. Read-only probe and deliberate display-test are separate commands. The core-to-presenter tests use real PocketJS rendering and explicitly synthetic fbdev syscalls; independent full-frame goldens cover both viewports, text, images, clipping and animation.
+## Display and complete framework gates
 
 ```sh
 make test-display-unit
 make test-display
 make test-display-arm
-make verify-runtime
 make verify-display
 ```
 
-Display evidence is in `out/display/`. Pan remains disabled, vsync is not probed, and row copying may tear. **Device commands require prior BSP/ABI admission and exclusive display ownership; current cloud binaries are not a production install.**
+The Presenter uses queried stride, offsets and bitfields without forcing a new display mode. It supports admitted 32-bit layouts and exact RGB565 conversion. Pan/VSync, tearing and physical geometry require their own device evidence. See [display.md](docs/display.md).
 
-## Important boundaries
+The complete framework has additional resource/build prerequisites; follow [framework-board.md](docs/framework-board.md), rather than interpreting the following gate names as a complete clean-machine setup:
 
-User-provided measurements for the **1024×600** board are in `targets/boards/myimx6ek140-1024x600.json`: Linux 4.9.88, Buildroot 2019.05-rc1, Linux-visible RAM 242976 KiB, and 32-bpp display geometry. These observations do not establish libc/loader/SDK compatibility. The 1024×800 profile has no physical-board record. P0's historical `targets/imx6ul.json` remains unchanged; P1 profiles and observation records are separate.
+```sh
+make test-keyboard-layouts
+make test-framework test-framework-arm test-framework-sanitize verify-framework
+make build-board-framework test-board-framework-package test-board-framework-verifier
+```
 
-Read each binary's actual GLIBC requirements. Never upgrade device libc to accommodate a cloud baseline. QEMU execution is **not board ABI, screen performance, RSS or stability evidence**. Existing device control, network middleware and OTA stay authoritative; the UI does not access actuators. The headless CLI is a diagnostic for trusted bundles, not a production daemon or sandbox.
+The matching executable, private scene guest adapter and catalog must ship together until #56 establishes independent application loading. Board packages and tests must identify their actual build commit, not merely the later merge commit.
 
-See [P0 operation](docs/toolchain.md) and [third-party sources](docs/third-party.md).
+## Device and safety boundaries
+
+The historical 1024×600 observation in `targets/boards/myimx6ek140-1024x600.json` records Linux 4.9.88, Buildroot 2019.05-rc1, Linux-visible RAM 242976 KiB and 32-bpp geometry. Newer Goodix evidence and static test packages do not retroactively certify the old glibc dynamic binary or a reproducible vendor uClibc SDK. The 1024×800 profile does not inherit the 600 controller, orientation, ABI or performance.
+
+Never upgrade device libc to accommodate a cloud build. Read the actual ELF's INTERP/NEEDED and ABI evidence; a static package running on a tested board is not blanket BSP compatibility. QEMU is functional evidence, not physical display, touch, latency, memory-budget or long-soak acceptance.
+
+Existing device control, network middleware and OTA remain authoritative. UI sends intent only when the future P6 contract admits it; it does not access actuators. The diagnostic/reference runtime is not yet a certified production daemon or untrusted-application sandbox. Use synthetic input in review evidence; never collect real credentials or rewrite automatic `visual_validated=false` flags.
