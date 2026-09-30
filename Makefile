@@ -227,3 +227,9 @@ verify-language-packs:
 	python3 scripts/text_input.py matrix
 verify-text-input:
 	python3 scripts/text_input.py verify
+
+.PHONY: test-keyboard-layouts test-keyboard test-keyboard-arm
+test-keyboard-layouts:
+	python3 scripts/keyboard_layout.py
+test-keyboard: test-keyboard-layouts test-framework
+test-keyboard-arm: test-keyboard-layouts test-framework-arm

@@ -1,3 +1,8 @@
+> Follow-up: the visible ASCII keyboard/field binding is now implemented in
+> `keyboard.h`; see [ascii-keyboard.md](ascii-keyboard.md). The sections below
+> describe the original core slice and its native API boundaries, not the current
+> whole-product admission. Offline IME and physical keyboard acceptance remain open.
+
 # Native text sessions — first functional slice of #12
 
 This is the native editor/composition contract and deterministic headless suite.

@@ -185,7 +185,9 @@ int main(int argc,char **argv){
     }
     if(!pocket_framework_tick(r,now,1)){failure=r->error;goto done;}
     snprintf(snapshot,sizeof(snapshot),"%s/last.ppm",output);
-    if(!pocket_framework_snapshot(r,snapshot)){failure="LAST_SNAPSHOT";goto done;}
+    if(pocket_framework_can_snapshot(r)){
+        if(!pocket_framework_snapshot(r,snapshot)){failure="LAST_SNAPSHOT";goto done;}
+    }else fprintf(stderr,"FRAMEWORK_SNAPSHOT_SUPPRESSED text_input_active\n");
     (void)coffee_app_stats(&r->app,&stats);ok=1;failure=NULL;
 done:
     if(r->opened){(void)coffee_app_stats(&r->app,&stats);if(!pocket_framework_close(r)){ok=0;failure="ENGINE_CLOSE";}}
@@ -206,6 +208,8 @@ done:
         fprintf(report,"\"schema\":1,\"commit\":\"%s\",\"profile\":\"%s\",\"ok\":%s,\"physical_io\":%s,\"visual_validated\":false,\"business_commands\":false,\"error\":",
           POCKET_BUILD_COMMIT,profile,ok?"true":"false",physical_io?"true":"false");
         if(failure)fprintf(report,"\"%s\"",failure);else fputs("null",report);
+        fprintf(report,",\"text_input_open\":%s,\"text_input_opens\":%u,\"text_input_confirms\":%u,\"text_input_cancels\":%u",
+                stats.editor_active?"true":"false",stats.editor_opens,stats.editor_confirms,stats.editor_cancels);
         fprintf(report,",\"scroll_x\":%d,\"scroll_dragging\":%u,\"scroll_settling\":%u,\"motion_presents\":%llu,\"layout_runs\":%llu",
                 stats.scroll_x,stats.scroll_dragging,stats.scroll_settling,
                 (unsigned long long)r->motion_presents,(unsigned long long)stats.layout_runs);

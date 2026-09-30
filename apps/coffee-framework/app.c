@@ -5,7 +5,7 @@
 
 /* Reference app: business state is simulated and cannot execute machine actions. */
 enum { HOME=1,DETAIL,MAKING,SUCCESS };
-enum { SELECT=1,NEXT,BACK,START,CANCEL,CONFIRM,THEME,LOCALE };
+enum { SELECT=1,NEXT,BACK,START,CANCEL,CONFIRM,THEME,LOCALE,EDIT };
 enum { STYLE_PAGE=1,STYLE_TEXT,STYLE_MUTED,STYLE_CARD,STYLE_BUTTON,STYLE_PRIMARY,STYLE_SHADE,STYLE_PROGRESS,STYLE_CLEAR };
 enum { TXT_TITLE=1,TXT_SUBTITLE,TXT_DEMO,TXT_NEXT,TXT_BACK,TXT_CANCEL,TXT_START,TXT_CONFIRM,TXT_MAKING,TXT_DONE,TXT_HOME,TXT_MEDIA,TXT_LOCALE,TXT_THEME };
 #define RGBA(r,g,b) (0xff000000U|((uint32_t)(b)<<16)|((uint32_t)(g)<<8)|(r))
@@ -19,6 +19,8 @@ struct App {
     PocketNavigationStack nav;PocketInteractionRuntime interaction;
     PocketReactiveRuntime reactive;PocketReactiveHandle progress_signal;
     PocketVirtualCollection list;PocketComponentHandle home,grid,page_root,modal,progress;
+    PocketKeyboard keyboard;char demo_name[65],demo_number[17];
+    unsigned editor_opens,editor_confirms,editor_cancels;
     Action bindings[96];Card cards[COFFEE_PAGE_POOL];unsigned binding_count;
     unsigned height,item_count,first,selected,page,locale,theme,completed,actions;
     unsigned pending,pending_index;int failed,dirty;
@@ -144,7 +146,7 @@ static PocketComponentStatus delegate(void *p,uint32_t i,uint64_t k,PocketCompon
 static PocketComponentHandle page(App *a,unsigned heading){
     PocketComponentHandle c=make(a,POCKET_COMPONENT_VIEW,(PocketComponentHandle){0},0,0,1024,a->height,STYLE_PAGE,0,0);
     make(a,POCKET_COMPONENT_TEXT,c,32,20,620,36,STYLE_TEXT,heading,0);
-    make(a,POCKET_COMPONENT_TEXT,c,32,a->height-52,730,36,STYLE_MUTED,TXT_DEMO,0);
+    make(a,POCKET_COMPONENT_TEXT,c,32,a->height-52,560,36,STYLE_MUTED,TXT_DEMO,0);
     return c;
 }
 static int sync_layout(App *a){
@@ -230,9 +232,42 @@ static int window(App *a,unsigned first){
     coffee_pager_jump(&a->pager,first/COFFEE_PAGE_ITEMS);a->first=first;
     return viewport(a);
 }
+static int edit_form(App *a){
+    if(a->page!=HOME||a->keyboard.impl)return 0;
+    pocket_interaction_cancel_all(&a->interaction,a->now);
+    coffee_pager_cancel(&a->pager);a->viewport_dirty=1;
+    PocketKeyboardConfig c={.tree=&a->tree,.layout=&a->layout,.components=&a->components,
+      .interaction=&a->interaction,.overlays=&a->overlays,.height=a->height,.field_count=4,
+      .overlay_id=2,.owner_route=HOME,.page_style=STYLE_PAGE,.text_style=STYLE_TEXT,
+      .muted_style=STYLE_MUTED,.field_style=STYLE_CARD,.key_style=STYLE_BUTTON,.primary_style=STYLE_PRIMARY,
+      .fields={{501,205,POCKET_KEYBOARD_ASCII,64,1,0,a->demo_name},
+               {502,206,POCKET_KEYBOARD_NUMBER,16,1,0,a->demo_number},
+               {503,207,POCKET_KEYBOARD_PASSWORD,64,1,0,""},
+               {504,208,POCKET_KEYBOARD_PIN,8,1,0,""}}};
+    if(!pocket_keyboard_open(&a->keyboard,&c))return 0;
+    a->editor_opens++;return 1;
+}
+static int keyboard_step(App *a){
+    if(!a->keyboard.impl)return 1;
+    PocketKeyboardSnapshot s;
+    if(!pocket_keyboard_step(&a->keyboard,a->now)||!pocket_keyboard_snapshot(&a->keyboard,&s))return 0;
+    if(s.result!=POCKET_KEYBOARD_EDITING){
+        if(s.result==POCKET_KEYBOARD_CONFIRMED){
+            size_t n;
+            /* Only non-sensitive local demonstration values survive close.
+             * Password/PIN drafts are erased on dispose, never copied to app. */
+            if(pocket_keyboard_copy_result(&a->keyboard,0,a->demo_name,sizeof(a->demo_name),&n)!=POCKET_TEXT_OK||
+               pocket_keyboard_copy_result(&a->keyboard,1,a->demo_number,sizeof(a->demo_number),&n)!=POCKET_TEXT_OK)return 0;
+        }
+        if(s.result==POCKET_KEYBOARD_CONFIRMED)a->editor_confirms++;else a->editor_cancels++;
+        pocket_keyboard_dispose(&a->keyboard);a->dirty=1;
+    }
+    return 1;
+}
 static int act(App *a,unsigned what,unsigned index){
     a->dirty=1;
     switch(what){
+    case EDIT:return edit_form(a);
     case SELECT:if(a->page!=HOME||index>=a->item_count)return 0;a->selected=index;return detail(a);
     case NEXT:if(a->page!=HOME)return 1;return window(a,a->first+6<a->item_count?a->first+6:0);
     case BACK:if(a->page==HOME)return window(a,a->first>=6?a->first-6:0);
@@ -250,6 +285,7 @@ static int act(App *a,unsigned what,unsigned index){
 int coffee_app_init(CoffeeApp *out,unsigned h,unsigned items){
     if(!out||out->impl||(h!=600&&h!=800)||(items!=8&&items!=100))return 0;
     App *a=calloc(1,sizeof(*a));if(!a)return 0;out->impl=a;a->height=h;a->item_count=items;a->page=HOME;
+    memcpy(a->demo_name,"Coffee",7);
     coffee_pager_init(&a->pager,items);a->materialized_first=UINT32_MAX;
     PocketUiTreeConfig tc={.initial_capacity=128,.update_queue_capacity=64,.update_budget=64};
     PocketLayoutConfig lc={.tree=&a->tree,.record_capacity=256};
@@ -266,6 +302,7 @@ int coffee_app_init(CoffeeApp *out,unsigned h,unsigned items){
     a->home=page(a,TXT_TITLE);
     make(a,POCKET_COMPONENT_TEXT,a->home,32,55,600,36,STYLE_MUTED,TXT_SUBTITLE,0);
     button(a,a->home,672,24,144,TXT_THEME,THEME,0,0);button(a,a->home,832,24,160,TXT_LOCALE,LOCALE,0,0);
+    button(a,a->home,600,h-60,168,204,EDIT,0,0);
     a->grid=make(a,POCKET_COMPONENT_SCROLL,a->home,32,105,960,h-170,STYLE_CLEAR,0,0);
     button(a,a->home,784,h-60,208,TXT_NEXT,NEXT,0,0);
     PocketVirtualCollectionConfig vc={.components=&a->components,.parent=a->grid,.item_kind=POCKET_COMPONENT_BUTTON,
@@ -292,6 +329,7 @@ int coffee_app_step(CoffeeApp *out,uint64_t ms){
         a->first=a->pager.settled_page*COFFEE_PAGE_ITEMS;
     }
     if(a->pending){unsigned action=a->pending,index=a->pending_index;a->pending=0;if(!act(a,action,index))return 0;}
+    if(!keyboard_step(a))return 0;
     if(a->page==MAKING){unsigned progress=(unsigned)((ms-a->started)/50);if(progress>100)progress=100;
       if(pocket_reactive_set(&a->reactive,a->progress_signal,pocket_value_i64(progress))!=POCKET_REACTIVE_OK)return 0;
       if(progress==100&&!success(a))return 0;
@@ -307,17 +345,25 @@ int coffee_app_scene(CoffeeApp *out,PocketScene *s){
     PocketSceneSource src={&a->tree,&a->components,&a->layout,&a->styles};
     if(!pocket_scene_begin(s,1024,a->height,a->locale,a->theme?RGBA(23,30,29):RGBA(248,246,240),
        a->page==HOME&&!input.active_pointers&&!a->pager.settling&&!a->pager.dragging&&!pocket_overlay_count(&a->overlays))||!pocket_scene_append(s,&src,root_of(a,p.root)))return 0;
-    return !pocket_component_handle_valid(a->modal)||pocket_scene_append(s,&src,root_of(a,a->modal));
+    if(pocket_component_handle_valid(a->modal)&&!pocket_scene_append(s,&src,root_of(a,a->modal)))return 0;
+    return !a->keyboard.impl||pocket_scene_append(s,&src,pocket_keyboard_root(&a->keyboard));
 }
 int coffee_app_stats(const CoffeeApp *out,CoffeeAppStats *s){
     const App *a=out?out->impl:NULL;if(!a||!s)return 0;PocketVirtualCollectionStats v;PocketReactiveValue value;
     if(pocket_virtual_collection_stats(&a->list,&v)!=POCKET_MODEL_OK||pocket_reactive_get(&a->reactive,a->progress_signal,&value)!=POCKET_REACTIVE_OK)return 0;
     *s=(CoffeeAppStats){a->page,a->selected,a->first,a->item_count,a->locale,a->theme,(unsigned)value.as.i64,
       a->completed,(unsigned)pocket_overlay_count(&a->overlays),(unsigned)pocket_ui_live_count(&a->tree),v.pool_size,v.peak_pool_size,a->actions,v.recycle_count,
-      a->pager.position,(unsigned)a->pager.dragging,(unsigned)a->pager.settling,a->layout_runs};return 1;
+      a->pager.position,(unsigned)a->pager.dragging,(unsigned)a->pager.settling,a->layout_runs,a->editor_opens,a->editor_confirms,a->editor_cancels,a->keyboard.impl!=NULL};return 1;
+}
+int coffee_app_keyboard_snapshot(const CoffeeApp *out,PocketKeyboardSnapshot *s){
+    const App *a=out?out->impl:NULL;return a&&a->keyboard.impl&&pocket_keyboard_snapshot(&a->keyboard,s);
+}
+int coffee_app_snapshot_allowed(const CoffeeApp *out){
+    const App *a=out?out->impl:NULL;return a&&!a->keyboard.impl;
 }
 void coffee_app_dispose(CoffeeApp *out){
     App *a=out?out->impl:NULL;if(!a)return;
+    pocket_keyboard_dispose(&a->keyboard);
     pocket_interaction_dispose(&a->interaction);pocket_reactive_dispose(&a->reactive);
     pocket_virtual_collection_dispose(&a->list);pocket_overlay_dispose(&a->overlays);pocket_navigation_dispose(&a->nav);
     pocket_component_runtime_dispose(&a->components);pocket_style_runtime_dispose(&a->styles);pocket_layout_dispose(&a->layout);pocket_ui_tree_dispose(&a->tree);

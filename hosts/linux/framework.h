@@ -22,7 +22,7 @@ typedef struct {
     int presented_scroll_x;
     unsigned presented_dragging, presented_settling;
     unsigned page_mask, modal_seen;
-    int opened, valid_frame;
+    int opened, valid_frame, frame_capturable;
     const char *error;
 } PocketFramework;
 int pocket_framework_open(PocketFramework *runtime,unsigned height,unsigned items,
@@ -34,5 +34,6 @@ int pocket_framework_input(void *runtime,const InputFrame *frame,uint64_t event_
 void pocket_framework_disconnect(PocketFramework *runtime,uint64_t now_ns);
 int pocket_framework_tick(PocketFramework *runtime,uint64_t now_ns,int force_present);
 int pocket_framework_close(PocketFramework *runtime);
+int pocket_framework_can_snapshot(const PocketFramework *runtime);
 int pocket_framework_snapshot(const PocketFramework *runtime,const char *new_path);
 #endif

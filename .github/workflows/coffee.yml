@@ -79,7 +79,7 @@ jobs:
       - name: Preserve validated ARM device package
         run: make build-device-package package-demo package-scene
       - name: Full framework Native and ARM integration
-        run: make test-framework test-framework-arm test-framework-sanitize verify-framework
+        run: make test-keyboard-layouts test-framework test-framework-arm test-framework-sanitize verify-framework
       - name: Framework static board package and fail-closed HIL checker
         run: make build-board-framework test-board-framework-package test-board-framework-verifier
       - name: Preserve exact source and native debugging objects

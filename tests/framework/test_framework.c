@@ -168,13 +168,13 @@ static int flow(const char *assets,const char *out,unsigned height,int wrong_pix
         CHECK(tap(&d,100,200));CHECK(tap(&d,640,(int)height-112));CHECK(tap(&d,640,364));CHECK(state(&d,3,0));
         CHECK(step(&d,250,1));CHECK(tap(&d,500,(int)height-91));CHECK(state(&d,1,0));
     }
-    CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.nodes==32&&s.pool==8&&s.completed==1);
+    CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.nodes==33&&s.pool==8&&s.completed==1);
     CHECK(d.r->page_mask==15&&d.r->modal_seen==1);CHECK(mark(&d,"lifecycle-24"));CHECK(raw_a_flow(&d));CHECK(end(&d));return 1;
 }
 static int stress(const char *assets,const char *out,unsigned height){
     Driver d;CHECK(begin(&d,assets,out,height,100,NULL));
     for(unsigned i=0;i<17;i++){
-        CoffeeAppStats s;CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==(i*6)%102&&s.nodes==44&&s.pool==12);CHECK(mark(&d,"virtual-window"));
+        CoffeeAppStats s;CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==(i*6)%102&&s.nodes==45&&s.pool==12);CHECK(mark(&d,"virtual-window"));
         CHECK(tap(&d,870,(int)height-36));
     }
     CoffeeAppStats s;CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==0&&s.recycled>=94);
@@ -244,7 +244,7 @@ static int scroll_flow(const char *assets,const char *out,unsigned height){
     for(unsigned i=0;i<16;i++)CHECK(tap(&d,870,(int)height-36));
     CHECK(contact(&d,1,800,200));CHECK(contact(&d,1,400,200));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.scroll_x<=16*COFFEE_PAGE_WIDTH+80);
     CHECK(contact(&d,0,400,200));CHECK(step(&d,COFFEE_SNAP_MS,1));CHECK(coffee_app_stats(&d.r->app,&s));CHECK(s.first==96&&s.scroll_x==16*COFFEE_PAGE_WIDTH);
-    CHECK(s.pool<=12&&s.nodes==44);CHECK(mark(&d,"edges-and-bounded-pool"));
+    CHECK(s.pool<=12&&s.nodes==45);CHECK(mark(&d,"edges-and-bounded-pool"));
     free(header);free(footer);CHECK(end(&d));return 1;
 }
 static PocketEngineStatus reject_present(void *p,const PocketEngineFrame *f){unsigned *n=p;(*n)++;return f&&f->pixels?POCKET_ENGINE_BACKEND_FAILED:POCKET_ENGINE_INVALID_ARGUMENT;}
@@ -255,9 +255,12 @@ static int failures(const char *assets){
     r=calloc(1,sizeof(*r));CHECK(r);CHECK(pocket_framework_open(r,600,8,assets,NULL,NULL));CHECK(pocket_framework_tick(r,1000000,1));
     InputFrame invalid={.contact_count=2,.contacts={{1,20,20},{1,100,100}}};CHECK(!pocket_framework_input(r,&invalid,2000000));CHECK(!strcmp(r->error,"INPUT_FRAME_REJECTED"));CHECK(r->input.count==0);CHECK(pocket_framework_close(r));free(r);CHECK(host_alloc_stats().live_bytes==0);return 1;
 }
+int framework_keyboard_cases(const char *assets,const char *out);
+int test_keyboard_owner(void);
 int main(int argc,char **argv){
     if(argc<3||argc>4)return 2;
+    if(!test_keyboard_owner())return 1;
     for(unsigned h=600;h<=800;h+=200)if(!flow(argv[1],argv[2],h,argc==4)||!stress(argv[1],argv[2],h)||!scroll_flow(argv[1],argv[2],h))return 1;
-    if(!failures(argv[1])||!test_scene_wire(argv[1])||!test_scene_coalescing(argv[1]))return 1;
+    if(!failures(argv[1])||!test_scene_wire(argv[1])||!test_scene_coalescing(argv[1])||!framework_keyboard_cases(argv[1],argv[2]))return 1;
     puts("FRAMEWORK_OK dual-viewport real-core navigation modal reactive model input assets cleanup");return 0;
 }
