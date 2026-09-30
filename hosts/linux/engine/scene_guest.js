@@ -23,7 +23,7 @@ function validate(s){
  }
 }
 function apply(s){
- validate(s);locale=s.locale;
+ locale=s.locale;
  const keep=new Set(s.nodes.map(r=>r[0]));
  for(const [id,r] of records)if(!keep.has(id)){remove(r);records.delete(id);}
  ui.setProp(1,64,s.bg);
@@ -39,8 +39,8 @@ function apply(s){
    if(ref){r.label=node(1,r.root);ui.setProp(r.label,97,0);ui.setProp(r.label,99,36);}
    records.set(id,r);
   }
-  const encoded=JSON.stringify(v)+'/'+locale;
-  if(r.previous===encoded)continue;
+  const previous=r.previous;
+  if(previous&&r.locale===locale&&v.every((value,i)=>previous[i]===value))continue;
   // Reassert scissor when restyling a retained wrapper. Moving content must
   // never retain a previous un-clipped paint state outside the layout clip.
   ui.setProp(r.root,30,1);
@@ -54,7 +54,7 @@ function apply(s){
   if(r.label){const tx=kind===5?16:0,ty=kind===5?Math.max(0,(h-36)/2):0;
    geom(r.label,dx+tx,dy+ty,Math.max(0,w-tx),h);ui.setProp(r.label,96,rgbaAlpha(fg,alpha));
    const text=textFor(ref);if(r.text!==text){if(r.text===undefined)ui.setText(r.label,text);else ui.replaceText(r.label,text);r.text=text;}}
-  r.previous=encoded;
+  r.previous=v;r.locale=locale;
  }
  const nextOrder=s.nodes.map(r=>r[0]).join(',');
  if(order!==nextOrder){for(const v of s.nodes){const r=records.get(v[0]);ui.removeChild(1,r.root);ui.insertBefore(1,r.root,0);}order=nextOrder;}
@@ -71,16 +71,32 @@ function images(buffer){
  for(const r of records.values())if(r.image)ui.setImage(r.image,next[r.imageRef-1]);
  const old=textures;textures=next;for(const t of old)ui.freeTexture(t);return 1;
 }
+// Decode the private PSC1 numeric wire. Validate the complete packet before
+// applying any mutation; malformed data cannot partially replace the scene.
+function scenePacket(buffer){
+ if(buffer.byteLength<32)throw Error('SCENE_TRUNCATED');
+ const d=new DataView(buffer),count=d.getUint32(12,true);
+ if(d.getUint32(0,true)!==0x31435350||d.getUint32(28,true)!==0||count>256||
+    buffer.byteLength!==32+count*80)throw Error('SCENE_WIRE');
+ const s={v:1,w:d.getUint32(4,true),h:d.getUint32(8,true),locale:d.getUint32(16,true),
+          bg:d.getUint32(20,true),ready:d.getUint32(24,true),nodes:[]};
+ for(let i=0;i<count;i++){
+  const o=32+i*80,v=[d.getUint32(o,true)+4294967296*d.getUint32(o+4,true),d.getUint32(o+8,true)];
+  for(let j=3;j<11;j++)v.push(d.getInt32(o+j*4,true));
+  for(let j=11;j<17;j++)v.push(d.getUint32(o+j*4,true));
+  for(let j=17;j<20;j++)v.push(d.getInt32(o+j*4,true));
+  s.nodes.push(v);
+ }
+ validate(s);return s;
+}
 globalThis.onResourcePack=function(buffer){
  if(buffer===null)return ready?1:0;
  if(!(buffer instanceof ArrayBuffer))return -1;
- const b=new Uint8Array(buffer);
- if(b[0]!==123)return images(buffer);
- if(b.length>65536)return -1;
- // Scene JSON carries numeric refs only; locale strings stay in the build catalog.
- let text='';for(let i=0;i<b.length;i++){if(b[i]>127)return -1;text+=String.fromCharCode(b[i]);}
- let s;try{s=JSON.parse(text);validate(s);}catch(e){return -1;}
- return apply(s);
+ if(buffer.byteLength>=4&&new DataView(buffer).getUint32(0,true)===0x31435350){
+  let s;try{s=scenePacket(buffer);}catch(e){return -1;}
+  return apply(s);
+ }
+ return images(buffer);
 };
 // Input belongs exclusively to Pocket Interaction Runtime. No second hit tester.
 globalThis.frame=function(){};

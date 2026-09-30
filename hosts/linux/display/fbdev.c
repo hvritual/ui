@@ -63,7 +63,7 @@ int fbdev_open(FbDevice *d, const char *path, int writable) {
 cleanup:
     fbdev_close(d); return 0;
 }
-int fbdev_present(void *context, const HostFrame *frame) {
+int fbdev_present_region(void *context, const HostFrame *frame, const FbDamage *damage) {
     FbDevice *d = context;
     struct fb_fix_screeninfo f;
     struct fb_var_screeninfo v;
@@ -82,11 +82,17 @@ int fbdev_present(void *context, const HostFrame *frame) {
         layout.red != d->layout.red || layout.green != d->layout.green || layout.blue != d->layout.blue ||
         layout.alpha != d->layout.alpha || layout.has_alpha != d->layout.has_alpha ||
         layout.rgb565 != d->layout.rgb565) return fail(d, "FB_MODE_CHANGED", 0);
-    error = fb_copy(&f, &v, d->mapping, d->mapping_length, frame);
+    if (damage && !d->presents) return fail(d,"FB_DAMAGE_WITHOUT_BASELINE",0);
+    error = fb_copy_region(&f, &v, d->mapping, d->mapping_length, frame, damage);
     if (error) return fail(d, error, 0);
     ++d->presents;
-    d->bytes_written += (uint64_t)layout.width * layout.height * layout.bytes_per_pixel;
+    if(damage&&(uint64_t)damage->width*(uint32_t)damage->height<(uint64_t)layout.width*layout.height)++d->partial_presents;
+    d->bytes_written += damage ? (uint64_t)damage->width * (uint32_t)damage->height * layout.bytes_per_pixel :
+                                (uint64_t)layout.width * layout.height * layout.bytes_per_pixel;
     return 1;
+}
+int fbdev_present(void *context, const HostFrame *frame) {
+    return fbdev_present_region(context,frame,NULL);
 }
 static void json_string(FILE *out, const char *text, size_t limit) {
     fputc('"', out);

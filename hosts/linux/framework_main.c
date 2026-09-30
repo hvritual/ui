@@ -20,6 +20,11 @@ static volatile sig_atomic_t stopping;
 static void stop(int sig){(void)sig;stopping=1;}
 static PocketEngineStatus present(void *p,const PocketEngineFrame *f){
     HostFrame frame={.pixels=f->pixels,.width=f->width,.height=f->height,.stride=f->stride,.length=f->length};
+    FbDevice *device=p;
+    if(device->presents&&f->damage_valid){
+        const FbDamage damage={f->damage.x,f->damage.y,f->damage.width,f->damage.height};
+        return fbdev_present_region(p,&frame,&damage)?POCKET_ENGINE_OK:POCKET_ENGINE_BACKEND_FAILED;
+    }
     return fbdev_present(p,&frame)?POCKET_ENGINE_OK:POCKET_ENGINE_BACKEND_FAILED;
 }
 static int number(const char *s,int min,int max,int *out){
@@ -204,6 +209,10 @@ done:
         fprintf(report,",\"scroll_x\":%d,\"scroll_dragging\":%u,\"scroll_settling\":%u,\"motion_presents\":%llu,\"layout_runs\":%llu",
                 stats.scroll_x,stats.scroll_dragging,stats.scroll_settling,
                 (unsigned long long)r->motion_presents,(unsigned long long)stats.layout_runs);
+        fprintf(report,",\"partial_presents\":%llu",(unsigned long long)fb.partial_presents);
+        fprintf(report,",\"scene_wire_bytes\":%llu,\"scene_uploads\":%llu,\"scene_skips\":%llu",
+                (unsigned long long)r->engine.scene_wire_bytes,(unsigned long long)r->engine.scene_uploads,
+                (unsigned long long)r->engine.scene_skips);
         fprintf(report,",\"input_errno\":%d,\"input_discovery_attempts\":%u,\"input_wait_ms\":%d",
                 input.system_errno,discovery_attempts,input_wait_ms);
         fprintf(report,",\"wall_seconds\":%.6f,\"cpu_percent_one_core\":%.6f,\"peak_rss_kib\":%ld,\"ticks\":%llu,\"presents\":%llu,\"clean_skips\":%llu,\"bytes_written\":%llu,\"page_mask\":%u,\"modal_seen\":%u,\"completed\":%u,\"pool\":%u,\"nodes\":%u,\"item_count\":%u,\"peak_pool\":%u,\"recycled\":%llu,\"input_frames\":%llu,\"syn_dropped\":%llu,\"disconnects\":%llu,\"reconnects\":%llu,\"timestamp_clamps\":%llu,\"media_applied\":%lu,\"media_rejected\":%lu,\"media_deferred\":%lu,\"unblank_errno\":%d,\"display_cleanup_errno\":%d,\"input_cleanup_errno\":%d,\"core_live_bytes_after_close\":%zu}\n",

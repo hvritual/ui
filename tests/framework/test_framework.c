@@ -5,11 +5,14 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include "frame_oracle.h"
+int test_scene_wire(const char *assets);
+int test_scene_coalescing(const char *assets);
 
 /* All interaction uses the production InputFrame -> F6 -> application path.
  * The display callback observes real PocketJS pixels, never fabricates them. */
 #define CHECK(x) do { if(!(x)){fprintf(stderr,"FRAMEWORK_FAIL line=%d expr=%s\n",__LINE__,#x);return 0;} } while(0)
-typedef struct {PocketFramework *r;uint64_t ms,seq;const char *out;unsigned height;FILE *trace;} Driver;
+typedef struct {FrameOracle oracle;PocketFramework *r;uint64_t ms,seq;const char *out;unsigned height;FILE *trace;} Driver;
 static uint64_t hash_frame(const PocketEngineFrame *f){
     uint64_t h=14695981039346656037ULL;
     for(size_t i=0;i<f->length;i++){h^=f->pixels[i];h*=1099511628211ULL;}
@@ -32,11 +35,16 @@ static int shot(Driver *d,const char *name){char path[4096];CHECK(snprintf(path,
 static int begin(Driver *d,const char *assets,const char *out,unsigned height,unsigned items,const char *store){
     memset(d,0,sizeof(*d));d->r=calloc(1,sizeof(*d->r));CHECK(d->r);d->ms=1000;d->height=height;d->out=out;
     char path[4096];CHECK(snprintf(path,sizeof(path),"%s/replay-%u-%u.txt",out,height,items)<(int)sizeof(path));d->trace=fopen(path,"wx");CHECK(d->trace);
-    CHECK(pocket_framework_open(d->r,height,items,assets,store,NULL));CHECK(step(d,0,1));return 1;
+    CHECK(oracle_open(&d->oracle,1024,height));
+    PocketDisplayBackend display={1,sizeof(display),&d->oracle,oracle_present};
+    CHECK(pocket_framework_open(d->r,height,items,assets,store,&display));CHECK(step(d,0,1));return 1;
 }
 static int end(Driver *d){
     CHECK(pocket_framework_close(d->r));CHECK(host_alloc_stats().live_bytes==0);
-    CHECK(fclose(d->trace)==0);free(d->r);return 1;
+    printf("DAMAGE_ORACLE_OK height=%u frames=%llu partial=%llu bytes=%llu full-equivalent=%llu\n",d->height,
+        (unsigned long long)d->oracle.presents,(unsigned long long)d->oracle.partial,
+        (unsigned long long)d->oracle.bytes,(unsigned long long)(d->oracle.presents*d->oracle.length));
+    oracle_close(&d->oracle);CHECK(fclose(d->trace)==0);free(d->r);return 1;
 }
 static int write_update(const char *store,char id,const char *source,int corrupt){
     char name[4096],gen[65];memset(gen,id,64);gen[64]=0;
@@ -250,6 +258,6 @@ static int failures(const char *assets){
 int main(int argc,char **argv){
     if(argc<3||argc>4)return 2;
     for(unsigned h=600;h<=800;h+=200)if(!flow(argv[1],argv[2],h,argc==4)||!stress(argv[1],argv[2],h)||!scroll_flow(argv[1],argv[2],h))return 1;
-    if(!failures(argv[1]))return 1;
+    if(!failures(argv[1])||!test_scene_wire(argv[1])||!test_scene_coalescing(argv[1]))return 1;
     puts("FRAMEWORK_OK dual-viewport real-core navigation modal reactive model input assets cleanup");return 0;
 }

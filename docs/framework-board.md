@@ -26,7 +26,7 @@ rescaled screenshots. No keyboard, editable text/IME, payment, hardware command,
 video, or final public TS SDK is added. No actuator, control/network or OTA process
 is modified. This is not the complete coffee-machine product UI.
 
-Scene limits: 256 records, 64 KiB numeric JSON, finite stable IDs and bounded
+Scene limits: 256 records, 20512-byte private binary wire, finite stable IDs and bounded
 traversal. Text/image references use the existing P4 catalog and prepared assets.
 Unsupported component/visual properties fail explicitly. The current visual
 subset covers View/Text/Image/Button/Progress/Grid/List/Scroll and blocking
@@ -327,3 +327,12 @@ the neighbor appears inside the clipped viewport, short drags return, long drags
 settle, and a new press stops settling without selecting a drink. Then confirm
 normal tap navigation and return the complete log directory and LCD/finger video.
 #49 stays open for the remaining separate target, asset and fault evidence.
+
+## Frame path performance follow-up
+
+The private adapter uses bounded binary scene records; input and app semantics
+are unchanged. Scene transfer is coalesced at paint opportunities, and fbdev
+uses validated damage after its initial full frame. Always install the matching
+complete ELF/resource bundle. `report.json` includes actual framebuffer bytes,
+partial-present count and scene-wire traffic. See `frame-path-performance.md`
+for returned timing, test scope and the distinction from physical P5 acceptance.

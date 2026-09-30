@@ -32,6 +32,10 @@ UNIT_CASES = set("""xrgb8888-padding-offset-canaries all-32bit-byte-orders-opaqu
  fixed-info-failure variable-info-failure mmap-failure-cleanup unaligned-smem-rejected page-size-failure
  mode-change-fails-before-writing requery-error-latches unmap-error-retains-owner-for-retry
  close-eintr-not-retried json-probe-escape-and-unknown-sync""".split())
+UNIT_CASES.update({"damage-copy-formats-padding-offset-and-block-tail",
+                   "damage-invalid-source-map-alias-and-rectangle-no-writes",
+                   "damage-requires-initial-full-frame", "damage-exact-byte-accounting",
+                   "damage-revalidates-mode-before-write"})
 CORE_CASES = {f"core-card-{h}-{b}-{state}" for h in (600,800) for b in (16,32) for state in ("initial","updated")}
 CORE_CASES |= {f"present-clock-pause-{h}-{b}" for h in (600,800) for b in (16,32)}
 CORE_CASES |= {"callback-failure-latches-host", "wrong-panel-profile-no-scaling", "cli-read-only-probe-exclusive-report",

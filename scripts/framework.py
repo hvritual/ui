@@ -57,6 +57,7 @@ def compile_binary(mode,test=False,sanitize=False,static=False,loop=False):
     sources=[ROOT/'hosts/linux/ui'/f'{n}.c' for n in UI]+[ROOT/'apps/coffee-framework/app.c',ROOT/'apps/coffee-framework/pager.c',ROOT/'hosts/linux/engine/scene_runtime.c',ROOT/'hosts/linux/input/interaction_bridge.c',ROOT/'hosts/linux/framework.c',ROOT/'hosts/linux/input/state.c']
     sources+=[ROOT/('tests/framework/test_live_loop.c' if loop else 'tests/framework/test_framework.c' if test else 'hosts/linux/framework_main.c')]
     objects=[rt/n for n in ('host.o','platform.o','runtime-host.o','personality.o','libquickjs.a','media-store.o')]
+    if test:sources += [ROOT/'tests/framework/test_scene_wire.c',ROOT/'hosts/linux/display/presenter.c']
     if not test:sources += [ROOT/'hosts/linux/input/live.c',ROOT/'hosts/linux/display/fbdev.c',ROOT/'hosts/linux/display/presenter.c']
     binary=d/('framework-loop' if loop else 'framework-test' if test else 'ui-framework')
     if sanitize:binary=binary.with_name(binary.name+'-sanitize')
@@ -67,7 +68,7 @@ def compile_binary(mode,test=False,sanitize=False,static=False,loop=False):
        '-Iout/runtime/include','-Iout/runtime/source-'+mode+'/engine/quickjs-c',*sources,*objects,core,
        *(['-static'] if static else []),'-Wl,--gc-sections','-lm','-ldl','-lpthread','-lrt','-o',binary]
     if loop:
-        wrappers=['host_monotonic_ns','host_sleep_until','fbdev_open','fbdev_close','fbdev_report','fbdev_present','ioctl','input_live_discover','input_live_close','input_live_wait','input_live_reconnect','input_live_drain']
+        wrappers=['host_monotonic_ns','host_sleep_until','fbdev_open','fbdev_close','fbdev_report','fbdev_present','fbdev_present_region','ioctl','input_live_discover','input_live_close','input_live_wait','input_live_reconnect','input_live_drain']
         cmd += ['-Wl,--wrap='+name for name in wrappers]
     run(cmd,d/(binary.name+'-build.log'));return binary
 
