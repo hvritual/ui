@@ -81,14 +81,18 @@ int pocket_framework_tick(PocketFramework *r,uint64_t ns,int force){
     r->present_complete_ns=completed;
     r->presented_scroll_x=s.scroll_x;r->presented_dragging=s.scroll_dragging;r->presented_settling=s.scroll_settling;
     if(s.scroll_dragging||s.scroll_settling)r->motion_presents++;
+    r->frame_capturable=coffee_app_snapshot_allowed(&r->app);
     r->valid_frame=1;r->presents++;r->bytes_written+=r->frame.length;
     /* Diagnostic input-to-CPU observation only; never photon/scanout latency. */
     uint64_t end;
     if(r->event_ns&&host_monotonic_ns(&end)&&end>=r->event_ns)r->input_to_cpu_present_ns=end-r->event_ns;
     return 1;
 }
+int pocket_framework_can_snapshot(const PocketFramework *r){
+    return r&&r->opened&&r->valid_frame&&r->frame_capturable&&coffee_app_snapshot_allowed(&r->app);
+}
 int pocket_framework_snapshot(const PocketFramework *r,const char *path){
-    if(!r||!r->opened||!r->valid_frame||!path)return 0;
+    if(!path||!pocket_framework_can_snapshot(r))return 0;
     int fd=open(path,O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,0600);if(fd<0)return 0;
     FILE *f=fdopen(fd,"wb");if(!f){close(fd);return 0;}
     const PocketEngineFrame *im=&r->frame;int ok=fprintf(f,"P6\n%u %u\n255\n",im->width,im->height)>0;

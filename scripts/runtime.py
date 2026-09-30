@@ -81,7 +81,8 @@ def validate_board(board):
 
 def validate_text_contract(contract):
     require(contract["schema_version"] == 1, "unsupported text contract version")
-    native_core = contract["status"] == "native-text-session-core-only"
+    keyboard = contract["status"] == "native-ascii-keyboard-software"
+    native_core = keyboard or contract["status"] == "native-text-session-core-only"
     require(native_core or contract["status"] == "contract-only-not-implemented", "unreviewed text admission stage")
     expected = {"editable_widget": False, "composition_bridge": False, "offline_ime": False}
     identity = ["field_id", "session_id", "focus_generation", "revision"]
@@ -92,6 +93,11 @@ def validate_text_contract(contract):
                 contract["unicode_lock"] == "toolchains/text-input.lock.json", "missing native text implementation binding")
         require(contract["committed_edit_boundary"] == "Unicode-17.0.0-extended-grapheme-cluster", "unreviewed Unicode boundaries")
         require(contract["queue_contract"]["status"] == "planned-not-implemented", "native core does not supply an asynchronous queue")
+    if keyboard:
+        expected.update(editable_widget=True, F6_owner_bridge=True, keyboard_ui=True)
+        require(contract["keyboard_api"] == "hosts/linux/text-input/keyboard.h" and
+                contract["keyboard_limits"] == {"fields":4,"ascii_chars":64,"display_cells":36,"input_locale":"en-US",
+                "snapshot_policy":"deny-while-editor-open-and-until-safe-frame","physical_verified":False}, "unreviewed keyboard boundary")
     require(contract["owner_issue"] == 12 and contract["admission"] == expected, "native editing does not admit keyboard/IME UI")
     require(contract["js_range_unit"] == "UTF-16-code-units" and contract["native_encoding"] == "UTF-8-valid-scalar-sequences", "text encoding/index boundary changed")
     require(contract["physical_key_is_text"] is False and contract["preedit_is_business_value"] is False, "raw keys/preedit are not committed business text")

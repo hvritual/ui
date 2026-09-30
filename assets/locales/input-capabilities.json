@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "owner_issue": 12,
-  "status": "native-session-core-only",
+  "status": "native-ascii-keyboard-software",
   "independent_settings": [
     "ui_locale",
     "input_locale",
@@ -16,11 +16,18 @@
       "engine": "direct",
       "dictionary": null,
       "direction": "ltr",
-      "layout_status": "not-implemented",
+      "layout_status": "software-ascii-qwerty",
       "ime_status": "not-required",
-      "font_shaping_status": "not-validated-for-editable-text",
-      "native_text_status": "unicode-buffer-only",
-      "product_input_admitted": false
+      "font_shaping_status": "ascii-fixed-cell-software-validated",
+      "native_text_status": "ascii-field-software",
+      "product_input_admitted": false,
+      "layout": "qwerty-ascii-v1",
+      "evidence": [
+        "hosts/linux/text-input/keyboard.h",
+        "tests/framework/test_keyboard.c",
+        "tests/text-input/test_keyboard_owner.c"
+      ],
+      "restrictions": "Printable ASCII only; integer digits for Number/PIN; no hardware keyboard, accents, dictionary or IME; physical acceptance pending"
     },
     {
       "locale": "zh-CN",
@@ -152,8 +159,7 @@
     "composition_admitted": false
   },
   "remaining": [
-    "touch-keyboard",
-    "F6-focus-owner-bridge",
+    "regional-keyboard-layouts",
     "candidate-list-and-bounded-provider-queue",
     "real-offline-language-engines",
     "shaping-BiDi-caret-layout",

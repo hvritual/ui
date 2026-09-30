@@ -36,7 +36,11 @@ def assets():
     keys=['title','subtitle','demo','next','back','cancel','start','confirm','making','done','home','media'];catalogs=[]
     for locale,labels in locales.items():
         t={i+1:labels[k] for i,k in enumerate(keys)};t.update({13:locale,14:'Theme'})
-        t.update({100+i:name for i,name in enumerate(labels['names'])});catalogs.append(t)
+        t.update({100+i:name for i,name in enumerate(labels['names'])})
+        keyboard=json.loads((ROOT/'assets/locales/keyboard-ascii.json').read_text())
+        t.update({keyboard['label_ref_base']+i:label for i,label in enumerate(keyboard['labels'])})
+        t.update({keyboard['ascii_ref_base']+c:chr(c) for c in range(32,127)})
+        catalogs.append(t)
     (d/'framework.js').write_text('const POCKET_TEXT_CATALOG='+json.dumps(catalogs,ensure_ascii=True,separators=(',',':'))+';\n'+(ROOT/'hosts/linux/engine/scene_guest.js').read_text())
     write(OUT/'assets.json',{'p4_assets_manifest':sha(ROOT/'out/coffee/assets.json'),
          'files':{p.name:sha(p) for p in sorted(d.iterdir()) if p.is_file()}})
@@ -49,22 +53,25 @@ def runtime_check(mode):
 
 def compile_binary(mode,test=False,sanitize=False,static=False,loop=False):
     runtime_check(mode);state()
+    import text_input
+    unicode_dep=text_input.dependencies()
     d=OUT/mode;d.mkdir(parents=True,exist_ok=True)
     cc='gcc' if mode=='native' else 'arm-linux-gnueabihf-gcc'
     flags=[] if mode=='native' else ['-mcpu=cortex-a7','-mfpu=neon-vfpv4','-mfloat-abi=hard']
     target='x86_64-unknown-linux-gnu' if mode=='native' else 'armv7-unknown-linux-gnueabihf'
     rt=ROOT/'out/runtime'/mode;core=ROOT/'out/runtime/cargo'/target/'release/libpocketjs_symbian_core.a'
     sources=[ROOT/'hosts/linux/ui'/f'{n}.c' for n in UI]+[ROOT/'apps/coffee-framework/app.c',ROOT/'apps/coffee-framework/pager.c',ROOT/'hosts/linux/engine/scene_runtime.c',ROOT/'hosts/linux/input/interaction_bridge.c',ROOT/'hosts/linux/framework.c',ROOT/'hosts/linux/input/state.c']
+    sources += [ROOT/'hosts/linux/text-input/session.c', ROOT/'hosts/linux/text-input/keyboard.c', unicode_dep/'utf8proc.c']
     sources+=[ROOT/('tests/framework/test_live_loop.c' if loop else 'tests/framework/test_framework.c' if test else 'hosts/linux/framework_main.c')]
     objects=[rt/n for n in ('host.o','platform.o','runtime-host.o','personality.o','libquickjs.a','media-store.o')]
-    if test:sources += [ROOT/'tests/framework/test_scene_wire.c',ROOT/'hosts/linux/display/presenter.c']
+    if test:sources += [ROOT/'tests/text-input/test_keyboard_owner.c',ROOT/'tests/framework/test_keyboard.c',ROOT/'tests/framework/test_scene_wire.c',ROOT/'hosts/linux/display/presenter.c']
     if not test:sources += [ROOT/'hosts/linux/input/live.c',ROOT/'hosts/linux/display/fbdev.c',ROOT/'hosts/linux/display/presenter.c']
     binary=d/('framework-loop' if loop else 'framework-test' if test else 'ui-framework')
     if sanitize:binary=binary.with_name(binary.name+'-sanitize')
     if static:binary=binary.with_name(binary.name+'-static')
     opts=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-g'] if sanitize else []
     cmd=[cc,'-std=c11','-Wall','-Wextra','-Werror','-Wpedantic','-O2',*flags,*opts,
-       '-I.','-Ihosts/linux','-DPOCKET_BUILD_COMMIT="'+git('rev-parse','HEAD')+'"',
+       '-I.','-Ihosts/linux','-I'+str(unicode_dep),'-DUTF8PROC_STATIC','-DPOCKET_BUILD_COMMIT="'+git('rev-parse','HEAD')+'"',
        '-Iout/runtime/include','-Iout/runtime/source-'+mode+'/engine/quickjs-c',*sources,*objects,core,
        *(['-static'] if static else []),'-Wl,--gc-sections','-lm','-ldl','-lpthread','-lrt','-o',binary]
     if loop:
@@ -76,6 +83,9 @@ def runner(mode,static=False):return [] if mode=='native' else ['qemu-arm','-cpu
 def outputs(d,pattern):return {p.name:sha(p) for p in sorted(d.glob(pattern))}
 def motion_outputs(d):
     return {str(p.relative_to(d)):sha(p) for p in sorted(d.glob('scroll-*/*')) if p.is_file()}
+
+def keyboard_outputs(d):
+    return {str(p.relative_to(d)):sha(p) for p in sorted(d.glob('keyboard-*/*.ppm'))}
 
 def fresh(parent,name):
     p=parent/(name+'-'+str(time.time_ns()));p.mkdir(parents=True);return p
@@ -112,6 +122,8 @@ def test(mode,sanitize=False):
     for pattern in ('*.ppm','replay-*.txt'):
         if outputs(sets[0],pattern)!=outputs(sets[1],pattern):raise RuntimeError('nondeterministic native/ARM replay')
     if motion_outputs(sets[0])!=motion_outputs(sets[1]):raise RuntimeError('nondeterministic scroll pixels/replay')
+    keyboard=keyboard_outputs(sets[0])
+    if len(keyboard)!=16 or keyboard!=keyboard_outputs(sets[1]):raise RuntimeError('keyboard target matrix incomplete or nondeterministic')
     motion=motion_outputs(sets[0])
     if len(motion)!=10:raise RuntimeError('incomplete scroll target matrix')
     images=outputs(sets[0],'*.ppm');replays=outputs(sets[0],'replay-*.txt')
@@ -127,7 +139,7 @@ def test(mode,sanitize=False):
     if before!=state():raise RuntimeError('source changed during test')
     record={**before,'mode':mode,'real_core':True,'physical_hardware':False,'sanitizer':sanitize,
        'run_dir':str(d.relative_to(OUT)),'test_binary_sha256':sha(binary),'assets_sha256':sha(OUT/'assets.json'),
-       'images':images,'replays':replays,'motion':motion,'logs':{str(p.relative_to(d)):sha(p) for p in sorted(d.rglob('*.log'))}}
+       'images':images,'replays':replays,'motion':motion,'keyboard':keyboard,'logs':{str(p.relative_to(d)):sha(p) for p in sorted(d.rglob('*.log'))}}
     write(OUT/mode/('sanitizer.json' if sanitize else 'test.json'),record);print('FRAMEWORK_TEST_OK',mode,'sanitizer='+str(sanitize))
 
 def verify():
@@ -140,20 +152,23 @@ def verify():
         if r['assets_sha256']!=sha(OUT/'assets.json') or r['test_binary_sha256']!=sha(OUT/mode/'framework-test'):raise RuntimeError('binary/resource drift')
         d=OUT/r['run_dir']
         if r['images']!=outputs(d/'cases','*.ppm') or r['replays']!=outputs(d/'cases','replay-*.txt'):raise RuntimeError('output evidence drift')
+        if r['keyboard']!=keyboard_outputs(d/'cases'):raise RuntimeError('keyboard evidence drift')
         if r['motion']!=motion_outputs(d/'cases'):raise RuntimeError('scroll evidence drift')
         for n,v in r['logs'].items():
             if sha(d/n)!=v:raise RuntimeError('log evidence drift')
         results.append(r)
     if results[0]['images']!=results[1]['images'] or results[0]['replays']!=results[1]['replays']:raise RuntimeError('cross-architecture pixel/replay mismatch')
+    if results[0]['keyboard']!=results[1]['keyboard']:raise RuntimeError('cross-architecture keyboard pixels differ')
     if results[0]['motion']!=results[1]['motion']:raise RuntimeError('cross-architecture scroll pixel/replay mismatch')
     sanitized=json.loads((OUT/'native/sanitizer.json').read_text())
     if any(sanitized[k]!=current[k] for k in current) or not sanitized.get('sanitizer') or sanitized['images']!=results[0]['images'] or sanitized['replays']!=results[0]['replays']:raise RuntimeError('sanitizer evidence incomplete or stale')
+    if sanitized['keyboard']!=results[0]['keyboard']:raise RuntimeError('sanitizer keyboard pixels differ')
     if sanitized['motion']!=results[0]['motion']:raise RuntimeError('sanitizer scroll evidence mismatch')
     if sanitized['test_binary_sha256']!=sha(OUT/'native/framework-test-sanitize') or sanitized['assets_sha256']!=sha(OUT/'assets.json'):raise RuntimeError('sanitizer binary/resource drift')
     for n,v in sanitized['logs'].items():
         if sha(OUT/sanitized['run_dir']/n)!=v:raise RuntimeError('sanitizer log evidence drift')
     write(OUT/'verification.json',{'status':'passed',**current,'scope':'software-functional-only','physical_hardware':False,
-          'engine':'current-pocket-scene','image_count':26,'replay_count':6,'motion_pool_limit':12,'test_reports':{m:sha(OUT/m/'test.json') for m in ('native','arm')}})
+          'engine':'current-pocket-scene','image_count':42,'replay_count':6,'motion_pool_limit':12,'test_reports':{m:sha(OUT/m/'test.json') for m in ('native','arm')}})
     print('FRAMEWORK_VERIFY_OK physical_hardware=false')
 
 def sums(d):
@@ -180,12 +195,14 @@ def package():
     shutil.copy2(old/'mediactl',dest/'mediactl');(dest/'mediactl').chmod(0o755)
     shutil.copytree(old/'updates',dest/'updates')
     shutil.copy2(OUT/'verification.json',dest/'software-verification.json')
+    shutil.copy2(ROOT/'out/text-input/deps/LICENSE.md',dest/'utf8proc-LICENSE.md')
+    shutil.copy2(ROOT/'docs/ascii-keyboard.md',dest/'KEYBOARD.md')
     write(dest/'manifest.json',{'schema':1,'source_commit':git('rev-parse','HEAD'),'source_tree':git('rev-parse','HEAD^{tree}'),
        'profiles':PROFILES,'binary':'ui-framework','binary_sha256':sha(dest/'ui-framework'),'static':True,
        'engine':'current-pocket-scene','p4_package_manifest':sha(old/'manifest.json'),
        'software_verification_sha256':sha(dest/'software-verification.json'),'physical_hardware':False,
        'physical_gate':'pending independent 600 and 800 reports and human review',
-       'business_commands':False,'input_method':False,'source_font_included':False})
+       'business_commands':False,'input_method':False,'ascii_keyboard':True,'keyboard_physical_verified':False,'source_font_included':False})
     for p in dest.rglob('*'):
         if p.suffix.lower() in ('.ttf','.otf','.ttc','.key','.pem') or 'private' in p.name.lower():raise RuntimeError('private/font asset in package')
     sums(dest);archive=OUT/'imx6ul-coffee-framework.tar.gz'

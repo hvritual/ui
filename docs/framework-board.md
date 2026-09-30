@@ -20,16 +20,16 @@ Application: Home -> Detail -> confirmation Modal -> simulated Making -> Success
 Back/cancel, six fixed P4 display locales, two themes and horizontal card paging
 share the same state. The standard workload has 8 drinks; `--items 100` is a
 separate list-stress fixture. The viewport materializes at most two adjacent pages (12 card roots).
-The 8-drink workload has 32 live Home component nodes; the 100-item workload
-has at most 44. This replaces the old six-root, release-only page switch. The 600/800 layouts are computed independently, not
-rescaled screenshots. No keyboard, editable text/IME, payment, hardware command,
-video, or final public TS SDK is added. No actuator, control/network or OTA process
+The 8-drink workload has 33 live Home component nodes; the 100-item workload
+has at most 45, including the Text input entry. This replaces the old six-root, release-only page switch. The 600/800 layouts are computed independently, not
+rescaled screenshots. A separate local ASCII Text input overlay is now integrated (see ascii-keyboard.md).
+No offline IME, payment, hardware command, video, or final public TS SDK is added. No actuator, control/network or OTA process
 is modified. This is not the complete coffee-machine product UI.
 
 Scene limits: 256 records, 20512-byte private binary wire, finite stable IDs and bounded
 traversal. Text/image references use the existing P4 catalog and prepared assets.
 Unsupported component/visual properties fail explicitly. The current visual
-subset covers View/Text/Image/Button/Progress/Grid/List/Scroll and blocking
+subset covers View/Text/TextField/Image/Button/Progress/Grid/List/Scroll and blocking
 overlays. Arbitrary fonts, shaping, image opacity, border strokes and transforms
 are not silently accepted. Valid scene updates are applied on the UI thread;
 malformed updates leave old state. Runtime allocation/JS failure stops the host;
@@ -51,7 +51,8 @@ make test-board-framework-verifier
 ```
 
 `test-framework` executes the real production C/JS renderer, two viewports,
-18 baseline plus 8 in-motion full-frame images and 6 numeric replay logs, then repeats them byte-for-byte.
+18 baseline plus 8 in-motion full-frame images, 16 synthetic keyboard images and
+6 numeric replay logs, then repeats them byte-for-byte.
 It runs an intentionally failing assertion, production headless CLI on both
 profiles, refusal without an explicit physical/headless mode, rejection of `/dev/null`, refusal of
 unverified 800 input defaults and refusal to overwrite evidence. The test suite
@@ -336,3 +337,18 @@ uses validated damage after its initial full frame. Always install the matching
 complete ELF/resource bundle. `report.json` includes actual framebuffer bytes,
 partial-present count and scene-wire traffic. See `frame-path-performance.md`
 for returned timing, test scope and the distinction from physical P5 acceptance.
+
+
+## Local text input
+
+Home now exposes `Text input`. English printable ASCII, unsigned integer digits,
+Password and PIN are local test fields only. Confirm and Cancel return to Coffee;
+no device setting is changed. See `KEYBOARD.md` in the bundle or
+`docs/ascii-keyboard.md` in the repository for semantics and test scope.
+
+Use synthetic values for review. All automatic screenshots are suppressed while
+the editor is open and until its last rendered frame has been replaced. If still
+open at timeout, no `last.ppm` is written; `FRAMEWORK_SNAPSHOT_SUPPRESSED` is logged
+and the process can still exit successfully. The runtime report records only
+open/confirm/cancel counts. Close the form before the normal Coffee/HIL evidence
+run completes. No user text or password is part of diagnostic evidence.

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "native-text-session-core-only",
+  "status": "native-ascii-keyboard-software",
   "owner_issue": 12,
   "native_encoding": "UTF-8-valid-scalar-sequences",
   "js_range_unit": "UTF-16-code-units",
@@ -41,16 +41,25 @@
     "implicit_normalization": false
   },
   "admission": {
-    "editable_widget": false,
+    "editable_widget": true,
     "composition_bridge": false,
     "offline_ime": false,
     "native_editor_core": true,
     "native_composition_state": true,
-    "F6_owner_bridge": false,
-    "keyboard_ui": false
+    "F6_owner_bridge": true,
+    "keyboard_ui": true
   },
   "native_api": "hosts/linux/text-input/session.h",
   "unicode_lock": "toolchains/text-input.lock.json",
   "boundary_conversion": "grapheme-boundaries-only; reject surrogate, UTF8 sequence and cluster interiors",
-  "language_matrix": "assets/locales/input-capabilities.json"
+  "language_matrix": "assets/locales/input-capabilities.json",
+  "keyboard_api": "hosts/linux/text-input/keyboard.h",
+  "keyboard_limits": {
+    "fields": 4,
+    "ascii_chars": 64,
+    "display_cells": 36,
+    "input_locale": "en-US",
+    "snapshot_policy": "deny-while-editor-open-and-until-safe-frame",
+    "physical_verified": false
+  }
 }

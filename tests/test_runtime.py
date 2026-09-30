@@ -77,10 +77,12 @@ class TextContractTests(unittest.TestCase):
         self.contract["identity_fields"] = ["field_id", "session_id", "focus_generation", "revision"]
         runtime.validate_text_contract(self.contract)
     def test_no_false_keyboard_admission(self):
-        self.contract["admission"]["keyboard_ui"] = True
+        self.contract["status"] = "native-text-session-core-only"
+        self.contract["admission"].update(editable_widget=False,F6_owner_bridge=False,keyboard_ui=True)
         with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
     def test_no_false_owner_bridge(self):
-        self.contract["admission"]["F6_owner_bridge"] = True
+        self.contract["status"] = "native-text-session-core-only"
+        self.contract["admission"].update(editable_widget=False,F6_owner_bridge=True,keyboard_ui=False)
         with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
     def test_engine_generation_required(self):
         self.contract["identity_fields"].remove("engine_generation")
@@ -90,4 +92,14 @@ class TextContractTests(unittest.TestCase):
         with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
     def test_empty_privacy_policy_rejected(self):
         self.contract["sensitive_field_policy"] = {}
+        with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
+
+    def test_keyboard_does_not_admit_physical_input(self):
+        self.contract["keyboard_limits"]["physical_verified"] = True
+        with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
+    def test_keyboard_snapshot_guard_required(self):
+        self.contract["keyboard_limits"]["snapshot_policy"] = "allow"
+        with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
+    def test_keyboard_not_generic_unicode_rendering(self):
+        self.contract["keyboard_limits"]["input_locale"] = "all"
         with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)

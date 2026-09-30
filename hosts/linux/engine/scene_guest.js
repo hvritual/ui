@@ -11,7 +11,7 @@ function textFor(ref){const t=POCKET_TEXT_CATALOG[locale][ref];if(typeof t!=='st
 function validate(s){
  if(!s||s.v!==1||s.w!==W||s.h!==H||!Number.isInteger(s.locale)||s.locale<0||s.locale>=6||
     !Number.isInteger(s.bg)||(s.ready!==0&&s.ready!==1)||!Array.isArray(s.nodes)||s.nodes.length>256)throw Error('SCENE_HEADER');
- const seen=new Set(),allowed=new Set([1,2,3,5,11,13,14,15,16,17,19]);
+ const seen=new Set(),allowed=new Set([1,2,3,5,11,13,14,15,16,17,19,21]);
  for(const r of s.nodes){
   if(!Array.isArray(r)||r.length!==19||r.some(n=>!Number.isSafeInteger(n))||r[0]<1||seen.has(r[0])||!allowed.has(r[1]))throw Error('SCENE_RECORD');
   seen.add(r[0]);

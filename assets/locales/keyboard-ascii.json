@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "input_locale": "en-US",
+  "layout": "qwerty-ascii-v1",
+  "label_ref_base": 200,
+  "ascii_ref_base": 1000,
+  "labels": [
+    "Text input",
+    "Local demo - no device settings are changed",
+    "Cancel",
+    "Confirm",
+    "Text input",
+    "Name (ASCII)",
+    "Number",
+    "Password",
+    "PIN",
+    "Home",
+    "<",
+    ">",
+    "End",
+    "All",
+    "Clear",
+    "Shift",
+    "Caps",
+    "123",
+    "ABC",
+    "Backspace",
+    "Space",
+    "Next",
+    "Hide",
+    "Show keys",
+    "Length limit reached",
+    "Only ASCII digits are allowed",
+    "Select a field to resume"
+  ],
+  "character_range": [
+    32,
+    126
+  ],
+  "number_policy": "nonnegative-integer-ascii-digits",
+  "max_chars": 64,
+  "physical_verified": false
+}

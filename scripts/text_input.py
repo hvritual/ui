@@ -81,7 +81,8 @@ def matrix_check(matrix: dict) -> None:
     if matrix['schema_version'] != 1 or len(rows) != len(required) or {r['locale'] for r in rows} != required:
         raise ValueError('missing/duplicate language row')
     for row in rows:
-        if row['product_input_admitted'] is not False or row['layout_status'] != 'not-implemented' or row['dictionary'] is not None:
+        expected_layout = 'software-ascii-qwerty' if row['locale'] == 'en-US' else 'not-implemented'
+        if row['product_input_admitted'] is not False or row['layout_status'] != expected_layout or row['dictionary'] is not None:
             raise ValueError('unverified product locale admission')
         if row['ime_status'] not in ('not-required', 'not-implemented'):
             raise ValueError('unverified IME admission')

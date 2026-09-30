@@ -15,7 +15,7 @@ static int supported(PocketComponentKind k) {
            k==POCKET_COMPONENT_PROGRESS||k==POCKET_COMPONENT_GRID||
            k==POCKET_COMPONENT_SCROLL||k==POCKET_COMPONENT_LIST||
            k==POCKET_COMPONENT_MODAL||k==POCKET_COMPONENT_DIALOG||
-           k==POCKET_COMPONENT_LOADING;
+           k==POCKET_COMPONENT_LOADING||k==POCKET_COMPONENT_TEXT_FIELD;
 }
 static int visit(PocketScene *s,const PocketSceneSource *src,PocketUiHandle root,
                  const PocketResolvedStyle *parent,uint16_t alpha,unsigned depth) {
