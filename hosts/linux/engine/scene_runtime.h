@@ -8,9 +8,9 @@ typedef struct {
     const char *asset_root;
     uint32_t generation;
     int opened, ready;
-    char previous[POCKET_SCENE_JSON_MAX];
+    uint8_t previous[POCKET_SCENE_WIRE_MAX];
     size_t previous_length;
-    uint64_t scene_uploads, scene_skips;
+    uint64_t scene_uploads, scene_skips, scene_wire_bytes;
 } PocketSceneEngine;
 void pocket_scene_engine_init(PocketSceneEngine *engine,const char *asset_root);
 extern const PocketEngineApi pocket_scene_engine_api;

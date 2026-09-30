@@ -64,9 +64,9 @@ const char *fb_layout(const struct fb_fix_screeninfo *f,
                       v->yres % f->ypanstep == 0 && v->yoffset == 0;
     *out = l; return NULL;
 }
-const char *fb_copy(const struct fb_fix_screeninfo *fix,
+const char *fb_copy_region(const struct fb_fix_screeninfo *fix,
                     const struct fb_var_screeninfo *var,
-                    void *mapped, size_t mapped_length, const HostFrame *frame) {
+                    void *mapped, size_t mapped_length, const HostFrame *frame, const FbDamage *damage) {
     FbLayout l;
     size_t source_rows, source_width, source_end;
     const char *error = fb_layout(fix, var, &l);
@@ -81,6 +81,15 @@ const char *fb_copy(const struct fb_fix_screeninfo *fix,
     uintptr_t src = (uintptr_t)frame->pixels, dst = (uintptr_t)mapped;
     if (src > UINTPTR_MAX - source_end || dst > UINTPTR_MAX - mapped_length ||
         (src < dst + mapped_length && dst < src + source_end)) return "FB_BUFFER_ALIAS_OR_OVERFLOW";
+    uint32_t left=0,top=0,width=l.width,height=l.height;
+    if (damage) {
+        if (damage->x<0 || damage->y<0 || damage->width<=0 || damage->height<=0 ||
+            (uint64_t)(uint32_t)damage->x+(uint32_t)damage->width>l.width ||
+            (uint64_t)(uint32_t)damage->y+(uint32_t)damage->height>l.height)
+            return "FB_DAMAGE_INVALID";
+        left=(uint32_t)damage->x;top=(uint32_t)damage->y;
+        width=(uint32_t)damage->width;height=(uint32_t)damage->height;
+    }
     /* All fallible checks precede the first write. Padding and hidden pixels
        remain untouched. memcpy to/from local words is alignment/alias safe. */
     if (!l.rgb565 && l.red == 16 && l.green == 8 && l.blue == 0 &&
@@ -91,11 +100,11 @@ const char *fb_copy(const struct fb_fix_screeninfo *fix,
            no unchecked cast to a potentially unaligned uint32_t is used. */
         uint32_t words[64];
         const uint32_t alpha = l.has_alpha ? 0xff000000U : 0U;
-        for (uint32_t y = 0; y < l.height; ++y) {
-            const uint8_t *s = frame->pixels + (size_t)y * frame->stride;
-            uint8_t *d = (uint8_t *)mapped + l.first_byte + (size_t)y * l.stride;
-            for (uint32_t x = 0; x < l.width;) {
-                uint32_t count = l.width - x;
+        for (uint32_t y = top; y < top+height; ++y) {
+            const uint8_t *s = frame->pixels + (size_t)y * frame->stride + (size_t)left*4;
+            uint8_t *d = (uint8_t *)mapped + l.first_byte + (size_t)y * l.stride + (size_t)left*l.bytes_per_pixel;
+            for (uint32_t x = 0; x < width;) {
+                uint32_t count = width - x;
                 if (count > 64) count = 64;
                 memcpy(words, s + (size_t)x * 4, (size_t)count * 4);
                 for (uint32_t i = 0; i < count; ++i)
@@ -106,10 +115,10 @@ const char *fb_copy(const struct fb_fix_screeninfo *fix,
         }
         return NULL;
     }
-    for (uint32_t y = 0; y < l.height; ++y) {
-        const uint8_t *s = frame->pixels + (size_t)y * frame->stride;
-        uint8_t *d = (uint8_t *)mapped + l.first_byte + (size_t)y * l.stride;
-        for (uint32_t x = 0; x < l.width; ++x, s += 4, d += l.bytes_per_pixel) {
+    for (uint32_t y = top; y < top+height; ++y) {
+        const uint8_t *s = frame->pixels + (size_t)y * frame->stride + (size_t)left*4;
+        uint8_t *d = (uint8_t *)mapped + l.first_byte + (size_t)y * l.stride + (size_t)left*l.bytes_per_pixel;
+        for (uint32_t x = 0; x < width; ++x, s += 4, d += l.bytes_per_pixel) {
             uint32_t pixel;
             if (l.rgb565) pixel = ((uint32_t)(s[2] >> 3) << 11) | ((uint32_t)(s[1] >> 2) << 5) | (s[0] >> 3);
             else pixel = ((uint32_t)s[2] << l.red) | ((uint32_t)s[1] << l.green) |
@@ -118,4 +127,10 @@ const char *fb_copy(const struct fb_fix_screeninfo *fix,
         }
     }
     return NULL;
+}
+
+const char *fb_copy(const struct fb_fix_screeninfo *fix,
+                    const struct fb_var_screeninfo *var,
+                    void *mapped, size_t mapped_length, const HostFrame *frame) {
+    return fb_copy_region(fix,var,mapped,mapped_length,frame,NULL);
 }

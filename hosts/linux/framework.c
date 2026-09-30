@@ -48,7 +48,13 @@ int pocket_framework_tick(PocketFramework *r,uint64_t ns,int force){
     r->clock_ns=ns;
     uint64_t begin,updated,rendered,completed;
     if(!host_monotonic_ns(&begin))return fail(r,"MEASURE_CLOCK");
-    if(!coffee_app_step(&r->app,ns/1000000ULL)||!coffee_app_scene(&r->app,&r->scene))return fail(r,"SCENE_PROJECT");
+    if(!coffee_app_step(&r->app,ns/1000000ULL))return fail(r,"APP_STEP");
+    /* Keep input/app/Core ticks at 60 Hz. Project and transfer only the newest
+     * scene for a presentation opportunity, not the intermediate skipped tick.
+     * Media admission is evaluated on this same fresh scene, never stale ready. */
+    const int paint_due=force||!r->valid_frame||((r->ticks+1U)%2U==0);
+    if(paint_due){
+    if(!coffee_app_scene(&r->app,&r->scene))return fail(r,"SCENE_PROJECT");
     PocketEngineResource resource;
     if(pocket_scene_engine_api.resource_create(&r->engine,POCKET_SCENE_RESOURCE,&r->scene,sizeof(r->scene),&resource)!=POCKET_ENGINE_OK||
        pocket_scene_engine_api.resource_release(&r->engine,resource)!=POCKET_ENGINE_OK)return fail(r,"SCENE_UPLOAD");
@@ -56,12 +62,13 @@ int pocket_framework_tick(PocketFramework *r,uint64_t ns,int force){
         (void)media_store_poll(&r->media);r->last_media_ns=ns;
         /* Bad updates retain the current image set, not a runtime failure. */
     }
+    }
     uint32_t next;
     if(pocket_scene_engine_api.tick(&r->engine,ns/1000000ULL,&next)!=POCKET_ENGINE_OK)return fail(r,"ENGINE_TICK");
     r->ticks++;
     CoffeeAppStats s;if(!coffee_app_stats(&r->app,&s))return fail(r,"APP_STATS");
     r->page_mask|=1U<<(s.page-1U);if(s.modal)r->modal_seen=1;
-    if(!force&&r->valid_frame&&(r->ticks%2))return 1;
+    if(!paint_due)return 1;
     if(!host_monotonic_ns(&updated))return fail(r,"MEASURE_CLOCK");
     if(pocket_scene_engine_api.render(&r->engine,&r->frame)!=POCKET_ENGINE_OK)return fail(r,"ENGINE_RENDER");
     if(!host_monotonic_ns(&rendered))return fail(r,"MEASURE_CLOCK");

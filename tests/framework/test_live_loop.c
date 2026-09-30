@@ -30,6 +30,11 @@ int __wrap_fbdev_present(void *p,const HostFrame *f){
     if(!f||!f->pixels||f->width!=1024||f->height!=viewport_height||f->stride!=4096||!unblanks){invalid_frame=1;return 0;}
     d->presents++;d->bytes_written+=f->length;flushes++;return 1;
 }
+int __wrap_fbdev_present_region(void *p,const HostFrame *f,const FbDamage *d){
+    if(!d||d->x<0||d->y<0||d->width<=0||d->height<=0||
+       (int64_t)d->x+d->width>f->width||(int64_t)d->y+d->height>f->height)return 0;
+    return __wrap_fbdev_present(p,f);
+}
 int __wrap_ioctl(int fd,unsigned long request,...){
     if(fd==90&&request==FBIOBLANK){unblanks++;return 0;}
     errno=ENOTTY;return -1;

@@ -6,7 +6,13 @@
 #define POCKET_SCENE_VERSION 1U
 #define POCKET_SCENE_MAX_RECORDS 256U
 #define POCKET_SCENE_RESOURCE 0x53434e31U
-#define POCKET_SCENE_JSON_MAX 65536U
+/* Private little-endian PSC1 wire: 8 u32 header words, then 20 u32 words
+ * per record. Stable IDs occupy two words; all other fields are bounded u32/i32.
+ * No native struct padding, pointer, float, endianness or JS JSON dependency. */
+#define POCKET_SCENE_WIRE_MAGIC 0x31435350U
+#define POCKET_SCENE_WIRE_HEADER 32U
+#define POCKET_SCENE_WIRE_RECORD 80U
+#define POCKET_SCENE_WIRE_MAX (POCKET_SCENE_WIRE_HEADER+POCKET_SCENE_MAX_RECORDS*POCKET_SCENE_WIRE_RECORD)
 
 typedef struct {
     uint64_t id;

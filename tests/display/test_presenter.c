@@ -26,10 +26,12 @@ static int copy32(const struct fb_fix_screeninfo *f, const struct fb_var_screeni
     return !fb_copy(f,v,fake_fb.data,f->smem_len,frame) &&
            !memcmp(expected,fake_fb.data,f->smem_len) && fake_fb_guards();
 }
+#include "region_cases.h"
 int main(int argc, char **argv) {
     FbDevice d={0}; FbLayout l;
     uint8_t pixels[64]; for (unsigned i=0;i<sizeof(pixels);i++) pixels[i]=(uint8_t)(i*13);
     HostFrame frame={pixels,3,2,16,28};
+    CHECK(region_cases());
     int deliberate=argc>1 && !strcmp(argv[1],"--intentional-failure");
     fake_fb_reset(3,2,32);
     CHECK(copy32(&fake_fb.fix,&fake_fb.var,&frame));
