@@ -1,18 +1,56 @@
 {
   "schema_version": 1,
-  "status": "contract-only-not-implemented",
+  "status": "native-text-session-core-only",
   "owner_issue": 12,
   "native_encoding": "UTF-8-valid-scalar-sequences",
   "js_range_unit": "UTF-16-code-units",
   "range_conversion": "explicit-validation-no-split-surrogates-or-UTF8-sequences",
-  "committed_edit_boundary": "extended-grapheme-cluster-after-Unicode-version-is-pinned",
-  "identity_fields": ["field_id", "session_id", "focus_generation", "revision"],
-  "event_kinds": ["physical-key", "text-edit", "composition-start", "composition-update", "commit-text", "composition-cancel", "focus", "blur"],
+  "committed_edit_boundary": "Unicode-17.0.0-extended-grapheme-cluster",
+  "identity_fields": [
+    "field_id",
+    "session_id",
+    "focus_generation",
+    "engine_generation",
+    "revision"
+  ],
+  "event_kinds": [
+    "physical-key",
+    "text-edit",
+    "composition-start",
+    "composition-update",
+    "commit-text",
+    "composition-cancel",
+    "focus",
+    "blur"
+  ],
   "physical_key_is_text": false,
   "preedit_is_business_value": false,
   "delivery_phase": "owning-UI-thread-before-next-guest-turn",
-  "queue_contract": {"max_events": 64, "max_total_bytes": 65536, "max_text_utf8_bytes": 4096, "overflow": "reject-new-event-and-request-session-cancellation"},
+  "queue_contract": {
+    "max_events": 64,
+    "max_total_bytes": 65536,
+    "max_text_utf8_bytes": 4096,
+    "overflow": "reject-new-event-and-request-session-cancellation",
+    "status": "planned-not-implemented"
+  },
   "stale_result_policy": "discard-if-session-focus-generation-or-revision-mismatch",
-  "sensitive_field_policy": {"log_text": false, "learn": false, "persist_history": false, "implicit_normalization": false},
-  "admission": {"editable_widget": false, "composition_bridge": false, "offline_ime": false}
+  "sensitive_field_policy": {
+    "log_text": false,
+    "learn": false,
+    "persist_history": false,
+    "implicit_normalization": false
+  },
+  "admission": {
+    "editable_widget": false,
+    "composition_bridge": false,
+    "offline_ime": false,
+    "native_editor_core": true,
+    "native_composition_state": true,
+    "F6_owner_bridge": false,
+    "keyboard_ui": false
+  },
+  "native_api": "hosts/linux/text-input/session.h",
+  "unicode_lock": "toolchains/text-input.lock.json",
+  "boundary_conversion": "grapheme-boundaries-only; reject surrogate, UTF8 sequence and cluster interiors",
+  "language_matrix": "assets/locales/input-capabilities.json"
 }

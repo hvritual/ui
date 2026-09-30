@@ -69,3 +69,25 @@ class TextContractTests(unittest.TestCase):
     def test_bounded_queue(self):
         self.contract["queue_contract"]["max_events"] = 0
         with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
+
+    def test_native_core_contract(self): runtime.validate_text_contract(self.contract)
+    def test_legacy_contract(self):
+        self.contract["status"] = "contract-only-not-implemented"
+        self.contract["admission"] = {"editable_widget": False, "composition_bridge": False, "offline_ime": False}
+        self.contract["identity_fields"] = ["field_id", "session_id", "focus_generation", "revision"]
+        runtime.validate_text_contract(self.contract)
+    def test_no_false_keyboard_admission(self):
+        self.contract["admission"]["keyboard_ui"] = True
+        with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
+    def test_no_false_owner_bridge(self):
+        self.contract["admission"]["F6_owner_bridge"] = True
+        with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
+    def test_engine_generation_required(self):
+        self.contract["identity_fields"].remove("engine_generation")
+        with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
+    def test_no_false_queue_admission(self):
+        self.contract["queue_contract"]["status"] = "implemented"
+        with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
+    def test_empty_privacy_policy_rejected(self):
+        self.contract["sensitive_field_policy"] = {}
+        with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)

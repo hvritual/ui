@@ -215,3 +215,15 @@ verify-board-framework:
 	python3 scripts/framework_hil.py --report "$(REPORT)"
 test-board-framework-verifier:
 	python3 scripts/framework_hil.py --self-test
+
+.PHONY: test-text-input test-text-input-arm test-text-input-sanitize verify-language-packs verify-text-input
+test-text-input:
+	python3 scripts/text_input.py test --mode native
+test-text-input-arm:
+	python3 scripts/text_input.py test --mode arm
+test-text-input-sanitize:
+	python3 scripts/text_input.py test --mode sanitize
+verify-language-packs:
+	python3 scripts/text_input.py matrix
+verify-text-input:
+	python3 scripts/text_input.py verify

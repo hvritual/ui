@@ -1,0 +1,42 @@
+name: P4A Text Session
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  text-session:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install native and ARM validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user
+      - name: Exact Unicode dependency and native text contracts
+        run: make test-text-input
+      - name: ARMv7 functional equivalence
+        run: make test-text-input-arm
+      - name: Instrument text core and its Unicode dependency
+        run: make test-text-input-sanitize
+      - name: Verify languages and evidence
+        run: make verify-language-packs verify-text-input
+      - name: Preserve exact source for review
+        if: always()
+        run: |
+          mkdir -p out/text-input/review
+          git archive --format=tar HEAD > out/text-input/review/source.tar
+      - name: Upload text-session evidence (no keyboard or board approval)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: text-session-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/text-input/
+          if-no-files-found: error
+          retention-days: 30
