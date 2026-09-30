@@ -80,14 +80,26 @@ def validate_board(board):
 
 
 def validate_text_contract(contract):
-    require(contract["schema_version"] == 1 and contract["status"] == "contract-only-not-implemented", "text adapter is not implemented by P1")
-    require(contract["owner_issue"] == 12 and all(value is False for value in contract["admission"].values()), "text admission must await P4A")
+    require(contract["schema_version"] == 1, "unsupported text contract version")
+    native_core = contract["status"] == "native-text-session-core-only"
+    require(native_core or contract["status"] == "contract-only-not-implemented", "unreviewed text admission stage")
+    expected = {"editable_widget": False, "composition_bridge": False, "offline_ime": False}
+    identity = ["field_id", "session_id", "focus_generation", "revision"]
+    if native_core:
+        expected.update(native_editor_core=True, native_composition_state=True, F6_owner_bridge=False, keyboard_ui=False)
+        identity.insert(3, "engine_generation")
+        require(contract["native_api"] == "hosts/linux/text-input/session.h" and
+                contract["unicode_lock"] == "toolchains/text-input.lock.json", "missing native text implementation binding")
+        require(contract["committed_edit_boundary"] == "Unicode-17.0.0-extended-grapheme-cluster", "unreviewed Unicode boundaries")
+        require(contract["queue_contract"]["status"] == "planned-not-implemented", "native core does not supply an asynchronous queue")
+    require(contract["owner_issue"] == 12 and contract["admission"] == expected, "native editing does not admit keyboard/IME UI")
     require(contract["js_range_unit"] == "UTF-16-code-units" and contract["native_encoding"] == "UTF-8-valid-scalar-sequences", "text encoding/index boundary changed")
     require(contract["physical_key_is_text"] is False and contract["preedit_is_business_value"] is False, "raw keys/preedit are not committed business text")
-    require(contract["identity_fields"] == ["field_id", "session_id", "focus_generation", "revision"], "missing input session identity")
+    require(contract["identity_fields"] == identity, "missing input session identity")
     queue = contract["queue_contract"]
     require(queue["max_events"] == 64 and queue["max_total_bytes"] == 65536 and queue["max_text_utf8_bytes"] == 4096, "review text queue budget changes")
-    require(all(value is False for value in contract["sensitive_field_policy"].values()), "sensitive text must not be learned/logged/normalized")
+    require(contract["sensitive_field_policy"] == {"log_text": False, "learn": False,
+            "persist_history": False, "implicit_normalization": False}, "sensitive text must not be learned/logged/normalized")
 
 
 def config():
