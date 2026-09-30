@@ -189,6 +189,11 @@
       "reference_only": false,
       "role": "runtime"
     },
+    "out/text-input/deps/utf8proc_data.c": {
+      "origin": "locked:toolchains/text-input.lock.json",
+      "reference_only": false,
+      "role": "runtime"
+    },
     "tests/framework/test_framework.c": {
       "origin": "repository",
       "reference_only": false,
