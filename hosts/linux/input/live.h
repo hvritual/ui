@@ -8,20 +8,24 @@
 #define INPUT_LIVE_READ_BUDGET 8U
 
 typedef struct {
+    /* "auto" admits only known ilitek_ts/goodix-ts devices, uniquely. */
     const char *expected_name;
     unsigned width;
     unsigned height;
     int swap_xy;
     int invert_x;
     int invert_y;
+    /* 0/0 means probe independent X/Y ranges; nonzero pair is an assertion. */
     int expected_raw_min;
     int expected_raw_max;
-    unsigned expected_slots;
+    unsigned expected_slots; /* 0 = probe B slots / no hardware slots for A */
 } InputLiveConfig;
 
 /* Numeric capability metadata only: never input text or individual events. */
 typedef struct {
     int name_queried, name_matched, capabilities_queried, axes_queried;
+    InputProtocol protocol;
+    int tracking_min, tracking_max;
     int ev_key, ev_abs, btn_touch, mt_slot, mt_tracking, mt_x, mt_y;
     int slot_min, slot_max, raw_x_min, raw_x_max, raw_y_min, raw_y_max;
     unsigned scanned, opened_candidates, rejected_candidates;
@@ -50,7 +54,7 @@ typedef struct {
 
 typedef int (*InputFrameSink)(void *context, const InputFrame *frame, uint64_t event_ns);
 
-/* Production device selection: scan event nodes, match name + Protocol-B capabilities.
+/* Production device selection: scan event nodes, match known name + protocol-specific capabilities.
    The observed event number is not identity. */
 int input_live_discover(InputLive *live, const char *input_dir, const InputLiveConfig *config);
 

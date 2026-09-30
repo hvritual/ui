@@ -93,13 +93,21 @@ cd coffee-framework
 ./run-framework.sh imx6ul-1024x600 180
 ```
 
-Known default input selector is `ilitek_ts` plus Protocol B capabilities, not a
-fixed event number. Raw bounds are 0..16384, 10 slots, direct axes for the
-previously validated board. Any mismatch fails admission. Framebuffer is probed
-at runtime; 32-bit layout, stride, bounds and ownership checks stay active. The
-only new display ioctl is explicit UNBLANK after write consent. No mode set,
-PAN, VSync or acceleration is enabled. Exit leaves the last screen; old UI is
-not automatically restarted.
+Input defaults now select a **unique** known controller (`ilitek_ts` or
+`goodix-ts`) by name and required capabilities, never a fixed event index.
+ILITEK retains the historical Protocol B path. Slotless Goodix uses the new
+tracking-ID Protocol A packet parser; Goodix exposing slots uses Protocol B.
+The driver supplies independent X/Y ranges and, only for B, hardware slot count.
+They are queried and checked on the board, not guessed from display resolution.
+Explicit `--raw-min/--raw-max` and `--slots` remain optional constraints; a slots
+constraint is invalid for A. Ambiguous/unknown controllers and invalid capability
+or axis results are rejected. Reconnect rechecks identity, protocol and ranges.
+
+Display geometry/stride/bounds checks remain active; no mode set, PAN or VSync is
+enabled. The physical runner can UNBLANK the framebuffer. Exit leaves the last
+screen and does not restart the old UI. Default direct axes are a diagnostic
+candidate, **not verified orientation for Goodix**; record edge/asymmetric touch
+checks before accepting a transform.
 
 During the run: page forward/back and swipe; select a drink; open confirmation;
 tap background buttons and verify no action; cancel/reopen; start and watch
@@ -139,8 +147,9 @@ P7 crash-consistent production release or persistence approval.
 ## Independent 1024x800 board
 
 800 has its own profile but no inherited hardware acceptance. Physical startup
-requires explicit `--touch-name`, `--raw-min`, `--raw-max`, `--slots`, `--swap-xy`,
-`--invert-x`, `--invert-y` values from that board's approved capability/axis probe.
+requires an explicit `--touch-name` and `--swap-xy`, `--invert-x`, `--invert-y`
+values from that board's approved orientation check. Protocol and independent
+axis ranges are probed; numeric constraints are optional.
 Do not copy 600 values just to make admission succeed. The existing P3 probe may
 be used to collect those values before running this new package.
 
@@ -219,3 +228,44 @@ Direct binary execution must choose exactly one of `--physical` or
 `--headless`; neither implicit framebuffer writes nor a magic-word token are
 accepted. Existing profile, framebuffer, input admission, package hash and HIL
 checks remain unchanged.
+
+
+## Goodix slotless input repair (2026-09-30)
+
+Historical #5/#22 and `myimx6ek140-input-20260922.json` document **ilitek_ts**,
+0..16384 on each axis and B slots 0..9. They are not Goodix measurements.
+The returned `goodix-input-admission-20260930.json` establishes BTN_TOUCH,
+MT tracking ID and X/Y capabilities but **no ABS_MT_SLOT**. Its axis fields
+were unqueried, so neither 16384 nor ten slots can be reused as Goodix facts.
+
+A name override alone was insufficient: the old live reader unconditionally
+required B slots and called EVIOCGMTSLOTS. This repair adds a real Type A reader:
+SYN_MT_REPORT ends a contact packet, SYN_REPORT commits the complete contact set,
+tracking ID zero is valid and reordered packets retain logical pointer identity.
+Missing fields, duplicate IDs and malformed frames never become successful taps.
+The 32-contact parsing budget and eight-runtime-contact overflow policy are
+explicit software budgets, **not a claim that Goodix has 32 or eight slots**.
+
+A has no B slot snapshot. Startup/after SYN_DROPPED query EVIOCGKEY for BTN_TOUCH;
+held contacts remain suppressed until release. Dropped input is ignored through
+the next SYN_REPORT before re-arming. Reconnect re-probes without taking over
+another controller or silently changing calibration. B keeps its existing slot
+resync and all old tests. No driver replacement, system clock, kernel, libc or
+machine service changes are required.
+
+The syscall fixtures match the uploaded capability shape; their asymmetric
+0..1023 / 0..599 ranges are explicitly **synthetic test inputs**. Tests cover
+zero ID, reorder, movement/release, held startup, overflow, duplicate/incomplete
+packets, SYN_DROPPED, reconnect, ambiguity and failed queries. A raw Type A trace
+also drives the real Framework/F6/Core Coffee flow on both software viewports.
+These tests cannot establish the current board's actual event trace or orientation.
+
+Run on the isolated 600 test board without the former confirmation string:
+
+```sh
+./run-framework.sh imx6ul-1024x600 180
+```
+
+The startup record now includes `protocol`, `axis_source`, `slot_range_present`,
+actual axis bounds and `contact_capacity`. Keep the exact new package, input.json,
+report.json and LCD/touch evidence together; #49 still needs physical acceptance.

@@ -40,6 +40,10 @@ static void clear_slots(InputState *s) {
     for (unsigned i = 0; i < INPUT_HW_MAX_SLOTS; ++i)
         s->slots[i].tracking_id = -1;
     s->current_slot = 0;
+    memset(&s->a_packet, 0, sizeof(s->a_packet));
+    memset(s->a_contacts, 0, sizeof(s->a_contacts));
+    s->a_fields = s->a_count = 0;
+    s->a_touch_down = 0;
     s->legacy_down = 0;
     s->legacy_have_x = 0;
     s->legacy_have_y = 0;
@@ -48,8 +52,9 @@ static void clear_slots(InputState *s) {
 int input_state_init(InputState *s, InputProtocol protocol, unsigned slot_count,
                      const InputTransform *transform) {
     if (!s || !valid_transform(transform)) return 0;
-    if (protocol != INPUT_PROTOCOL_SINGLE && protocol != INPUT_PROTOCOL_MT_B) return 0;
-    if (protocol == INPUT_PROTOCOL_MT_B &&
+    if (protocol != INPUT_PROTOCOL_SINGLE && protocol != INPUT_PROTOCOL_MT_B &&
+        protocol != INPUT_PROTOCOL_MT_A) return 0;
+    if (protocol != INPUT_PROTOCOL_SINGLE &&
         (slot_count == 0 || slot_count > INPUT_HW_MAX_SLOTS)) return 0;
     memset(s, 0, sizeof(*s));
     s->protocol = protocol;
@@ -169,6 +174,95 @@ static int commit_mt(InputState *s) {
     return 1;
 }
 
+/* A packet's position is never inherited from another contact or frame. */
+static int finish_a_packet(InputState *s) {
+    if (!s->a_fields) return 1; /* legal empty SYN_MT_REPORT */
+    if (s->a_fields == 1U && s->a_packet.tracking_id == -1) {
+        s->a_fields = 0;
+        memset(&s->a_packet, 0, sizeof(s->a_packet));
+        return 1;
+    }
+    if (s->a_fields != 7U || s->a_packet.tracking_id < 0 ||
+        s->a_count >= s->slot_count) return 0;
+    for (unsigned i = 0; i < s->a_count; ++i)
+        if (s->a_contacts[i].tracking_id == s->a_packet.tracking_id) return 0;
+    s->a_packet.active = s->a_packet.have_x = s->a_packet.have_y = 1;
+    s->a_contacts[s->a_count++] = s->a_packet;
+    s->a_fields = 0;
+    memset(&s->a_packet, 0, sizeof(s->a_packet));
+    return 1;
+}
+
+static int commit_a(InputState *s) {
+    if (!finish_a_packet(s)) return 0;
+    /* A malformed empty report while BTN_TOUCH remains down is not an Up. */
+    if ((s->a_count != 0) != (s->a_touch_down != 0)) return 0;
+    InputSlot next[INPUT_HW_MAX_SLOTS] = {{0}};
+    unsigned used[INPUT_HW_MAX_SLOTS] = {0};
+    unsigned assigned[INPUT_HW_MAX_SLOTS] = {0};
+    for (unsigned i = 0; i < s->slot_count; ++i) next[i].tracking_id = -1;
+    /* Reserve continuing IDs first, regardless of packet order. */
+    for (unsigned j = 0; j < s->a_count; ++j) {
+        for (unsigned i = 0; i < s->slot_count; ++i) {
+            if (s->slots[i].active &&
+                s->slots[i].tracking_id == s->a_contacts[j].tracking_id) {
+                next[i] = s->a_contacts[j];
+                next[i].published = s->slots[i].published;
+                used[i] = assigned[j] = 1;
+                break;
+            }
+        }
+    }
+    for (unsigned j = 0; j < s->a_count; ++j) {
+        if (assigned[j]) continue;
+        unsigned i = 0;
+        /* Prefer an unused old slot so a released ID gets a normal Up. */
+        for (; i < s->slot_count; ++i)
+            if (!used[i] && !s->slots[i].published) break;
+        if (i == s->slot_count)
+            for (i = 0; i < s->slot_count && used[i]; ++i) {}
+        if (i == s->slot_count) return 0;
+        next[i] = s->a_contacts[j];
+        if (s->slots[i].published) {
+            queue_cancel(s, (int)i);
+            next[i].defer_publish = 1;
+        }
+        used[i] = 1;
+    }
+    /* Overflow cancels the previous frame before replacing its logical map. */
+    if (s->a_count > INPUT_RUNTIME_MAX_CONTACTS) {
+        cancel_published(s);
+        s->suppress_until_all_up = s->overflowed = 1;
+    }
+    memcpy(s->slots, next, sizeof(next));
+    s->a_count = 0;
+    return commit_mt(s);
+}
+
+static int feed_a(InputState *s, uint16_t type, uint16_t code, int32_t value) {
+    if (type == EV_KEY && code == BTN_TOUCH) {
+        if (value != 0 && value != 1) return 0;
+        s->a_touch_down = value;
+    } else if (type == EV_ABS) {
+        if (code == ABS_MT_SLOT) return 0; /* not a slot protocol */
+        if (code == ABS_MT_TRACKING_ID) {
+            if (value < -1 || (s->a_fields & 1U)) return 0;
+            s->a_packet.tracking_id = value; s->a_fields |= 1U;
+        } else if (code == ABS_MT_POSITION_X) {
+            if (s->a_fields & 2U) return 0;
+            s->a_packet.raw_x = value; s->a_fields |= 2U;
+        } else if (code == ABS_MT_POSITION_Y) {
+            if (s->a_fields & 4U) return 0;
+            s->a_packet.raw_y = value; s->a_fields |= 4U;
+        }
+    } else if (type == EV_SYN && code == SYN_MT_REPORT) {
+        return finish_a_packet(s);
+    } else if (type == EV_SYN && code == SYN_REPORT) {
+        return commit_a(s) ? 2 : 0;
+    }
+    return 1;
+}
+
 static int commit(InputState *s) {
     return s->protocol == INPUT_PROTOCOL_MT_B ? commit_mt(s) : commit_single(s);
 }
@@ -192,6 +286,8 @@ int input_state_feed(InputState *s, uint16_t type, uint16_t code, int32_t value)
         if (type == EV_SYN && code == SYN_REPORT) return 3;
         return 1;
     }
+
+    if (s->protocol == INPUT_PROTOCOL_MT_A) return feed_a(s, type, code, value);
 
     if (s->protocol == INPUT_PROTOCOL_MT_B) {
         if (type == EV_ABS) {
@@ -273,6 +369,18 @@ int input_state_resync_mt(InputState *s, const InputMtSnapshot *snapshot) {
     s->suppress_until_all_up = active_count(s) != 0;
     s->overflowed = active_count(s) > INPUT_RUNTIME_MAX_CONTACTS;
     s->current_slot = snapshot->current_slot;
+    return 1;
+}
+
+int input_state_resync_a(InputState *s, int touching) {
+    if (!s || s->protocol != INPUT_PROTOCOL_MT_A ||
+        (touching != 0 && touching != 1)) return 0;
+    cancel_published(s);
+    clear_slots(s);
+    s->drop_pending = 0;
+    s->a_touch_down = touching;
+    s->suppress_until_all_up = touching;
+    s->overflowed = 0;
     return 1;
 }
 
