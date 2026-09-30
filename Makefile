@@ -200,17 +200,17 @@ test-focus:
 
 .PHONY: test-framework test-framework-arm test-framework-sanitize verify-framework build-board-framework test-board-framework-package verify-board-framework test-board-framework-verifier
 test-framework:
-	python3 scripts/framework.py test --mode native
+	python3 scripts/framework_guard.py test --mode native
 test-framework-arm:
-	python3 scripts/framework.py test --mode arm
+	python3 scripts/framework_guard.py test --mode arm
 test-framework-sanitize:
-	ASAN_OPTIONS=detect_leaks=1 python3 scripts/framework.py test --mode native --sanitize
+	ASAN_OPTIONS=detect_leaks=1 python3 scripts/framework_guard.py test --mode native --sanitize
 verify-framework:
-	python3 scripts/framework.py verify
+	python3 scripts/framework_guard.py verify
 build-board-framework:
-	python3 scripts/framework.py package
+	python3 scripts/framework_guard.py package
 test-board-framework-package:
-	python3 scripts/framework.py package-check
+	python3 scripts/framework_guard.py package-check
 verify-board-framework:
 	python3 scripts/framework_hil.py --report "$(REPORT)"
 test-board-framework-verifier:
@@ -233,3 +233,11 @@ test-keyboard-layouts:
 	python3 scripts/keyboard_layout.py
 test-keyboard: test-keyboard-layouts test-framework
 test-keyboard-arm: test-keyboard-layouts test-framework-arm
+
+.PHONY: check-runtime-boundary test-runtime-boundary
+check-runtime-boundary:
+	python3 scripts/runtime_boundary.py check
+test-runtime-boundary:
+	python3 -m unittest discover -s tests/boundary -v
+check: check-runtime-boundary
+test-framework test-framework-arm test-framework-sanitize build-board-framework: check-runtime-boundary

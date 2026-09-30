@@ -1,0 +1,51 @@
+name: Runtime Ownership Boundary
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  ownership:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Inventory and compiler-boundary negative tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/boundary
+          make check-runtime-boundary test-runtime-boundary 2>&1 | tee out/boundary/gates.log
+          git diff --exit-code
+      - name: Bind ownership-only evidence to the tested source
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          root=pathlib.Path('.')
+          digest=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+          tracked=subprocess.check_output(['git','ls-files'],text=True).splitlines()
+          record={'schema_version':1,'scope':'ownership-policy-and-test-fixtures-only',
+                  'commit':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+                  'tree':subprocess.check_output(['git','rev-parse','HEAD^{tree}'],text=True).strip(),
+                  'source_sha256':{n:digest(root/n) for n in tracked if (root/n).is_file()},
+                  'log_sha256':digest(root/'out/boundary/gates.log'),
+                  'application_separation':False,'physical_hardware':False}
+          (root/'out/boundary/evidence.json').write_text(json.dumps(record,indent=2,sort_keys=True)+'\n')
+          PY
+      - name: Preserve failure logs without generating a PASS
+        if: always()
+        run: |
+          mkdir -p out/boundary
+          git archive --format=tar HEAD > out/boundary/source.tar
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: runtime-boundary-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/boundary/
+          if-no-files-found: error
+          retention-days: 30

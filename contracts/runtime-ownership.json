@@ -1,0 +1,227 @@
+{
+  "application_data": [
+    "apps/coffee-demo/locales.json",
+    "apps/coffee-demo/app.js"
+  ],
+  "link_inputs": {
+    "apps/coffee-framework/app.c": {
+      "origin": "repository",
+      "reference_only": true,
+      "role": "application"
+    },
+    "apps/coffee-framework/pager.c": {
+      "origin": "repository",
+      "reference_only": true,
+      "role": "application"
+    },
+    "hosts/linux/display/fbdev.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "target"
+    },
+    "hosts/linux/display/presenter.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "target"
+    },
+    "hosts/linux/engine/scene_runtime.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "adapter"
+    },
+    "hosts/linux/framework.c": {
+      "origin": "repository",
+      "reference_only": true,
+      "role": "adapter"
+    },
+    "hosts/linux/framework_main.c": {
+      "origin": "repository",
+      "reference_only": true,
+      "role": "adapter"
+    },
+    "hosts/linux/input/interaction_bridge.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "adapter"
+    },
+    "hosts/linux/input/live.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "target"
+    },
+    "hosts/linux/input/state.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "target"
+    },
+    "hosts/linux/text-input/keyboard.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/text-input/session.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ui/component.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ui/interaction.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ui/layout.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ui/model.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ui/navigation.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ui/object.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ui/overlay.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ui/reactive.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ui/scene.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ui/style.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/arm/host.o": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/arm/libquickjs.a": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/arm/media-store.o": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/arm/personality.o": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/arm/platform.o": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/arm/runtime-host.o": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/cargo/armv7-unknown-linux-gnueabihf/release/libpocketjs_symbian_core.a": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/cargo/x86_64-unknown-linux-gnu/release/libpocketjs_symbian_core.a": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/native/host.o": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/native/libquickjs.a": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/native/media-store.o": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/native/personality.o": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/native/platform.o": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/runtime/native/runtime-host.o": {
+      "origin": "locked:scripts/runtime.py check_build",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/text-input/deps/utf8proc.c": {
+      "origin": "locked:toolchains/text-input.lock.json",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "tests/framework/test_framework.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
+    "tests/framework/test_keyboard.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
+    "tests/framework/test_live_loop.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
+    "tests/framework/test_scene_wire.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
+    "tests/text-input/test_keyboard_owner.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    }
+  },
+  "note": "Reference-only exceptions document the existing monolith; they do not certify #56 separation. No new application translation unit is implicitly admitted.",
+  "private_payloads": {
+    "hosts/linux/engine/scene_guest.js": "adapter-not-developer-asset",
+    "out/framework/assets/framework.js": "adapter-not-developer-asset"
+  },
+  "reference_headers": [
+    "hosts/linux/framework.h"
+  ],
+  "schema_version": 1
+}
