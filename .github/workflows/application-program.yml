@@ -1,0 +1,44 @@
+name: Application Program Contract
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  program:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install existing native and ARM baseline tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user
+      - name: Fetch the unchanged pinned QuickJS dependency
+        run: make fetch
+      - name: Native isolated application program
+        run: make -f scripts/application-program.mk test-application-program
+      - name: Static ARM functional program tests
+        run: make -f scripts/application-program.mk test-application-program-arm
+      - name: Instrument the entire QuickJS and program boundary
+        run: make -f scripts/application-program.mk test-application-program-sanitize
+      - name: Bind and compare exact-source evidence
+        run: make -f scripts/application-program.mk verify-application-program
+      - name: Preserve review source even on failure
+        if: always()
+        run: |
+          mkdir -p out/application-program
+          git archive --format=tar HEAD > out/application-program/source.tar
+      - name: Upload program-core evidence, not board or full separation admission
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: application-program-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/application-program/
+          if-no-files-found: error
+          retention-days: 30
