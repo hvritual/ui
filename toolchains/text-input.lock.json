@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "library": "utf8proc",
+  "version": "2.11.3",
+  "unicode_version": "17.0.0",
+  "commit": "e5e799221b45bbb90f5fdc5c69b6b8dfbf017e78",
+  "license": "MIT and Unicode data license; preserve LICENSE.md",
+  "base_url": "https://raw.githubusercontent.com/JuliaStrings/utf8proc/e5e799221b45bbb90f5fdc5c69b6b8dfbf017e78/",
+  "git_blob_sha1": {
+    "utf8proc.c": "e8fa207af864e71814538da4f84f168da1548b1b",
+    "utf8proc.h": "8d9a2e41ee7976fe02f220d658285418ab0e9143",
+    "utf8proc_data.c": "94988b33587bde1ef94a4a3b76aa2839a03deb6d",
+    "LICENSE.md": "f18b1f3abdcb55e82ecdd84f476e7f366b00183b"
+  },
+  "conformance": {
+    "url": "https://raw.githubusercontent.com/unicode-org/unicodetools/main/unicodetools/data/ucd/17.0.0/auxiliary/GraphemeBreakTest.txt",
+    "git_blob_sha1": "e1215547c58f959a0eec9928e1915901c168f6a9",
+    "name": "GraphemeBreakTest-17.0.0.txt"
+  },
+  "normalization": "never implicit; no map/normalize function is called"
+}

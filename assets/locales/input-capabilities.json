@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "owner_issue": 12,
+  "status": "native-session-core-only",
+  "independent_settings": [
+    "ui_locale",
+    "input_locale",
+    "keyboard_layout"
+  ],
+  "hardware_keyboard": "not-implemented-not-required-for-touch-keyboard",
+  "unicode_version": "17.0.0",
+  "rows": [
+    {
+      "locale": "en-US",
+      "proposed_layout": "qwerty",
+      "engine": "direct",
+      "dictionary": null,
+      "direction": "ltr",
+      "layout_status": "not-implemented",
+      "ime_status": "not-required",
+      "font_shaping_status": "not-validated-for-editable-text",
+      "native_text_status": "unicode-buffer-only",
+      "product_input_admitted": false
+    },
+    {
+      "locale": "zh-CN",
+      "proposed_layout": "pinyin",
+      "engine": "pending-selection",
+      "dictionary": null,
+      "direction": "ltr",
+      "layout_status": "not-implemented",
+      "ime_status": "not-implemented",
+      "font_shaping_status": "not-validated-for-editable-text",
+      "native_text_status": "unicode-buffer-only",
+      "product_input_admitted": false
+    },
+    {
+      "locale": "de-DE",
+      "proposed_layout": "qwertz",
+      "engine": "direct",
+      "dictionary": null,
+      "direction": "ltr",
+      "layout_status": "not-implemented",
+      "ime_status": "not-required",
+      "font_shaping_status": "not-validated-for-editable-text",
+      "native_text_status": "unicode-buffer-only",
+      "product_input_admitted": false
+    },
+    {
+      "locale": "fr-FR",
+      "proposed_layout": "azerty",
+      "engine": "direct",
+      "dictionary": null,
+      "direction": "ltr",
+      "layout_status": "not-implemented",
+      "ime_status": "not-required",
+      "font_shaping_status": "not-validated-for-editable-text",
+      "native_text_status": "unicode-buffer-only",
+      "product_input_admitted": false
+    },
+    {
+      "locale": "es-ES",
+      "proposed_layout": "regional-latin",
+      "engine": "direct",
+      "dictionary": null,
+      "direction": "ltr",
+      "layout_status": "not-implemented",
+      "ime_status": "not-required",
+      "font_shaping_status": "not-validated-for-editable-text",
+      "native_text_status": "unicode-buffer-only",
+      "product_input_admitted": false
+    },
+    {
+      "locale": "pt-PT",
+      "proposed_layout": "regional-latin",
+      "engine": "direct",
+      "dictionary": null,
+      "direction": "ltr",
+      "layout_status": "not-implemented",
+      "ime_status": "not-required",
+      "font_shaping_status": "not-validated-for-editable-text",
+      "native_text_status": "unicode-buffer-only",
+      "product_input_admitted": false
+    },
+    {
+      "locale": "zh-TW",
+      "proposed_layout": "pending-market-choice",
+      "engine": "pending-selection",
+      "dictionary": null,
+      "direction": "ltr",
+      "layout_status": "not-implemented",
+      "ime_status": "not-implemented",
+      "font_shaping_status": "not-validated-for-editable-text",
+      "native_text_status": "unicode-buffer-only",
+      "product_input_admitted": false
+    },
+    {
+      "locale": "ja-JP",
+      "proposed_layout": "pending-market-choice",
+      "engine": "pending-selection",
+      "dictionary": null,
+      "direction": "ltr",
+      "layout_status": "not-implemented",
+      "ime_status": "not-implemented",
+      "font_shaping_status": "not-validated-for-editable-text",
+      "native_text_status": "unicode-buffer-only",
+      "product_input_admitted": false
+    },
+    {
+      "locale": "ko-KR",
+      "proposed_layout": "pending-market-choice",
+      "engine": "pending-selection",
+      "dictionary": null,
+      "direction": "ltr",
+      "layout_status": "not-implemented",
+      "ime_status": "not-implemented",
+      "font_shaping_status": "not-validated-for-editable-text",
+      "native_text_status": "unicode-buffer-only",
+      "product_input_admitted": false
+    },
+    {
+      "locale": "ar",
+      "proposed_layout": "pending-market-choice",
+      "engine": "pending-selection",
+      "dictionary": null,
+      "direction": "rtl",
+      "layout_status": "not-implemented",
+      "ime_status": "not-implemented",
+      "font_shaping_status": "not-validated-for-editable-text",
+      "native_text_status": "unicode-buffer-only",
+      "product_input_admitted": false
+    },
+    {
+      "locale": "th-TH",
+      "proposed_layout": "pending-market-choice",
+      "engine": "pending-selection",
+      "dictionary": null,
+      "direction": "ltr",
+      "layout_status": "not-implemented",
+      "ime_status": "not-implemented",
+      "font_shaping_status": "not-validated-for-editable-text",
+      "native_text_status": "unicode-buffer-only",
+      "product_input_admitted": false
+    }
+  ],
+  "sensitive_policy": {
+    "learn": false,
+    "persist_history": false,
+    "log_text": false,
+    "implicit_normalization": false,
+    "snapshot_text": false,
+    "composition_admitted": false
+  },
+  "remaining": [
+    "touch-keyboard",
+    "F6-focus-owner-bridge",
+    "candidate-list-and-bounded-provider-queue",
+    "real-offline-language-engines",
+    "shaping-BiDi-caret-layout",
+    "dual-board-acceptance"
+  ]
+}
