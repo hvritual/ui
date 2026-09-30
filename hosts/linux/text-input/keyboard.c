@@ -44,6 +44,9 @@ struct Impl {
     uint64_t now;
 };
 static int same_ui(PocketUiHandle a,PocketUiHandle b){return a.slot==b.slot&&a.generation==b.generation;}
+static int same_component(PocketComponentHandle a,PocketComponentHandle b){
+    return a.slot==b.slot&&a.generation==b.generation;
+}
 static int same_token(PocketTextToken a,PocketTextToken b){
     return a.field_id==b.field_id&&a.session_id==b.session_id&&a.focus_generation==b.focus_generation&&
            a.engine_generation==b.engine_generation&&a.revision==b.revision;
@@ -211,17 +214,24 @@ static int paint(Impl *i){
 }
 static int close_overlay(Impl *i,PocketKeyboardResult result){
     lose_focus(i);i->result=result;
-    if(!i->presented&&!pocket_ui_handle_valid(root_of(i,i->root)))return 1;
-    pocket_interaction_cancel_all(i->config.interaction,i->now);
+    int root_live=pocket_ui_handle_valid(root_of(i,i->root));
+    if(!i->presented&&!root_live)return 1;
+    PocketOverlaySnapshot overlay,top;
+    int owns_entry=i->presented&&pocket_overlay_snapshot(i->config.overlays,i->config.overlay_id,&overlay)==POCKET_OVERLAY_OK&&
+                   same_component(overlay.spec.root,i->root);
+    /* Overlay IDs alone are not ownership. A replaced or covered keyboard
+     * must not cancel another overlay's contacts or dismiss its reused ID. */
+    if(owns_entry&&pocket_overlay_input_capture(i->config.overlays,&top)==POCKET_OVERLAY_OK&&
+       same_component(top.spec.root,i->root))pocket_interaction_cancel_all(i->config.interaction,i->now);
     PocketInteractionSnapshot current;
     if(pocket_interaction_snapshot(i->config.interaction,&current)==POCKET_INTERACTION_OK){
         for(unsigned n=0;n<i->config.field_count;n++)if(same_ui(current.focused,root_of(i,i->fields[n])))
             (void)pocket_interaction_clear_focus(i->config.interaction);
     }
-    PocketOverlaySnapshot overlay;
-    if(i->presented&&pocket_overlay_snapshot(i->config.overlays,i->config.overlay_id,&overlay)==POCKET_OVERLAY_OK){
-        if(pocket_overlay_dismiss(i->config.overlays,i->config.overlay_id)!=POCKET_OVERLAY_OK)return 0;
-    }else if(pocket_ui_handle_valid(root_of(i,i->root))){
+    if(owns_entry){
+        PocketOverlayStatus status=pocket_overlay_dismiss(i->config.overlays,i->config.overlay_id);
+        if(status!=POCKET_OVERLAY_OK&&!(status==POCKET_OVERLAY_STALE_COMPONENT&&!root_live))return 0;
+    }else if(root_live){
         if(pocket_component_destroy(i->config.components,i->root)!=POCKET_COMPONENT_OK)return 0;
     }
     i->root=(PocketComponentHandle){0};i->presented=0;return 1;
@@ -280,7 +290,7 @@ int pocket_keyboard_open(PocketKeyboard *out,const PocketKeyboardConfig *config)
         if(!field->field_id||field->mode<POCKET_KEYBOARD_ASCII||field->mode>POCKET_KEYBOARD_PIN||!field->max_chars||field->max_chars>64||field->enabled>1||field->read_only>1)goto fail;
         for(unsigned prev=0;prev<f;prev++)if(config->fields[prev].field_id==field->field_id)goto fail;
         const char *initial=field->initial?field->initial:"";size_t n=0;
-        for(;initial[n]&&n<=64;n++)if((unsigned char)initial[n]<32||(unsigned char)initial[n]>126||
+        for(;n<=64&&initial[n];n++)if((unsigned char)initial[n]<32||(unsigned char)initial[n]>126||
             ((field->mode==POCKET_KEYBOARD_NUMBER||field->mode==POCKET_KEYBOARD_PIN)&&(initial[n]<'0'||initial[n]>'9')))goto fail;
         if(n>64)goto fail;
         PocketTextConfig policy=pocket_text_config_default();policy.mode=POCKET_TEXT_ASCII;
@@ -337,7 +347,7 @@ int pocket_keyboard_step(PocketKeyboard *out,uint64_t ms){
     if(i->result!=POCKET_KEYBOARD_EDITING)return 1;
     PocketOverlaySnapshot overlay;
     if(pocket_overlay_snapshot(i->config.overlays,i->config.overlay_id,&overlay)!=POCKET_OVERLAY_OK||
-       !pocket_ui_handle_valid(root_of(i,i->root)))return close_overlay(i,POCKET_KEYBOARD_CANCELLED);
+       !same_component(overlay.spec.root,i->root)||!pocket_ui_handle_valid(root_of(i,i->root)))return close_overlay(i,POCKET_KEYBOARD_CANCELLED);
     PocketTextSnapshot s;
     if(!focused(i,&s))lose_focus(i);
     if(i->pending){

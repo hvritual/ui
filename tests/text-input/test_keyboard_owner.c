@@ -61,6 +61,46 @@ int test_keyboard_owner(void){
     f.config.fields[1].initial="bad-number";CHECK(!pocket_keyboard_open(&f.keyboard,&f.config));CHECK(clean(&f));
     f.config.fields[1].initial="";f.config.fields[1].field_id=1;CHECK(!pocket_keyboard_open(&f.keyboard,&f.config));CHECK(clean(&f));
     f.config.fields[1].field_id=2;
+    /* An overlay ID may be reused after the owner dismissed this keyboard.
+     * Old cleanup must never remove the new owner's root or input contact. */
+    CHECK(pocket_keyboard_open(&f.keyboard,&f.config));
+    CHECK(pocket_overlay_dismiss(&f.overlays,f.config.overlay_id)==POCKET_OVERLAY_OK);
+    PocketComponentHandle replacement={0};
+    CHECK(pocket_component_create(&f.components,POCKET_COMPONENT_MODAL,(PocketComponentHandle){0},NULL,&replacement)==POCKET_COMPONENT_OK);
+    CHECK(pocket_overlay_present(&f.overlays,&(PocketOverlaySpec){.id=f.config.overlay_id,.kind=POCKET_OVERLAY_MODAL,
+        .root=replacement,.owns_root=1,.captures_input=1})==POCKET_OVERLAY_OK);
+    PocketComponentHandle replacement_button={0};
+    CHECK(pocket_component_create(&f.components,POCKET_COMPONENT_BUTTON,replacement,NULL,&replacement_button)==POCKET_COMPONENT_OK);
+    PocketLayoutSpec button_layout=pocket_layout_spec_default();
+    button_layout.width=(PocketLength){POCKET_LENGTH_PX,100};button_layout.height=(PocketLength){POCKET_LENGTH_PX,100};
+    CHECK(pocket_component_set_layout(&f.components,replacement_button,&button_layout)==POCKET_COMPONENT_OK);
+    PocketComponentSnapshot replacement_root;
+    CHECK(pocket_component_snapshot(&f.components,replacement,&replacement_root)==POCKET_COMPONENT_OK);
+    CHECK(pocket_layout_run(&f.layout,replacement_root.root,1024,600)==POCKET_UI_OK);
+    f.clock+=20;
+    CHECK(pocket_interaction_pointer(&f.interaction,&(PocketPointerEvent){7,POCKET_POINTER_DOWN,20,20,f.clock})==POCKET_INTERACTION_OK);
+    CHECK(step(&f));CHECK(pocket_keyboard_snapshot(&f.keyboard,&s)&&s.result==POCKET_KEYBOARD_CANCELLED);
+    PocketInteractionSnapshot replacement_input;
+    CHECK(pocket_interaction_snapshot(&f.interaction,&replacement_input)==POCKET_INTERACTION_OK&&replacement_input.active_pointers==1);
+    f.clock+=20;
+    CHECK(pocket_interaction_pointer(&f.interaction,&(PocketPointerEvent){7,POCKET_POINTER_UP,20,20,f.clock})==POCKET_INTERACTION_OK);
+    PocketOverlaySnapshot replacement_snapshot;
+    CHECK(pocket_overlay_snapshot(&f.overlays,f.config.overlay_id,&replacement_snapshot)==POCKET_OVERLAY_OK);
+    CHECK(replacement_snapshot.spec.root.slot==replacement.slot&&replacement_snapshot.spec.root.generation==replacement.generation);
+    pocket_keyboard_dispose(&f.keyboard);
+    CHECK(pocket_component_live_count(&f.components)==3);
+    /* Duplicate-ID open failure must also leave that unrelated modal alone. */
+    CHECK(!pocket_keyboard_open(&f.keyboard,&f.config));
+    CHECK(pocket_overlay_snapshot(&f.overlays,f.config.overlay_id,&replacement_snapshot)==POCKET_OVERLAY_OK);
+    CHECK(pocket_component_live_count(&f.components)==3);
+    CHECK(pocket_overlay_dismiss(&f.overlays,f.config.overlay_id)==POCKET_OVERLAY_OK);CHECK(clean(&f));
+
+    /* External component destruction precedes stale overlay cleanup sometimes. */
+    CHECK(pocket_keyboard_open(&f.keyboard,&f.config));
+    CHECK(pocket_overlay_snapshot(&f.overlays,f.config.overlay_id,&replacement_snapshot)==POCKET_OVERLAY_OK);
+    CHECK(pocket_component_destroy(&f.components,replacement_snapshot.spec.root)==POCKET_COMPONENT_OK);
+    f.clock+=20;CHECK(pocket_keyboard_step(&f.keyboard,f.clock));
+    CHECK(pocket_keyboard_snapshot(&f.keyboard,&s)&&s.result==POCKET_KEYBOARD_CANCELLED);CHECK(clean(&f));
     for(unsigned j=0;j<100;j++){
         CHECK(pocket_keyboard_open(&f.keyboard,&f.config));CHECK(tap(&f,59,370));CHECK(tap(&f,720,40));
         CHECK(pocket_keyboard_snapshot(&f.keyboard,&s)&&s.result==POCKET_KEYBOARD_CANCELLED);
