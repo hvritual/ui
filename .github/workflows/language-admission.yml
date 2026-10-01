@@ -1,0 +1,63 @@
+name: Language Admission Evidence
+on:
+  pull_request:
+    branches: [main, feat/visible-pinyin-keyboard]
+    paths: ['contracts/language-release*.json', 'scripts/language*.py', 'scripts/language.mk', 'tests/language/**', '.github/workflows/language-admission.yml']
+  push:
+    branches: [main]
+    paths: ['contracts/language-release*.json', 'scripts/language*.py', 'scripts/language.mk', 'tests/language/**', '.github/workflows/language-admission.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  language:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Validate language declarations and negative guards
+        run: |
+          python3 -m unittest discover -s tests/language -v
+          python3 scripts/language_admission.py check
+      - name: Checkout immutable runtime evidence source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 882fb7bf872308a78bdc6246f0124643144ea299
+          path: out/language-baseline
+          persist-credentials: false
+      - name: Install review tools without rebuilding the Runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasan6 libubsan1 libc6-dev-armhf-cross
+          python3 -m pip install Pillow==11.3.0 fonttools==4.59.0
+      - name: Download digest-bound evidence and independently rerun original binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/language_evidence.py --policy contracts/language-release.json --baseline out/language-baseline --output out/language/evidence.json --download --rerun
+      - name: Bind current implementation and generate one-source language reports
+        run: |
+          python3 scripts/language_admission.py accept --evidence out/language/evidence.json --baseline out/language-baseline --framework out/language-baseline/out/framework --output out/language
+          git diff --exit-code
+          git rev-parse HEAD > out/language/checker-commit.txt
+          git archive HEAD > out/language/checker-source.tar
+          find out/language -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > out/language/SHA256SUMS
+      - name: Preserve reports only, no font, dictionary, keys or deployment payloads
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: language-admission-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/language/*.json
+            out/language/*.md
+            out/language/*.txt
+            out/language/*.tar
+            out/language/SHA256SUMS
+            out/language-baseline/out/framework/language-independent-rerun/*.log
+          if-no-files-found: warn
+          retention-days: 90

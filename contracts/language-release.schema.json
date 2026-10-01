@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pocket:language-release:1",
+  "title": "Restricted software language evidence policy (not product admission)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "owner_issue", "capability_source", "software_candidates", "market_confirmation", "scope", "baseline", "deferred", "handoff"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "owner_issue": {"const": 67},
+    "capability_source": {"const": "assets/locales/input-capabilities.json"},
+    "software_candidates": {"const": ["en-US", "zh-CN"]},
+    "market_confirmation": {"const": "pending"},
+    "scope": {"const": "restricted-software-evidence-only"},
+    "baseline": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repository", "pr", "commit", "tree", "run_id", "framework_artifact", "emulator_artifact", "emulator_sha256"],
+      "properties": {
+        "repository": {"const": "hvritual/ui"},
+        "pr": {"type": "integer", "minimum": 1},
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "run_id": {"type": "integer", "minimum": 1},
+        "framework_artifact": {"$ref": "#/$defs/artifact"},
+        "emulator_artifact": {"$ref": "#/$defs/artifact"},
+        "emulator_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "deferred": {
+      "type": "object", "additionalProperties": false,
+      "required": ["de-DE", "fr-FR", "es-ES", "pt-PT", "zh-TW", "ja-JP", "ko-KR", "ar", "th-TH"],
+      "properties": {
+        "de-DE": {"$ref": "#/$defs/followup"}, "fr-FR": {"$ref": "#/$defs/followup"},
+        "es-ES": {"$ref": "#/$defs/followup"}, "pt-PT": {"$ref": "#/$defs/followup"},
+        "zh-TW": {"$ref": "#/$defs/followup"}, "ja-JP": {"$ref": "#/$defs/followup"},
+        "ko-KR": {"$ref": "#/$defs/followup"}, "ar": {"$ref": "#/$defs/followup"},
+        "th-TH": {"$ref": "#/$defs/followup"}
+      }
+    },
+    "handoff": {"const": {"physical": 49, "performance": 7, "release_recovery": 9, "reliability": 10}}
+  },
+  "$defs": {
+    "followup": {"type": "integer", "minimum": 1, "not": {"enum": [12, 67]}},
+    "artifact": {
+      "type": "object", "additionalProperties": false, "required": ["id", "sha256"],
+      "properties": {"id": {"type": "integer", "minimum": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+    }
+  }
+}
