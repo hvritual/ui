@@ -1,0 +1,40 @@
+name: Application Package Container
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  container:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install the existing ARM functional test baseline
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user
+      - name: Native codec and independent differential tests
+        run: make -f scripts/package.mk test-package-contract
+      - name: Static ARM container parsing
+        run: make -f scripts/package.mk test-package-contract-arm
+      - name: Instrument all native package code
+        run: make -f scripts/package.mk test-package-contract-sanitize
+      - name: Preserve exact source even on failure
+        if: always()
+        run: |
+          mkdir -p out/package
+          git archive --format=tar HEAD > out/package/source.tar
+      - name: Upload codec evidence, not Runtime or hardware admission
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: application-package-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/package/
+          if-no-files-found: error
+          retention-days: 30
