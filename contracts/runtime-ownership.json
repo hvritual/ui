@@ -1,7 +1,10 @@
 {
   "application_data": [
     "apps/coffee-demo/locales.json",
-    "apps/coffee-demo/app.js"
+    "apps/coffee-demo/app.js",
+    "apps/coffee-framework/application.js",
+    "apps/control-panel/application.js",
+    "apps/control-panel/labels.json"
   ],
   "link_inputs": {
     "apps/coffee-framework/app.c": {
@@ -13,6 +16,21 @@
       "origin": "repository",
       "reference_only": true,
       "role": "application"
+    },
+    "hosts/linux/application/application.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/application/program.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/application/replay.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
     },
     "hosts/linux/display/fbdev.c": {
       "origin": "repository",
@@ -31,13 +49,13 @@
     },
     "hosts/linux/framework.c": {
       "origin": "repository",
-      "reference_only": true,
-      "role": "adapter"
+      "reference_only": false,
+      "role": "runtime"
     },
     "hosts/linux/framework_main.c": {
       "origin": "repository",
-      "reference_only": true,
-      "role": "adapter"
+      "reference_only": false,
+      "role": "runtime"
     },
     "hosts/linux/input/interaction_bridge.c": {
       "origin": "repository",
@@ -194,6 +212,31 @@
       "reference_only": false,
       "role": "runtime"
     },
+    "tests/application/reference/hosts/linux/framework.c": {
+      "origin": "repository",
+      "reference_only": true,
+      "role": "test-only"
+    },
+    "tests/application/reference/test_framework.c": {
+      "origin": "repository",
+      "reference_only": true,
+      "role": "test-only"
+    },
+    "tests/application/reference/test_keyboard.c": {
+      "origin": "repository",
+      "reference_only": true,
+      "role": "test-only"
+    },
+    "tests/application/reference/test_scene_wire.c": {
+      "origin": "repository",
+      "reference_only": true,
+      "role": "test-only"
+    },
+    "tests/application/test_applications.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
     "tests/framework/test_framework.c": {
       "origin": "repository",
       "reference_only": false,
@@ -220,13 +263,13 @@
       "role": "test-only"
     }
   },
-  "note": "Reference-only exceptions document the existing monolith; they do not certify #56 separation. No new application translation unit is implicitly admitted.",
+  "note": "Fixed runtime rejects all application and reference-only native inputs. Frozen C comparators are admitted only by reference-test; ownership alone is not interactive two-application proof.",
   "private_payloads": {
     "hosts/linux/engine/scene_guest.js": "adapter-not-developer-asset",
-    "out/framework/assets/framework.js": "adapter-not-developer-asset"
+    "out/framework/include/private_scene_guest.generated.h": "adapter-not-developer-asset"
   },
   "reference_headers": [
-    "hosts/linux/framework.h"
+    "tests/application/reference/hosts/linux/framework.h"
   ],
   "schema_version": 1
 }

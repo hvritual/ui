@@ -1,3 +1,10 @@
+> R2 follow-up: the production builder now uses the fixed `runtime` consumer,
+> and Coffee runs as an independent application payload. The original C owner
+> survives only in a frozen `reference-test` comparator. See
+> [application-runtime.md](application-runtime.md) for the same-ELF acceptance
+> requirements. The historical R1 scope below is not the current whole-runtime
+> admission, and ownership alone still never proves application separation.
+
 # Runtime and application ownership
 
 This is the first #56 slice: an inventory and a guard on the existing reference

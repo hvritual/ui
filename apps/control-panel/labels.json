@@ -1,0 +1,13 @@
+{
+  "5001": "Counter control panel",
+  "5002": "Independent application. No machine commands.",
+  "5003": "Current count",
+  "5004": "Add one",
+  "5005": "Subtract one",
+  "5006": "Settings",
+  "5007": "Reset uses a confirmation dialog.",
+  "5008": "Back",
+  "5009": "Reset counter",
+  "5010": "Reset the count to zero?",
+  "5011": "Cancel"
+}

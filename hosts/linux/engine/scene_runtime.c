@@ -1,8 +1,33 @@
 #include "scene_runtime.h"
 #include "../media/store.h"
+#include "private_scene_guest.generated.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+/* The adapter bytes belong to this ELF, not to a developer-editable .js asset.
+ * Encode every catalog byte before parsing it as JSON in the renderer context.
+ * Quotes, backslashes, invalid UTF-8 and JS-looking data cannot execute code. */
+static int boot_scene(LinuxHost *host,const char *profile,const char *root) {
+    static const char prefix[]="const POCKET_TEXT_CATALOG=(()=>{try{const c=JSON.parse(decodeURIComponent('";
+    static const char suffix[]="'));if(!Array.isArray(c)||c.length!==6)throw 0;"
+        "for(const t of c){if(!t||typeof t!=='object'||Array.isArray(t)||Object.keys(t).length>4096)throw 0;"
+        "for(const k of Object.keys(t)){if(!/^[0-9]+$/.test(k)||Number(k)>65535||typeof t[k]!=='string'||t[k].length>4096)throw 0;}}"
+        "return c;}catch(_){throw Error('CATALOG_INVALID');}})();\n";
+    static const char hex[]="0123456789ABCDEF";
+    HostAsset catalog={0};
+    if(!host_asset_read(root,"catalog.json",65536,&catalog))return 0;
+    size_t length=sizeof(prefix)-1+catalog.length*3+sizeof(suffix)-1+sizeof(pocket_scene_guest)-1;
+    char *source=malloc(length+1);
+    if(!source){host_asset_free(&catalog);return 0;}
+    char *p=source;memcpy(p,prefix,sizeof(prefix)-1);p+=sizeof(prefix)-1;
+    for(size_t i=0;i<catalog.length;i++){unsigned char c=catalog.data[i];*p++='%';*p++=hex[c>>4];*p++=hex[c&15];}
+    memcpy(p,suffix,sizeof(suffix)-1);p+=sizeof(suffix)-1;
+    memcpy(p,pocket_scene_guest,sizeof(pocket_scene_guest)-1);source[length]=0;
+    host_asset_free(&catalog);
+    int ok=host_open_source(host,profile,root,source,length,"labels.atlas",0);
+    free(source);return ok;
+}
 void pocket_scene_engine_init(PocketSceneEngine *e,const char *root) {
     if(e){memset(e,0,sizeof(*e));e->asset_root=root;}
 }
@@ -11,8 +36,7 @@ static PocketEngineStatus open_engine(void *p,const PocketEngineOpenConfig *c) {
     if(!e||e->opened||!c||c->width!=1024||(c->height!=600&&c->height!=800)||
        c->target_api_level!=1)return POCKET_ENGINE_INVALID_ARGUMENT;
     const char *profile=c->height==600?"imx6ul-1024x600":"imx6ul-1024x800";
-    if(!host_open(&e->host,profile,e->asset_root,"framework.js","labels.atlas",0))
-        return POCKET_ENGINE_BACKEND_FAILED;
+    if(!boot_scene(&e->host,profile,e->asset_root))return POCKET_ENGINE_BACKEND_FAILED;
     if(!media_builtin(e->asset_root)){host_close(&e->host);return POCKET_ENGINE_BACKEND_FAILED;}
     e->opened=1;e->generation=1;return POCKET_ENGINE_OK;
 }

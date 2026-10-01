@@ -1,4 +1,5 @@
 #include "host.h"
+#include <stdlib.h>
 #include <string.h>
 #include "profiles.generated.h"
 
@@ -13,8 +14,9 @@ void host_close(LinuxHost *h) {
     host_asset_free(&h->pack); host_asset_free(&h->script);
     h->state = HOST_STOPPED;
 }
-int host_open(LinuxHost *h, const char *profile, const char *root,
-              const char *bundle, const char *pack, uint64_t now) {
+static int open_host(LinuxHost *h, const char *profile, const char *root,
+                     const char *bundle, const char *source, size_t length,
+                     const char *pack, uint64_t now) {
     size_t i;
     if (!h || !profile || owner || h->state != HOST_STOPPED || h->script.data || h->pack.data) return 0;
     memset(h, 0, sizeof(*h));
@@ -24,8 +26,16 @@ int host_open(LinuxHost *h, const char *profile, const char *root,
         }
     }
     if (!h->width || now > UINT64_MAX - 1000000000ULL) return fail(h, "HOST_PROFILE_OR_CLOCK_INVALID");
-    if (!host_asset_read(root, bundle, 1024 * 1024, &h->script) ||
-        memchr(h->script.data, 0, h->script.length) ||
+    int script_ok = 0;
+    if (bundle) script_ok = host_asset_read(root, bundle, 1024 * 1024, &h->script);
+    else if (source && length && length <= 1024 * 1024) {
+        h->script.data = malloc(length + 1);
+        if (h->script.data) {
+            memcpy(h->script.data, source, length); h->script.data[length] = 0;
+            h->script.length = length; script_ok = 1;
+        }
+    }
+    if (!script_ok || memchr(h->script.data, 0, h->script.length) ||
         (pack && !host_asset_read(root, pack, 16 * 1024 * 1024, &h->pack))) {
         host_close(h); return fail(h, "HOST_ASSET_REJECTED");
     }
@@ -36,6 +46,14 @@ int host_open(LinuxHost *h, const char *profile, const char *root,
         host_close(h); return fail(h, "HOST_BOOT_FAILED");
     }
     host_clock_start(&h->clock, now); h->state = HOST_RUNNING; return 1;
+}
+int host_open(LinuxHost *h, const char *profile, const char *root,
+              const char *bundle, const char *pack, uint64_t now) {
+    return open_host(h, profile, root, bundle, NULL, 0, pack, now);
+}
+int host_open_source(LinuxHost *h, const char *profile, const char *root,
+                     const char *source, size_t length, const char *pack, uint64_t now) {
+    return open_host(h, profile, root, NULL, source, length, pack, now);
 }
 int host_turn(LinuxHost *h, const PocketRuntimeInput *input) {
     const PocketRuntimeInput empty = {0};

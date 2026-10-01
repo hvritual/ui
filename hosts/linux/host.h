@@ -40,6 +40,10 @@ void pocket_host_free(void *ptr);
 /* Pass a zero-initialized host. Asset storage outlives the borrowed __pak. */
 int host_open(LinuxHost *host, const char *profile, const char *root,
               const char *bundle, const char *pack, uint64_t now);
+/* Copies a bounded platform-owned script. Application data is parsed, never
+ * concatenated as executable source into this private rendering context. */
+int host_open_source(LinuxHost *host, const char *profile, const char *root,
+                     const char *source, size_t length, const char *pack, uint64_t now);
 int host_turn(LinuxHost *host, const PocketRuntimeInput *input);
 int host_turn_contacts(LinuxHost *host, const PocketRuntimeContactsInput *input);
 typedef int (*HostContactsSource)(void *context, PocketRuntimeContactsInput *out);

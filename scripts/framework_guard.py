@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the unchanged reference builder with ownership checks at its compiler seam."""
+"""Enforce actual link ownership for the fixed runtime and separate comparators."""
 from __future__ import annotations
 import functools
 import hashlib
@@ -15,8 +15,10 @@ def install() -> None:
     original_compile = framework.compile_binary
 
     @functools.wraps(original_compile)
-    def compile_guarded(mode, test=False, sanitize=False, static=False, loop=False):
-        consumer = 'reference-test' if test or loop else 'reference'
+    def compile_guarded(mode, test=False, sanitize=False, static=False, loop=False, application_test=False, reference=False):
+        # Legacy workload wrappers/reference C are test-owned. Production and
+        # generic application tests cannot use their application exceptions.
+        consumer = 'reference-test' if reference or (test and not application_test) else 'runtime-test' if test or loop else 'runtime'
         original_run = framework.run
         records = []
 
@@ -28,11 +30,11 @@ def install() -> None:
 
         framework.run = guarded_run
         try:
-            binary = original_compile(mode, test, sanitize, static, loop)
+            binary = original_compile(mode, test, sanitize, static, loop, application_test, reference)
         finally:
             framework.run = original_run
         if len(records) != 1:
-            raise BoundaryError('reference builder did not expose exactly one compiler invocation')
+            raise BoundaryError('builder did not expose exactly one compiler invocation')
         record = records[0]
         if (framework.ROOT/record['output']).resolve() != binary.resolve():
             raise BoundaryError('compiled output differs from declared binary')
