@@ -1,0 +1,32 @@
+name: R6 Board Evidence Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/r6_hil.py'
+      - 'scripts/r6.mk'
+      - 'docs/r6-board-acceptance.md'
+      - '.github/workflows/r6-board-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/r6_hil.py'
+      - 'scripts/r6.mk'
+      - 'docs/r6-board-acceptance.md'
+      - '.github/workflows/r6-board-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: R6 evidence verifier positive and negative fixtures
+        run: |
+          python3 -m py_compile scripts/r6_hil.py
+          make -f scripts/r6.mk test-r6-board-verifier
