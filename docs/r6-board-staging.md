@@ -44,7 +44,8 @@ is modified by this slice.
 ## Practical collection order
 
 1. Select the complete reviewed Framework artifact and verify its archive SHA256.
-   Extract its device/imx6ul-coffee-framework.tar.gz without mixing other versions.
+   Its root contains imx6ul-coffee-framework.tar.gz; the same unpacked bundle is
+   under device/coffee-framework/. Use the complete bundle without mixing versions.
    Keep the original artifact, manifest and SHA256SUMS on the review host.
 2. Copy the complete coffee-framework directory to a new approved test directory
    on an isolated 600 board. Preserve the normal UI and recovery procedure. Stop
