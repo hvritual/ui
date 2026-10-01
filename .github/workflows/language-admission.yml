@@ -46,18 +46,45 @@ jobs:
           git diff --exit-code
           git rev-parse HEAD > out/language/checker-commit.txt
           git archive HEAD > out/language/checker-source.tar
-          find out/language -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > out/language/SHA256SUMS
-      - name: Preserve reports only, no font, dictionary, keys or deployment payloads
+      - name: Preserve complete raw review logs without copying fonts or packages
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, pathlib, shutil
+          output = pathlib.Path('out/language')
+          delivery = pathlib.Path('out/language-delivery')
+          delivery.mkdir()
+          root = pathlib.Path('out/language-baseline/out/framework/language-independent-rerun')
+          receipt = json.loads((output/'evidence.json').read_text())
+          for name in ('admission.json','support.md','evidence.json','checker-commit.txt','checker-source.tar'):
+              assert (output/name).is_file() and not (output/name).is_symlink()
+              shutil.copyfile(output/name, delivery/name)
+          copied = set()
+          for relative, expected in receipt['independent_rerun']['raw_logs'].items():
+              path = root/relative
+              assert path.is_file() and not path.is_symlink()
+              assert path.suffix == '.log' and '..' not in pathlib.PurePosixPath(relative).parts
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == expected
+              destination = delivery/'rerun'/relative
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(path, destination)
+              copied.add(relative)
+          assert len(copied) >= 100, 'incomplete production/view review logs'
+          for mode in ('native','arm'):
+              for suffix in ('-proof.json','-legacy-proof.json'):
+                  source = root/(mode+suffix)
+                  assert source.is_file() and not source.is_symlink()
+                  shutil.copyfile(source, delivery/'rerun'/source.name)
+          for path in delivery.rglob('*'):
+              if path.is_file():
+                  assert path.suffix in ('.json','.md','.txt','.tar','.log'), 'unapproved review artifact member'
+          print('COMPLETE_REVIEW_LOGS', len(copied), 'proofs=4 no-font-or-package')
+          PY
+          (cd out/language-delivery && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS && sha256sum -c SHA256SUMS)
+      - name: Upload reports, checker source and complete synthetic review logs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: language-admission-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            out/language/*.json
-            out/language/*.md
-            out/language/*.txt
-            out/language/*.tar
-            out/language/SHA256SUMS
-            out/language-baseline/out/framework/language-independent-rerun/*.log
+          path: out/language-delivery/
           if-no-files-found: warn
           retention-days: 90
