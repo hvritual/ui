@@ -1,0 +1,45 @@
+name: Offline Pinyin Input
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  ime:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: qt/qtvirtualkeyboard
+          ref: eb8cedd4fa466a3710573a6664e7fec3a328a4d7
+          path: out/ime/checkout
+          persist-credentials: false
+          sparse-checkout: src/plugins/pinyin/3rdparty/pinyin
+      - name: Preserve exact third-party sources and dictionary
+        run: |
+          set -eu
+          test "$(git -C out/ime/checkout rev-parse HEAD)" = eb8cedd4fa466a3710573a6664e7fec3a328a4d7
+          mkdir -p out/ime/review
+          cp -a out/ime/checkout/src/plugins/pinyin/3rdparty/pinyin out/ime/review/vendor
+          test "$(git hash-object out/ime/review/vendor/data/dict_pinyin.dat)" = 1be3f9c79feacf9c6d33f62950c5ef1e8283dadb
+          git rev-parse HEAD > out/ime/review/project-commit.txt
+          git -C out/ime/checkout ls-tree -r HEAD src/plugins/pinyin/3rdparty/pinyin > out/ime/review/upstream-tree.txt
+          find out/ime/review/vendor -type f -print0 | sort -z | xargs -0 sha256sum > out/ime/review/SHA256SUMS
+      - name: Standalone real decoder, no Qt linked
+        run: |
+          set -eu
+          g++ -std=c++11 -O2 -Iout/ime/review/vendor/include tests/ime/upstream_probe.cpp out/ime/review/vendor/share/*.cpp -lpthread -o out/ime/review/pinyin-probe 2>out/ime/review/build.log
+          timeout 20 out/ime/review/pinyin-probe out/ime/review/vendor/data/dict_pinyin.dat > out/ime/review/probe.log
+          ldd out/ime/review/pinyin-probe > out/ime/review/linked-libraries.txt
+      - name: Preserve source and probe evidence, not UI or board admission
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: offline-pinyin-${{ github.event.pull_request.head.sha }}
+          path: out/ime/review
+          if-no-files-found: error
+          retention-days: 30

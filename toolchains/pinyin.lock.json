@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "engine": "AOSP PinyinIME (Qt-maintained third-party subtree)",
+  "repository": "qt/qtvirtualkeyboard",
+  "reference_tag": "v6.8.3",
+  "commit": "eb8cedd4fa466a3710573a6664e7fec3a328a4d7",
+  "subdirectory": "src/plugins/pinyin/3rdparty/pinyin",
+  "dictionary": "data/dict_pinyin.dat",
+  "dictionary_git_blob_sha1": "1be3f9c79feacf9c6d33f62950c5ef1e8283dadb",
+  "dictionary_bytes": 1068442,
+  "license": "Apache-2.0; preserve subtree NOTICE and attribution; Qt QML/module code is excluded",
+  "production_user_dictionary": false,
+  "runtime_network": false,
+  "status": "standalone-engine-feasibility-pending"
+}
