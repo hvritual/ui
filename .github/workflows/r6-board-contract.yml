@@ -1,0 +1,52 @@
+name: R6 Board Evidence Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/r6_hil.py'
+      - 'scripts/r6.mk'
+      - 'docs/r6-board-*.md'
+      - '.github/workflows/r6-board-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/r6_hil.py'
+      - 'scripts/r6.mk'
+      - 'docs/r6-board-*.md'
+      - '.github/workflows/r6-board-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: R6 evidence verifier positive and negative fixtures
+        shell: bash
+        run: |
+          mkdir -p out/r6-contract
+          git rev-parse HEAD > out/r6-contract/source-commit.txt
+          git rev-parse HEAD^{tree} > out/r6-contract/source-tree.txt
+          make -f scripts/r6.mk test-r6-board-verifier 2>&1 | tee out/r6-contract/self-test.log
+          grep -q 'R6_VERIFIER_SELF_TEST_OK.*physical=false' out/r6-contract/self-test.log
+          git diff --exit-code
+          cp scripts/r6_hil.py scripts/r6.mk docs/r6-board-*.md out/r6-contract/
+          cp .github/workflows/r6-board-contract.yml out/r6-contract/workflow.yml
+          (cd out/r6-contract && sha256sum * > SHA256SUMS)
+      - name: Preserve checker results, not board acceptance
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: r6-contract-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/r6-contract/
+          if-no-files-found: error
+          retention-days: 90
