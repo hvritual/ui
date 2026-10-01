@@ -241,6 +241,14 @@ def write_json(path: Path, value):
     path.write_text(json.dumps(value, sort_keys=True, indent=2) + "\n")
 
 
+def refresh_sums(run: Path):
+    files = [p for p in run.rglob("*") if p.is_file() and p.name != "SHA256SUMS"
+             and p.suffix.lower() not in VIDEO_SUFFIXES]
+    (run / "SHA256SUMS").write_text(
+        "".join(f"{sha(p)}  ./{p.relative_to(run).as_posix()}\n" for p in sorted(files))
+    )
+
+
 def fixture(root: Path):
     manifest = {
         "schema": 1,
@@ -300,8 +308,7 @@ def fixture(root: Path):
             (runtime / "first.ppm").write_bytes(b"P6\n1 1\n255\n\x00\x00\x00")
             (runtime / "last.ppm").write_bytes(b"P6\n1 1\n255\n\x01\x01\x01")
             (run / "startup.log").write_text("R6 synthetic unit fixture; not hardware\n")
-            files = [p for p in run.rglob("*") if p.is_file() and p.name != "SHA256SUMS"]
-            (run / "SHA256SUMS").write_text("".join(f"{sha(p)}  ./{p.relative_to(run).as_posix()}\n" for p in sorted(files)))
+            refresh_sums(run)
             video = run / ("actual-" + scenario + ".mp4")
             video.write_bytes(b"synthetic-test-video")
             for name in IMPORTANT_FILES:
@@ -344,6 +351,7 @@ class R6GateTests(unittest.TestCase):
         with temp:
             p = report / PROFILES[0] / "coffee/runtime/report.json"
             data = load(p); data["physical_io"] = False; write_json(p, data)
+            refresh_sums(report / PROFILES[0] / "coffee")
             with self.assertRaisesRegex(EvidenceError, "physical"):
                 verify(report, manifest)
 
@@ -352,7 +360,8 @@ class R6GateTests(unittest.TestCase):
         with temp:
             p = report / PROFILES[0] / "input/runtime/report.json"
             data = load(p); data["ime_commits"] = 0; write_json(p, data)
-            with self.assertRaises(EvidenceError):
+            refresh_sums(report / PROFILES[0] / "input")
+            with self.assertRaisesRegex(EvidenceError, "candidate commit"):
                 verify(report, manifest)
 
     def test_wrong_ime_package_rejected(self):
@@ -360,7 +369,8 @@ class R6GateTests(unittest.TestCase):
         with temp:
             p = report / PROFILES[0] / "input/runtime/report.json"
             data = load(p); data["package_sha256"] = "e" * 64; write_json(p, data)
-            with self.assertRaises(EvidenceError):
+            refresh_sums(report / PROFILES[0] / "input")
+            with self.assertRaisesRegex(EvidenceError, "wrong IME package"):
                 verify(report, manifest)
 
     def test_800_auto_controller_rejected(self):
@@ -368,6 +378,7 @@ class R6GateTests(unittest.TestCase):
         with temp:
             p = report / PROFILES[1] / "coffee/runtime/input.json"
             data = load(p); data["expected"]["name"] = "auto"; write_json(p, data)
+            refresh_sums(report / PROFILES[1] / "coffee")
             with self.assertRaisesRegex(EvidenceError, "800"):
                 verify(report, manifest)
 
@@ -376,6 +387,7 @@ class R6GateTests(unittest.TestCase):
         with temp:
             p = report / PROFILES[0] / "coffee/runtime/report.json"
             data = load(p); data["syn_dropped"] = 0; write_json(p, data)
+            refresh_sums(report / PROFILES[0] / "coffee")
             with self.assertRaisesRegex(EvidenceError, "fault"):
                 verify(report, manifest)
 
