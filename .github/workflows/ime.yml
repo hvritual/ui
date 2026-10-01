@@ -19,27 +19,51 @@ jobs:
           path: out/ime/checkout
           persist-credentials: false
           sparse-checkout: src/plugins/pinyin/3rdparty/pinyin
-      - name: Preserve exact third-party sources and dictionary
+      - name: Prepare exact standalone engine and dictionary, without Qt
         run: |
           set -eu
           test "$(git -C out/ime/checkout rev-parse HEAD)" = eb8cedd4fa466a3710573a6664e7fec3a328a4d7
-          mkdir -p out/ime/review
-          cp -a out/ime/checkout/src/plugins/pinyin/3rdparty/pinyin out/ime/review/vendor
-          test "$(git hash-object out/ime/review/vendor/data/dict_pinyin.dat)" = 1be3f9c79feacf9c6d33f62950c5ef1e8283dadb
-          git rev-parse HEAD > out/ime/review/project-commit.txt
-          git -C out/ime/checkout ls-tree -r HEAD src/plugins/pinyin/3rdparty/pinyin > out/ime/review/upstream-tree.txt
-          find out/ime/review/vendor -type f -print0 | sort -z | xargs -0 sha256sum > out/ime/review/SHA256SUMS
-      - name: Standalone real decoder, no Qt linked
+          python3 scripts/ime.py prepare
+      - name: Install established native and ARM functional build tools
         run: |
-          set -eu
-          g++ -std=c++11 -O2 -Iout/ime/review/vendor/include tests/ime/upstream_probe.cpp out/ime/review/vendor/share/*.cpp -lpthread -o out/ime/review/pinyin-probe 2>out/ime/review/build.log
-          timeout 20 out/ime/review/pinyin-probe out/ime/review/vendor/data/dict_pinyin.dat > out/ime/review/probe.log
-          ldd out/ime/review/pinyin-probe > out/ime/review/linked-libraries.txt
-      - name: Preserve source and probe evidence, not UI or board admission
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc g++ patch gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user
+      - name: Native real offline provider and TextSession
+        run: python3 scripts/ime.py test --mode native
+      - name: Static ARM real offline provider and TextSession
+        run: python3 scripts/ime.py test --mode arm
+      - name: Instrument full decoder, provider, session and Unicode
+        run: python3 scripts/ime.py test --mode sanitize
+      - name: Bind exact source, dependencies and cross-architecture evidence
+        run: python3 scripts/ime.py verify
+      - name: Preserve exact source even on failure
+        if: always()
+        run: |
+          mkdir -p out/ime
+          git archive --format=tar HEAD -o out/ime/source.tar
+      - name: Upload provider-core evidence, not rendered IME or board admission
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: offline-pinyin-${{ github.event.pull_request.head.sha }}
-          path: out/ime/review
+          path: |
+            out/ime/source.tar
+            out/ime/dependency.json
+            out/ime/verification.json
+            out/ime/upstream
+            out/ime/vendor
+            out/ime/*.log
+            out/ime/native/*.log
+            out/ime/native/*.json
+            out/ime/native/ime-test
+            out/ime/native/pinyin-probe
+            out/ime/arm/*.log
+            out/ime/arm/*.json
+            out/ime/arm/ime-test
+            out/ime/arm/pinyin-probe
+            out/ime/sanitize/*.log
+            out/ime/sanitize/*.json
+            out/ime/sanitize/ime-test
+            out/ime/sanitize/pinyin-probe
           if-no-files-found: error
           retention-days: 30
