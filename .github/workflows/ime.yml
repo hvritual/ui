@@ -1,0 +1,69 @@
+name: Offline Pinyin Input
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  ime:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: qt/qtvirtualkeyboard
+          ref: eb8cedd4fa466a3710573a6664e7fec3a328a4d7
+          path: out/ime/checkout
+          persist-credentials: false
+          sparse-checkout: src/plugins/pinyin/3rdparty/pinyin
+      - name: Prepare exact standalone engine and dictionary, without Qt
+        run: |
+          set -eu
+          test "$(git -C out/ime/checkout rev-parse HEAD)" = eb8cedd4fa466a3710573a6664e7fec3a328a4d7
+          python3 scripts/ime.py prepare
+      - name: Install established native and ARM functional build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc g++ patch gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user
+      - name: Native real offline provider and TextSession
+        run: python3 scripts/ime.py test --mode native
+      - name: Static ARM real offline provider and TextSession
+        run: python3 scripts/ime.py test --mode arm
+      - name: Instrument full decoder, provider, session and Unicode
+        run: python3 scripts/ime.py test --mode sanitize
+      - name: Bind exact source, dependencies and cross-architecture evidence
+        run: python3 scripts/ime.py verify
+      - name: Preserve exact source even on failure
+        if: always()
+        run: |
+          mkdir -p out/ime
+          git archive --format=tar HEAD -o out/ime/source.tar
+      - name: Upload provider-core evidence, not rendered IME or board admission
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: offline-pinyin-${{ github.event.pull_request.head.sha }}
+          path: |
+            out/ime/source.tar
+            out/ime/dependency.json
+            out/ime/verification.json
+            out/ime/upstream
+            out/ime/vendor
+            out/ime/*.log
+            out/ime/native/*.log
+            out/ime/native/*.json
+            out/ime/native/ime-test
+            out/ime/native/pinyin-probe
+            out/ime/arm/*.log
+            out/ime/arm/*.json
+            out/ime/arm/ime-test
+            out/ime/arm/pinyin-probe
+            out/ime/sanitize/*.log
+            out/ime/sanitize/*.json
+            out/ime/sanitize/ime-test
+            out/ime/sanitize/pinyin-probe
+          if-no-files-found: error
+          retention-days: 30

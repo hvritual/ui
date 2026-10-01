@@ -1,0 +1,38 @@
+--- a/share/matrixsearch.cpp
++++ b/share/matrixsearch.cpp
+@@ -121,7 +121,7 @@
+ }
+ 
+ bool MatrixSearch::init(const char *fn_sys_dict, const char *fn_usr_dict) {
+-  if (NULL == fn_sys_dict || NULL == fn_usr_dict)
++  if (NULL == fn_sys_dict)
+     return false;
+ 
+   if (!alloc_resource())
+@@ -132,7 +132,7 @@
+ 
+   // If engine fails to load the user dictionary, reset the user dictionary
+   // to NULL.
+-  if (!user_dict_->load_dict(fn_usr_dict, kUserDictIdStart, kUserDictIdEnd)) {
++  if (NULL == fn_usr_dict || !user_dict_->load_dict(fn_usr_dict, kUserDictIdStart, kUserDictIdEnd)) {
+     delete user_dict_;
+     user_dict_ = NULL;
+   } else{
+@@ -147,16 +147,13 @@
+ 
+ bool MatrixSearch::init_fd(int sys_fd, long start_offset, long length,
+                            const char *fn_usr_dict) {
+-  if (NULL == fn_usr_dict)
+-    return false;
+-
+   if (!alloc_resource())
+     return false;
+ 
+   if (!dict_trie_->load_dict_fd(sys_fd, start_offset, length, 1, kSysDictIdEnd))
+     return false;
+ 
+-  if (!user_dict_->load_dict(fn_usr_dict, kUserDictIdStart, kUserDictIdEnd)) {
++  if (NULL == fn_usr_dict || !user_dict_->load_dict(fn_usr_dict, kUserDictIdStart, kUserDictIdEnd)) {
+     delete user_dict_;
+     user_dict_ = NULL;
+   } else {
