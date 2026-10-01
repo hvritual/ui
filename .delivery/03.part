@@ -1,0 +1,128 @@
+pplication, P
++int pocket_application_keyboard_input_snapshot(const PocketApplication *,PocketKeyboardInputSnapshot *);
+diff --git a/hosts/linux/application/policy.h b/hosts/linux/application/policy.h
+index 35b64f3af1a855de276ebbb0694e571ed3101a3c..bfed8b2d7efaf396f68e278dbe84f6f3c713a307 100644
+--- a/hosts/linux/application/policy.h
++++ b/hosts/linux/application/policy.h
+@@ -9 +9,3 @@
+-#define POCKET_APP_CAP_ALL 7u
++#define POCKET_APP_CAP_PINYIN 8u
++#define POCKET_APP_CAP_ALL 15u
++#define POCKET_APP_CAP_LEGACY 7u
+diff --git a/hosts/linux/application/replay.c b/hosts/linux/application/replay.c
+index b5ed6fb7cb4bebd39b175d18d8dce35b0da03fff..d0fc8725d14a4d8b8ba95241ed0c92c0a6502652 100644
+--- a/hosts/linux/application/replay.c
++++ b/hosts/linux/application/replay.c
+@@ -25 +25 @@ static int parse(const char *line, long long values[5]) {
+-int pocket_framework_replay(PocketFramework *r,const char *path,uint64_t start,unsigned *samples) {
++static int replay(PocketFramework *r,const char *path,uint64_t start,unsigned *samples,int paced) {
+@@ -27 +27,2 @@ int pocket_framework_replay(PocketFramework *r,const char *path,uint64_t start,u
+-    *samples=0;
++    *samples=0;uint64_t wall=0;
++    if(paced&&(!host_monotonic_ns(&wall)||wall>UINT64_MAX-60000000000ULL))return 0;
+@@ -41 +42,3 @@ int pocket_framework_replay(PocketFramework *r,const char *path,uint64_t start,u
+-            uint64_t tick=clock.next_ns;int due=host_clock_due(&clock,tick);
++            uint64_t tick=clock.next_ns;
++            if(paced&&!host_sleep_until(wall+(tick-start))){ok=0;break;}
++            int due=host_clock_due(&clock,tick);
+@@ -46,0 +50 @@ int pocket_framework_replay(PocketFramework *r,const char *path,uint64_t start,u
++        if(paced&&!host_sleep_until(wall+(now-start))){ok=0;break;}
+@@ -64,0 +69,3 @@ int pocket_framework_replay(PocketFramework *r,const char *path,uint64_t start,u
++
++int pocket_framework_replay(PocketFramework *r,const char *p,uint64_t start,unsigned *n){return replay(r,p,start,n,0);}
++int pocket_framework_replay_realtime(PocketFramework *r,const char *p,uint64_t start,unsigned *n){return replay(r,p,start,n,1);}
+diff --git a/hosts/linux/application/replay.h b/hosts/linux/application/replay.h
+index 158d59a9a2eb9e732a77c1d7a0e3db1745905e9a..30580e2ab34aeae908d5afc3b9c09278c8c0818d 100644
+--- a/hosts/linux/application/replay.h
++++ b/hosts/linux/application/replay.h
+@@ -8,0 +9,4 @@ int pocket_framework_replay(PocketFramework *runtime, const char *path,
++/* Optional wall-paced headless replay lets real asynchronous providers run.
++ * It retains the same event/tick timestamps, bounded 60-second trace limit,
++ * and never accepts a physical display backend. */
++int pocket_framework_replay_realtime(PocketFramework *,const char *,uint64_t,unsigned *);
+diff --git a/hosts/linux/engine/scene_guest.js b/hosts/linux/engine/scene_guest.js
+index 76b25e6471f36daf25f9a679b2cab463bb28474f..20dcf9b5b24390903f0eb52573c732b67dc18509 100644
+--- a/hosts/linux/engine/scene_guest.js
++++ b/hosts/linux/engine/scene_guest.js
+@@ -5 +5 @@ if(W!==1024||(H!==600&&H!==800)||!ui.loadFontAtlas(__pak))throw Error('SCENE_BOO
+-let records=new Map(),textures=[],ready=true,locale=0,order='';
++let records=new Map(),textures=[],ready=true,locale=0,order='',inputGlyphs=null,inputTransfer=null,inputOffset=0;
+@@ -10 +10,27 @@ function remove(r){for(const n of [r.label,r.image,r.fill,r.box])if(n){ui.remove
+-function textFor(ref){const t=POCKET_TEXT_CATALOG[locale][ref];if(typeof t!=='string')throw Error('SCENE_TEXT_REF');return t;}
++function inputRef(ref){return ref>65535&&inputGlyphs&&inputGlyphs.has(ref-65536);}
++function textFor(ref){if(inputRef(ref))return String.fromCharCode(ref-65536);const t=POCKET_TEXT_CATALOG[locale][ref];if(typeof t!=='string')throw Error('SCENE_TEXT_REF');return t;}
++function inputFont(buffer){
++ if(inputGlyphs||buffer.byteLength<16||buffer.byteLength>13*1024*1024)return -1;
++ const d=new DataView(buffer),n=d.getUint16(6,true);
++ if(d.getUint16(4,true)!==3||!n||n>17000||buffer.byteLength!==16+n*728||
++    d.getUint8(8)!==24||d.getUint8(9)!==30||d.getUint8(10)!==24||d.getUint8(11)!==36||
++    d.getUint8(12)!==1||d.getUint8(13)!==0||d.getUint8(14)!==1||d.getUint8(15)!==0)return -1;
++ const codes=new Set();let prev=0;
++ for(let i=0;i<n;i++){const at=16+8*i,c=d.getUint32(at,true);
++  if(c<32||c>65535||(c>=0xd800&&c<=0xdfff)||c<=prev||d.getUint16(at+4,true)>=n||d.getUint8(at+6)!==24||d.getUint8(at+7)!==0)return -1;
++  prev=c;codes.add(c);
++ }
++ if(!ui.loadFontAtlas(buffer))return -1;inputGlyphs=codes;return 1;
++}
++// Native validates the complete immutable atlas before sending bounded chunks.
++// Do not enlarge the upstream 2 MiB resource-event limit.
++function inputChunk(buffer){
++ if(inputGlyphs||buffer.byteLength<16||buffer.byteLength>1048592)return -1;
++ const d=new DataView(buffer),total=d.getUint32(4,true),offset=d.getUint32(8,true),length=d.getUint32(12,true);
++ if(total<16||total>13*1024*1024||!length||length!==buffer.byteLength-16||offset>total||length>total-offset)return -1;
++ if(offset===0){if(inputTransfer)return -1;inputTransfer=new Uint8Array(total);inputOffset=0;}
++ if(!inputTransfer||inputTransfer.length!==total||offset!==inputOffset)return -1;
++ inputTransfer.set(new Uint8Array(buffer,16),offset);inputOffset+=length;
++ if(inputOffset!==total)return 1;
++ const complete=inputTransfer.buffer;inputTransfer=null;inputOffset=0;return inputFont(complete);
++}
+@@ -19,2 +45,2 @@ function validate(s){
+-     r[14]<0||r[14]>65535||r[15]<0||r[15]>8||r[10]<0||r[10]>0xffffffff||r[11]<0||r[11]>0xffffffff)throw Error('SCENE_RANGE');
+-  if(r[14]&&typeof POCKET_TEXT_CATALOG[s.locale][r[14]]!=='string')throw Error('SCENE_TEXT');
++     r[14]<0||r[14]>131071||r[15]<0||r[15]>8||r[10]<0||r[10]>0xffffffff||r[11]<0||r[11]>0xffffffff)throw Error('SCENE_RANGE');
++  if(r[14]&&!inputRef(r[14])&&typeof POCKET_TEXT_CATALOG[s.locale][r[14]]!=='string')throw Error('SCENE_TEXT');
+@@ -55,0 +82 @@ function apply(s){
++   ui.setProp(r.label,97,inputRef(ref)?1:0);
+@@ -94,0 +122 @@ globalThis.onResourcePack=function(buffer){
++ if(buffer.byteLength>=4&&new DataView(buffer).getUint32(0,true)===0x31464950)return inputChunk(buffer);
+diff --git a/hosts/linux/engine/scene_runtime.c b/hosts/linux/engine/scene_runtime.c
+index 0d38394763f501ecb0abf0aeb8555e482404a8ed..48b027f81ca6a2009ffe5e9dfe2252ce58b648d7 100644
+--- a/hosts/linux/engine/scene_runtime.c
++++ b/hosts/linux/engine/scene_runtime.c
+@@ -2,0 +3 @@
++#include "../text-input/input_font.h"
+@@ -49,0 +51,15 @@ void pocket_scene_engine_init_package(PocketSceneEngine *e,const PuiLoadedPackag
++static int input_font_upload(const PuiFile *font) {
++    if(!font||!pocket_input_font_valid(font->data,font->length))return 0;
++    const size_t chunk=1024u*1024u;
++    unsigned char *wire=malloc(chunk+16);if(!wire)return 0;
++    int ok=1;
++    for(size_t offset=0;offset<font->length;){
++        size_t length=font->length-offset;if(length>chunk)length=chunk;
++        const uint32_t header[]={0x31464950u,(uint32_t)font->length,(uint32_t)offset,(uint32_t)length};
++        for(unsigned i=0;i<4;i++)for(unsigned j=0;j<4;j++)wire[i*4+j]=(unsigned char)(header[i]>>(j*8));
++        memcpy(wire+16,font->data+offset,length);
++        if(pocket_runtime_resource_pack(wire,length+16)!=1){ok=0;break;}
++        offset+=length;
++    }
++    free(wire);return ok;
++}
+@@ -55,0 +72,9 @@ static PocketEngineStatus open_engine(void *p,const PocketEngineOpenConfig *c) {
++    if(e->package){
++        const PuiPackage *m=pui_loaded_manifest(e->package);
++        if(m&&(m->capabilities&PUI_CAP_PINYIN)){
++            const PuiFile *font=pui_loaded_file(e->package,"input.atlas");
++            if(!input_font_upload(font)){
++                host_close(&e->host);return POCKET_ENGINE_BACKEND_FAILED;
++            }
++        }
++    }
+@@ -112 +137 @@ static PocketEngineStatus upload(void *p,uint32_t kind,const void *data,size_t l
+-           r->text_ref>65535||r->resource_ref>8)return POCKET_ENGINE_INVALID_ARGUMENT;
++           r->text_ref>131071||r->resource_ref>8)return POCKET_ENGINE_INVALID_ARGUMENT;
+diff --git a/hosts/linux/framework.c b/hosts/linux/framework.c
+index 7e83e264d6caba5940060f270c872fc776955e2c..f9662e6527ac91e6ffdf870aa3b41734065397d1 100644
+--- a/hosts/linux/framework.c
++++ b/hosts/linux/framework.c
+@@ -10 +10 @@ _Static_assert(PUI_CAP_CORE==POCKET_APP_CAP_CORE && PUI_CAP_ASCII_KEYBOARD==POCK
+-               PUI_CAP_IMAGES==POCKET_APP_CAP_IMAGES && PUI_MAX_HEAP==POCKET_APP_MAX_HEA

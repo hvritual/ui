@@ -1,0 +1,34 @@
+name: Transfer reviewed input source
+on:
+  push:
+    branches: [delivery/input-4423f733]
+permissions:
+  contents: write
+jobs:
+  transfer:
+    if: github.repository == 'hvritual/ui'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Apply only the reviewed source to a new feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/delivery/input-4423f733
+          test "$(find .delivery -name '*.part' -type f | wc -l)" -eq 15
+          cat .delivery/*.part > "$RUNNER_TEMP/input.patch"
+          echo "1d219ba4619463c34bbecc16780c670323aea8d0b1936c8ba89204c2b6d405b4  $RUNNER_TEMP/input.patch" | sha256sum -c -
+          git checkout --detach 531b7cb14f30b191d0a53182606e6f69416bb8f1
+          test "$(git rev-parse HEAD^{tree})" = 2c7c589c4e65f016c1211d0fd208d50ac5c61e68
+          git apply --index --unidiff-zero "$RUNNER_TEMP/input.patch"
+          git diff --cached --check
+          test "$(git write-tree)" = d9f451cf4bfc120841cb4af3ca05892808632eb6
+          test -z "$(git ls-remote --heads origin refs/heads/feat/visible-pinyin-keyboard)"
+          git -c user.name='UI Source Delivery' -c user.email='actions@users.noreply.github.com' commit -m 'feat: integrate visible offline keyboard and package input resources (#12)' -m 'Exact reviewed source tree d9f451cf4bfc120841cb4af3ca05892808632eb6. Source transfer only, not CI acceptance. Final pinned Coffee workflow update follows through the authenticated connector; ordinary PR regression and independent artifact review remain mandatory.'
+          git push origin HEAD:refs/heads/feat/visible-pinyin-keyboard
+          git rev-parse HEAD HEAD^{tree}
+          echo 'SOURCE_TRANSFER_ONLY: no runtime test, approval or main merge performed.'

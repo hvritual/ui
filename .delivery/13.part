@@ -1,0 +1,105 @@
+ta(d,&s));if(!s.pending&&s.candidates)return 1;
++        struct timespec t={0,1000000};nanosleep(&t,NULL);CHECK(step(d,1));
++    }
++    fprintf(stderr,"IME_VIEW_TIMEOUT status=%d count=%u pending=%u\n",s.provider_status,s.candidates,s.pending);return 0;
++}
++/* Synthetic fixtures only. The production capture API remains forbidden. */
++static int shot(Driver *d,const char *name){
++    char path[4096];CHECK(snprintf(path,sizeof(path),"%s/%s.ppm",d->out,name)<(int)sizeof(path));FILE *out=fopen(path,"wx");CHECK(out);
++    const PocketEngineFrame *f=&d->r->frame;CHECK(fprintf(out,"P6\n%u %u\n255\n",f->width,f->height)>0);
++    for(unsigned y=0;y<f->height;y++)for(unsigned x=0;x<f->width;x++){
++        const uint8_t *p=f->pixels+y*f->stride+x*4;unsigned char pixel[]={p[2],p[1],p[0]};CHECK(fwrite(pixel,1,3,out)==3);
++    }
++    CHECK(!fclose(out));return 1;
++}
++static unsigned le16(const unsigned char *p){return p[0]|((unsigned)p[1]<<8);}
++static uint32_t le32(const unsigned char *p){return p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);}
++static int glyph_pixels(Driver *d,const PocketSceneRecord *record,int wrong){
++    const PuiFile *atlas=pui_loaded_file(&d->r->package,"input.atlas");CHECK(atlas&&atlas->length>16);
++    const unsigned char *b=atlas->data;unsigned n=le16(b+6),gid=n;uint32_t cp=(uint32_t)record->text_ref-POCKET_INPUT_GLYPH_BASE;
++    for(unsigned i=0;i<n;i++)if(le32(b+16+i*8)==cp){gid=le16(b+20+i*8);break;}
++    CHECK(gid<n&&16+(size_t)n*8+(size_t)(gid+1)*720<=atlas->length);
++    const unsigned char *coverage=b+16+n*8+gid*720;unsigned ink=0;
++    /* Independently blend the baked cell into the white editor. Font line 36,
++     * cell 30 => 3px vertical centering. Allow only integer rounding +/-1. */
++    for(unsigned y=0;y<30;y++)for(unsigned x=0;x<24;x++){
++        unsigned a=coverage[y*24+x];ink+=a;
++        const unsigned char *pixel=d->r->frame.pixels+(record->bounds.y+3+y)*d->r->frame.stride+(record->bounds.x+x)*4;
++        for(unsigned c=0;c<3;c++){
++            unsigned color=(record->foreground>>((2-c)*8))&255;
++            if(wrong)color=255;
++            unsigned expected=(color*a+255*(255-a)+127)/255;
++            int difference=(int)pixel[c]-(int)expected;
++            if(difference < -1 || difference > 1)fprintf(stderr,"GLYPH_PIXEL x=%u y=%u channel=%u alpha=%u color=%08x expected=%u actual=%u opacity=%u\n",x,y,c,a,record->foreground,expected,pixel[c],record->opacity_256);
++            CHECK(difference>=-1&&difference<=1);
++        }
++    }
++    CHECK(ink>255);return 1;
++}
++static int field(Driver *d,const uint32_t *expected,unsigned length){
++    unsigned seen=0;
++    for(unsigned n=0;n<d->r->scene.count;n++){
++        PocketSceneRecord *r=&d->r->scene.records[n];
++        if(r->kind!=POCKET_COMPONENT_TEXT||r->bounds.y!=160||r->bounds.x<48||r->bounds.x>=912)continue;
++        unsigned at=(unsigned)(r->bounds.x-48)/24;CHECK(at<length);
++        uint64_t ref=expected[at]>126?POCKET_INPUT_GLYPH_BASE+expected[at]:1000+expected[at];CHECK(r->text_ref==ref);if(expected[at]>126)CHECK(glyph_pixels(d,r,0));seen++;
++    }
++    CHECK(seen==length);return 1;
++}
++static int locale(Driver *d,unsigned value){
++    CHECK(key(d,POCKET_KEY_LANGUAGE,0));PocketKeyboardInputSnapshot s;CHECK(meta(d,&s));CHECK(s.language_popup);
++    CHECK(tap(d,512,(int)d->height-256+(value==1?74:134)));CHECK(meta(d,&s));CHECK(!s.language_popup&&s.locale==value&&!s.composing);
++    d->layout.locale=value;return 1;
++}
++static int run(const char *path,const char *output,unsigned height){
++    Driver d={.r=calloc(1,sizeof(PocketFramework)),.ms=1000,.height=height};CHECK(d.r);
++    char dir[4096],forbidden[4096];CHECK(snprintf(dir,sizeof(dir),"%s/input-%u",output,height)<(int)sizeof(dir));CHECK(!mkdir(dir,0700));d.out=dir;
++    PuiLoadedPackage package={0};PuiPolicy policy=pui_runtime_policy(height,1);const char *error=NULL;
++    /* Copy and then remove the input file: every later candidate/font access
++     * must use the retained verified snapshot, never the former pathname. */
++    char removed[4096];CHECK(snprintf(removed,sizeof(removed),"%s/original.pui",dir)<(int)sizeof(removed));
++    FILE *in=fopen(path,"rb"),*copy=fopen(removed,"wb");CHECK(in&&copy);unsigned char buffer[4096];size_t length;
++    while((length=fread(buffer,1,sizeof(buffer),in)))CHECK(fwrite(buffer,1,length,copy)==length);
++    CHECK(!ferror(in)&&!fclose(in)&&!fclose(copy));
++    CHECK(pui_loaded_open(&package,removed,&policy,&error));FrameOracle oracle;CHECK(oracle_open(&oracle,1024,height));
++    PocketDisplayBackend display={1,sizeof(display),&oracle,oracle_present};CHECK(pocket_framework_open_package(d.r,height,8,&package,NULL,&display));
++    CHECK(pui_loaded_close(&package));
++    CHECK(!truncate(removed,0)&&!unlink(removed));CHECK(step(&d,0));CHECK(tap(&d,675,(int)height-36));
++    PocketKeyboardSnapshot k;CHECK(pocket_application_keyboard_snapshot(&d.r->app,&k));CHECK(k.active_field==0&&k.result==POCKET_KEYBOARD_EDITING);
++    CHECK(pocket_key_layout_init(&d.layout,3,3,1,0));CHECK(shot(&d,"english"));
++    CHECK(tap(&d,688,226));CHECK(field(&d,NULL,0));
++    CHECK(key(&d,POCKET_KEY_LANGUAGE,0));CHECK(shot(&d,"languages"));
++    CHECK(tap(&d,512,(int)height-122));PocketKeyboardInputSnapshot s;CHECK(meta(&d,&s));CHECK(s.locale==2&&!s.language_popup);d.layout.locale=2;
++    CHECK(type(&d,"nihao"));CHECK(wait_candidates(&d));CHECK(field(&d,NULL,0));CHECK(shot(&d,"candidates"));
++    CHECK(meta(&d,&s));CHECK(s.total>5);CHECK(tap(&d,984,(int)height-292));CHECK(wait_candidates(&d));CHECK(meta(&d,&s));CHECK(s.page==1);CHECK(shot(&d,"candidate-page"));
++    CHECK(tap(&d,40,(int)height-292));CHECK(wait_candidates(&d));CHECK(meta(&d,&s));CHECK(s.page==0);
++    CHECK(contact(&d,1,164,(int)height-292));CHECK(shot(&d,"candidate-preview"));
++    CHECK(contact(&d,1,188,(int)height-292));CHECK(contact(&d,0,188,(int)height-292));CHECK(field(&d,NULL,0));
++    CHECK(tap(&d,340,(int)height-292));CHECK(wait_candidates(&d));CHECK(meta(&d,&s));CHECK(s.composing);CHECK(field(&d,NULL,0));CHECK(shot(&d,"partial-choice"));
++    CHECK(key(&d,POCKET_KEY_ENTER,0));CHECK(step(&d,20));const uint32_t hello[]={0x4f60,0x597d};CHECK(field(&d,hello,2));CHECK(shot(&d,"committed"));
++    if(intentional){
++        for(unsigned n=0;n<d.r->scene.count;n++){
++            const PocketSceneRecord *r=&d.r->scene.records[n];
++            if(r->text_ref==POCKET_INPUT_GLYPH_BASE+0x4f60&&r->bounds.y==160){
++                fprintf(stderr,"INTENTIONAL_IME_VIEW_ASSERTION_FAILURE\n");int wrong=glyph_pixels(&d,r,1);
++                CHECK(pocket_framework_close(d.r));free(d.r);oracle_close(&oracle);return wrong;
++            }
++        }
++        CHECK(0);
++    }
++    CHECK(meta(&d,&s));CHECK(!s.composing&&!s.candidates&&s.commits==1&&s.candidate_batches>0);
++    CHECK(key(&d,POCKET_KEY_BACKSPACE,0));CHECK(field(&d,hello,1));
++    CHECK(type(&d,"zhongguo"));CHECK(wait_candidates(&d));CHECK(locale(&d,1));CHECK(field(&d,hello,1));
++    CHECK(type(&d,"ok"));const uint32_t mixed[]={0x4f60,'o','k'};CHECK(field(&d,mixed,3));CHECK(shot(&d,"mixed"));
++    CHECK(key(&d,POCKET_KEY_MODE,0));CHECK(pocket_key_layout_mode(&d.layout,POCKET_LAYOUT_SYMBOLS));CHECK(type(&d,"!"));CHECK(shot(&d,"symbols"));
++    CHECK(key(&d,POCKET_KEY_MODE,0));CHECK(pocket_key_layout_mode(&d.layout,POCKET_LAYOUT_LETTERS));CHECK(key(&d,POCKET_KEY_BACKSPACE,0));CHECK(field(&d,mixed,3));
++    CHECK(key(&d,POCKET_KEY_LANGUAGE,0));CHECK(meta(&d,&s));CHECK(s.language_popup);
++    CHECK(tap(&d,900,40));CHECK(meta(&d,&s));CHECK(!s.language_popup);CHECK(field(&d,mixed,3)); /* popup consumes Confirm click */
++    CHECK(tap(&d,900,40));CHECK(!pocket_application_keyboard_snapshot(&d.r->app,&k));
++    CHECK(tap(&d,675,(int)height-36));CHECK(field(&d,mixed,3));CHECK(shot(&d,"reopened"));
++    CHECK(locale(&d,2));CHECK(type(&d,"nihao"));CHECK(wait_candidates(&d));
++    CHECK(contact(&d,1,164,(int)height-292));
++    InputFrame multi={.contact_count=2,.contacts={{0,164,(int)height-292},{1,400,115}}};CHECK(send_frame(&d,multi));
++    multi.contact_count=1;multi.contacts[0]=multi.contacts[1];CHECK(send_frame(&d,multi));multi.contact_count=0;CHECK(send_frame(&d,multi));
++    CHECK(pocket_application_keyboard_snapshot(&d.r->app,&k));CHECK(k.active_field==1);CHECK(field(&d,NULL,0));
++    CHECK(pocket_key_layout_init(&d.layout,3,1,1,1));CHECK(pocket_key_layout_mode(&d.layout,POCKET_LAYOUT_DIGITS));CHECK(type(&d,"12"));const uint32_t digits[]={'1','2'};CHECK(field(&d,di

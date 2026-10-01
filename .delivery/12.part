@@ -1,0 +1,121 @@
+ED_FILE')
++    else:
++        require(not (IME_FILES & names), 'PUI_CAPABILITY')
+@@ -130 +138 @@ def verify(data: bytes, target: str, *, allow_unsigned: bool = False,
+-           runtime_api: int = 1, sdk_api: int = 1, capabilities: int = 7,
++           runtime_api: int = 1, sdk_api: int = 1, capabilities: int = 15,
+@@ -140 +148 @@ def verify(data: bytes, target: str, *, allow_unsigned: bool = False,
+-    require(caps & 1 and not caps & ~7 and not caps & ~capabilities, 'PUI_CAPABILITY')
++    require(caps & 1 and not caps & ~15 and not caps & ~capabilities, 'PUI_CAPABILITY')
+@@ -165,0 +174,6 @@ def verify(data: bytes, target: str, *, allow_unsigned: bool = False,
++    names = {f['name'] for f in files}
++    require(not (caps & 8) or caps & 2, 'PUI_CAPABILITY')
++    if caps & 8:
++        require(IME_FILES <= names, 'PUI_REQUIRED_FILE')
++    else:
++        require(not (IME_FILES & names), 'PUI_CAPABILITY')
+diff --git a/scripts/runtime.py b/scripts/runtime.py
+index b2823fb390c8f731f079c8abc4470e63c644bba8..16ec9b4d3d05f2c058af324e4c1c09b1143ffbd3 100644
+--- a/scripts/runtime.py
++++ b/scripts/runtime.py
+@@ -81,0 +82,13 @@ def validate_board(board):
++def validate_optional_input(c):
++    require(c["schema_version"] == 1 and c["owner_issue"] == 12 and c["scope"] == "optional-software-input-path", "unknown input contract")
++    require(c["capability"] == "ui.ime.pinyin" and c["resources"] == ["input.atlas", "pinyin.dat", "PINYIN-NOTICE.txt"], "input resource authority missing")
++    require(c["engine_lock"] == "toolchains/pinyin.lock.json" and c["keyboard_api"] == "hosts/linux/text-input/keyboard.h", "input implementation binding missing")
++    require(c["input_locales"] == ["en-US", "zh-CN"] and c["display_locale_independent"] is True, "unverified locale expansion")
++    require(c["font_inventory_glyphs"] == 16561 and c["font_max_bytes"] == 13631488 and c["font_transfer_max_bytes"] == 1048576, "unreviewed glyph budgets")
++    require(c["admission"] == {"rendered_ui":True,"composition_bridge":True,"offline_ime":True,"runtime_package_integration":True,
++        "physical_hardware":False,"product_language_admitted":False,"qt_linked":False,"production_admission":False}, "unverified product input admission")
++    require(c["provider"] == {"owner":"single-threaded-UI-before-fork","in_flight":1,"queued_newest":1,"timeout_ms":2000,"network":False,"learning":False}, "input worker/privacy bounds changed")
++    require(c["evidence"] == ["tests/ime/test_keyboard_view.c","scripts/input_acceptance.py","scripts/input_assets.py"], "input implementation evidence missing")
++    require(all((ROOT/n).is_file() for n in c["evidence"]), "input evidence implementation absent")
++
++
+@@ -83,0 +97,4 @@ def validate_text_contract(contract):
++    if "optional_input_contract" in contract:
++        require(contract["optional_input_contract"] == "contracts/offline-input.json" and
++                contract.get("admission_scope") == "default-legacy-ascii-path", "optional input must not redefine legacy admission")
++        validate_optional_input(read_json(ROOT / contract["optional_input_contract"]))
+diff --git a/scripts/runtime_boundary.py b/scripts/runtime_boundary.py
+index e713f3dba7699d3526a912db00067ec803b1fabf..94da978da2c6c640437103c2c731690adfac1683 100644
+--- a/scripts/runtime_boundary.py
++++ b/scripts/runtime_boundary.py
+@@ -150 +150 @@ def parse_command(command: list[str], root: Path, policy: dict, consumer: str) -
+-        elif arg in ('-Wall', '-Wextra', '-Werror', '-Wpedantic', '-O2', '-g', '-fno-omit-frame-pointer', '-static', '-Wl,--gc-sections', '-lm', '-ldl', '-lpthread', '-lrt', '-fsanitize=address,undefined'):
++        elif arg in ('-Wall', '-Wextra', '-Werror', '-Wpedantic', '-O2', '-g', '-fno-omit-frame-pointer', '-static', '-Wl,--gc-sections', '-lm', '-lstdc++', '-ldl', '-lpthread', '-lrt', '-fsanitize=address,undefined'):
+diff --git a/scripts/text_input.py b/scripts/text_input.py
+index 4cfff0fb7ac8c32b2299c53e1c89df4b3c5bea76..41d6f0598c5d7bc61803fd823dd686d33caa750f 100644
+--- a/scripts/text_input.py
++++ b/scripts/text_input.py
+@@ -82,0 +83,3 @@ def matrix_check(matrix: dict) -> None:
++    optional = matrix.get('status') == 'optional-pinyin-keyboard-software'
++    if optional and matrix.get('optional_input_contract') != 'contracts/offline-input.json':
++        raise ValueError('missing optional input contract')
+@@ -83,0 +87,8 @@ def matrix_check(matrix: dict) -> None:
++        if optional and row['locale'] == 'zh-CN':
++            expected = {'engine':'aosp-pinyin-pinned','dictionary':'pinyin.dat',
++                'layout_status':'optional-weighted-pinyin-software','ime_status':'optional-rendered-offline-software',
++                'capability':'ui.ime.pinyin','engine_lock':'toolchains/pinyin.lock.json',
++                'product_input_admitted':False,'physical_600':'pending','physical_800':'pending',
++                'evidence':['tests/ime/test_keyboard_view.c','scripts/input_acceptance.py']}
++            if any(row.get(k)!=v for k,v in expected.items()):raise ValueError('unverified optional locale claim')
++            continue
+@@ -95 +106 @@ def matrix_tests() -> None:
+-    for mutation in ('admit', 'missing', 'privacy'):
++    for mutation in ('admit', 'missing', 'privacy', 'zh-physical', 'zh-evidence', 'other-engine'):
+@@ -99 +110,4 @@ def matrix_tests() -> None:
+-        else: bad['sensitive_policy']['log_text'] = True
++        elif mutation == 'privacy': bad['sensitive_policy']['log_text'] = True
++        elif mutation == 'zh-physical': next(r for r in bad['rows'] if r['locale']=='zh-CN')['physical_600']='passed'
++        elif mutation == 'zh-evidence': next(r for r in bad['rows'] if r['locale']=='zh-CN')['evidence']=[]
++        else: next(r for r in bad['rows'] if r['locale']=='ar')['ime_status']='implemented'
+@@ -105 +119 @@ def matrix_tests() -> None:
+-    print('LANGUAGE_MATRIX_OK admitted=0 planned_rows=11 negative_cases=3')
++    print('LANGUAGE_MATRIX_OK admitted=0 planned_rows=11 negative_cases=6')
+diff --git a/tests/ime/test_keyboard_view.c b/tests/ime/test_keyboard_view.c
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ca478fa46245bbd539e08b1d1b147da4b1b0fec
+--- /dev/null
++++ b/tests/ime/test_keyboard_view.c
+@@ -0,0 +1,209 @@
++#define _POSIX_C_SOURCE 200809L
++#include "hosts/linux/framework.h"
++#include "hosts/linux/text-input/layout.h"
++#include "hosts/linux/text-input/input_font.h"
++#include "tests/framework/frame_oracle.h"
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <sys/wait.h>
++#include <errno.h>
++#include <time.h>
++#include <unistd.h>
++#include <fcntl.h>
++
++#define CHECK(x) do {if(!(x)){fprintf(stderr,"IME_VIEW_FAIL line=%d %s\n",__LINE__,#x);return 0;}}while(0)
++static int intentional;
++static const char *ordinary_assets;
++typedef struct {PocketFramework *r;uint64_t ms,seq;unsigned height;const char *out;PocketKeyLayoutState layout;} Driver;
++static int step(Driver *d,unsigned delta){d->ms+=delta;int ok=pocket_framework_tick(d->r,d->ms*1000000ULL,1);if(!ok)fprintf(stderr,"RUNTIME_FAIL %s app=%s\n",d->r->error,pocket_application_error(&d->r->app));CHECK(ok);return 1;}
++static int send_frame(Driver *d,InputFrame f){
++    f.sequence=++d->seq;d->ms+=20;int ok=pocket_framework_input(d->r,&f,d->ms*1000000ULL);if(!ok)fprintf(stderr,"INPUT_FAIL %s app=%s\n",d->r->error,pocket_application_error(&d->r->app));CHECK(ok);CHECK(step(d,1));return 1;
++}
++static int contact(Driver *d,int down,int x,int y){
++    InputFrame f={0};if(down){f.contact_count=1;f.contacts[0]=(InputContact){0,x,y};}return send_frame(d,f);
++}
++static int tap(Driver *d,int x,int y){CHECK(contact(d,1,x,y));CHECK(contact(d,0,x,y));return 1;}
++static int meta(Driver *d,PocketKeyboardInputSnapshot *s){CHECK(pocket_application_keyboard_input_snapshot(&d->r->app,s));return 1;}
++static int key(Driver *d,PocketKeyRole role,unsigned codepoint){
++    PocketKeyLayout g;CHECK(pocket_key_layout_build(&d->layout,d->height,&g));
++    for(unsigned n=0;n<g.count;n++)if(g.keys[n].role==role&&(!codepoint||g.keys[n].codepoint==codepoint)){
++        PocketKeyRect r=g.keys[n].bounds;CHECK(tap(d,r.x+r.width/2,r.y+r.height/2));return 1;
++    }
++    CHECK(0);return 0;
++}
++static int type(Driver *d,const char *value){for(const char *p=value;*p;p++)CHECK(key(d,POCKET_KEY_CHAR,(unsigned char)*p));return 1;}
++static int wait_candidates(Driver *d){
++    PocketKeyboardInputSnapshot s;
++    for(unsigned n=0;n<1500;n++){
++        CHECK(me

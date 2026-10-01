@@ -1,0 +1,94 @@
+gits,2));CHECK(shot(&d,"number"));
++    CHECK(tap(&d,100,115));CHECK(field(&d,mixed,3));CHECK(meta(&d,&s));CHECK(s.locale==2&&!s.candidates&&!s.composing);
++    CHECK(pocket_key_layout_init(&d.layout,3,3,2,0));
++    CHECK(type(&d,"kafei"));CHECK(wait_candidates(&d));CHECK(key(&d,POCKET_KEY_HIDE,0));CHECK(meta(&d,&s));CHECK(!s.composing&&!s.candidates);
++    CHECK(pocket_application_keyboard_snapshot(&d.r->app,&k));CHECK(!k.visible);CHECK(shot(&d,"hidden"));
++    CHECK(tap(&d,100,200));CHECK(field(&d,mixed,3));CHECK(tap(&d,560,40));CHECK(pocket_application_keyboard_snapshot(&d.r->app,&k));CHECK(k.visible);
++    CHECK(locale(&d,1));CHECK(field(&d,mixed,3));
++    CHECK(snprintf(forbidden,sizeof(forbidden),"%s/forbidden.ppm",dir)<(int)sizeof(forbidden));CHECK(!pocket_framework_snapshot(d.r,forbidden)&&access(forbidden,F_OK)!=0);
++    CHECK(tap(&d,650,115));CHECK(pocket_application_keyboard_snapshot(&d.r->app,&k));CHECK(k.active_field==2&&k.sensitive);CHECK(meta(&d,&s));CHECK(s.locale==1&&!s.composing);
++    CHECK(pocket_key_layout_init(&d.layout,3,1,1,1));CHECK(type(&d,"qa"));const uint32_t masked[]={'*','*'};CHECK(field(&d,masked,2));CHECK(shot(&d,"password"));
++    CHECK(!pocket_framework_snapshot(d.r,forbidden)&&access(forbidden,F_OK)!=0);
++    CHECK(tap(&d,880,115));CHECK(pocket_key_layout_mode(&d.layout,POCKET_LAYOUT_DIGITS));CHECK(type(&d,"12"));CHECK(field(&d,masked,2));CHECK(shot(&d,"pin"));
++    CHECK(tap(&d,750,40)); /* cancel */
++    PocketApplicationStats stats;CHECK(pocket_application_stats(&d.r->app,&stats));CHECK(!stats.editor_active&&stats.page==1);
++    CHECK(tap(&d,675,(int)height-36));CHECK(field(&d,mixed,3));CHECK(tap(&d,650,115));CHECK(field(&d,NULL,0));CHECK(tap(&d,100,115));
++    CHECK(pocket_key_layout_init(&d.layout,3,3,1,0));
++    CHECK(contact(&d,1,60,(int)height-230));InputFrame lost={.syn_dropped=1,.suppressed=1};CHECK(send_frame(&d,lost));CHECK(contact(&d,0,60,(int)height-230));CHECK(field(&d,mixed,3));
++    CHECK(tap(&d,750,40));
++    for(unsigned iteration=0;iteration<8;iteration++){
++        CHECK(tap(&d,675,(int)height-36));CHECK(pocket_key_layout_init(&d.layout,3,3,1,0));CHECK(locale(&d,2));CHECK(type(&d,"ni"));CHECK(wait_candidates(&d));
++        if(!iteration){
++            PocketKeyLayout geometry;CHECK(pocket_key_layout_build(&d.layout,height,&geometry));
++            for(unsigned at=0;at<geometry.count;at++)if(geometry.keys[at].role==POCKET_KEY_BACKSPACE){
++                PocketKeyRect b=geometry.keys[at].bounds;
++                CHECK(contact(&d,1,b.x+b.width/2,b.y+b.height/2));CHECK(step(&d,600));CHECK(step(&d,100));
++                CHECK(contact(&d,0,b.x+b.width/2,b.y+b.height/2));CHECK(meta(&d,&s));CHECK(!s.composing);break;
++            }
++        }
++        CHECK(tap(&d,750,40));
++    }
++    CHECK(pocket_application_stats(&d.r->app,&stats));CHECK(!stats.editor_active&&stats.page==1&&stats.nodes<64);
++    CHECK(pocket_framework_close(d.r));CHECK(!host_alloc_stats().live_bytes);oracle_close(&oracle);free(d.r);int child_status=0;errno=0;CHECK(waitpid(-1,&child_status,WNOHANG)==-1&&errno==ECHILD);
++    puts("IME_VIEW_OK dual-profile input language candidate commit privacy no-physical");return 1;
++}
++
++static void put32(unsigned char *p,uint32_t value){for(unsigned n=0;n<4;n++)p[n]=(unsigned char)(value>>(n*8));}
++static int chunk_cases(void){
++    for(unsigned variant=0;variant<7;variant++){
++        PocketSceneEngine engine;PocketEngineOpenConfig config={1024,600,1};
++        pocket_scene_engine_init(&engine,ordinary_assets);
++        CHECK(pocket_scene_engine_api.open(&engine,&config)==POCKET_ENGINE_OK);
++        unsigned char packet[32]={0};put32(packet,0x31464950);put32(packet+4,32);put32(packet+12,16);
++        if(variant==0)put32(packet+8,16); /* missing first segment */
++        if(variant==1)put32(packet+4,13*1024*1024+1); /* total bound */
++        if(variant==2)put32(packet+12,0);
++        if(variant==3)put32(packet+12,15); /* declared/actual bytes */
++        if(variant==4||variant==5){
++            CHECK(pocket_runtime_resource_pack(packet,sizeof(packet))==1);
++            if(variant==4)put32(packet+8,24); /* noncontiguous */
++            /* variant5 repeats first segment rather than replacing it */
++        }
++        if(variant==6){put32(packet+4,16);/* complete invalid atlas */}
++        CHECK(pocket_runtime_resource_pack(packet,sizeof(packet))!=1);
++        CHECK(pocket_scene_engine_api.close(&engine)==POCKET_ENGINE_OK);
++    }
++    fprintf(stdout,"INPUT_CHUNK_NEGATIVES_OK 7\n");return 1;
++}
++
++int main(int argc,char **argv){
++    if(argc!=4&&argc!=5)return 2;
++    if(argc==5&&strcmp(argv[4],"--intentional-failure"))return 2;
++    intentional=argc==5;ordinary_assets=argv[3];
++    if(!intentional&&!chunk_cases())return 1;
++    if(!run(argv[1],argv[2],600)||!run(argv[1],argv[2],800))return 1;
++    return 0;
++}
+diff --git a/tests/package/test_package.py b/tests/package/test_package.py
+index 09db250a4b3942f0c674e9e1f95fb3768bae706c..a25fa095b38381e4504809db8495df935927d1da 100644
+--- a/tests/package/test_package.py
++++ b/tests/package/test_package.py
+@@ -63 +63 @@ def main() -> None:
+-    for i, name in enumerate(sorted(pui.FILES)):
++    for i, name in enumerate(sorted(pui.FILES - {"input.atlas","pinyin.dat","PINYIN-NOTICE.txt"})):
+@@ -94 +94 @@ def main() -> None:
+-        ('wrong-target',28,2,'PUI_TARGET'),('unknown-cap',32,9,'PUI_CAPABILITY'),
++        ('wrong-target',28,2,'PUI_TARGET'),('unknown-cap',32,17,'PUI_CAPABILITY'),
+diff --git a/tests/test_runtime.py b/tests/test_runtime.py
+index a84e56319f8703f3201c2b219661de7017e332f3..8bdb996572018c683f4942256a76345c5f4f06f6 100644
+--- a/tests/test_runtime.py
++++ b/tests/test_runtime.py
+@@ -105,0 +106,13 @@ class TextContractTests(unittest.TestCase):
++
++class OptionalInputTests(unittest.TestCase):
++    def setUp(self): self.c = runtime.read_json(ROOT / 'contracts/offline-input.json')
++    def reject(self, change):
++        change(self.c)
++        with self.assertRaises(RuntimeError): runtime.validate_optional_input(self.c)
++    def test_exact_software_contract(self): runtime.validate_optional_input(self.c)
++    def test_no_physical_claim(self): self.reject(lambda c:c['admission'].update(physical_hardware=True))
++    def test_no_network(self): self.reject(lambda c:c['provider'].update(network=True))
++    def test_no_learning(self): self.reject(lambda c:c['provider'].update(learning=True))
++    def test_no_unbounded_queue(self): self.reject(lambda c:c['provider'].update(queued_newest=1024))
++    def test_no_missing_evidence(self): self.reject(lambda c:c.update(evidence=[]))
++    def test_no_unverified_locale(self): self.reject(lambda c:c['input_locales'].append('ar'))

@@ -1,0 +1,95 @@
+||!pocket_input_font_valid(config->input_font,config->input_font_bytes))goto fail;
++        i->input_locale=config->initial_locale;i->needs_input_sync=1;
++    }
+@@ -290 +534 @@ int pocket_keyboard_open(PocketKeyboard *out,const PocketKeyboardConfig *config)
+-        if(!field->field_id||field->mode<POCKET_KEYBOARD_ASCII||field->mode>POCKET_KEYBOARD_PIN||!field->max_chars||field->max_chars>64||field->enabled>1||field->read_only>1)goto fail;
++        if(!field->field_id||field->mode<POCKET_KEYBOARD_ASCII||field->mode>POCKET_KEYBOARD_TEXT||!field->max_chars||field->max_chars>64||field->enabled>1||field->read_only>1)goto fail;
+@@ -293,5 +537,10 @@ int pocket_keyboard_open(PocketKeyboard *out,const PocketKeyboardConfig *config)
+-        for(;n<=64&&initial[n];n++)if((unsigned char)initial[n]<32||(unsigned char)initial[n]>126||
+-            ((field->mode==POCKET_KEYBOARD_NUMBER||field->mode==POCKET_KEYBOARD_PIN)&&(initial[n]<'0'||initial[n]>'9')))goto fail;
+-        if(n>64)goto fail;
+-        PocketTextConfig policy=pocket_text_config_default();policy.mode=POCKET_TEXT_ASCII;
+-        policy.max_bytes=policy.max_graphemes=field->max_chars;policy.enabled=field->enabled;policy.read_only=field->read_only;
++        int unicode=field->mode==POCKET_KEYBOARD_TEXT;
++        if(unicode&&!config->input_locales)goto fail;
++        size_t limit=unicode?POCKET_KEYBOARD_MAX_BYTES:64;
++        while(n<=limit&&initial[n])n++;
++        if(n>limit)goto fail;
++        if(unicode){uint32_t codes[64];unsigned count;if(!input_chars(i,initial,n,codes,64,&count))goto fail;wipe(codes,sizeof(codes));}
++        else for(size_t j=0;j<n;j++)if((unsigned char)initial[j]<32||(unsigned char)initial[j]>126||
++            ((field->mode==POCKET_KEYBOARD_NUMBER||field->mode==POCKET_KEYBOARD_PIN)&&(initial[j]<'0'||initial[j]>'9')))goto fail;
++        PocketTextConfig policy=pocket_text_config_default();policy.mode=unicode?POCKET_TEXT_PLAIN:POCKET_TEXT_ASCII;
++        policy.max_bytes=field->max_chars*(unicode?4U:1U);policy.max_graphemes=field->max_chars;policy.enabled=field->enabled;policy.read_only=field->read_only;
+@@ -310 +559 @@ int pocket_keyboard_open(PocketKeyboard *out,const PocketKeyboardConfig *config)
+-        i->fields[f]=make(i,POCKET_COMPONENT_TEXT_FIELD,i->root,32+(int)f*(width+16),104,width,84,config->field_style,0);
++        i->fields[f]=make(i,POCKET_COMPONENT_TEXT_FIELD,i->root,32+(int)f*(width+16),config->input_locales?92:104,width,config->input_locales?52:84,config->field_style,0);
+@@ -312,2 +561,2 @@ int pocket_keyboard_open(PocketKeyboard *out,const PocketKeyboardConfig *config)
+-        make(i,POCKET_COMPONENT_TEXT,i->fields[f],12,4,width-24,36,config->muted_style,config->fields[f].label_ref);
+-        for(unsigned n=0;n<PREVIEW_CELLS;n++)i->previews[f][n]=make(i,POCKET_COMPONENT_TEXT,i->fields[f],12+(int)n*CELL_WIDTH,40,CELL_WIDTH,36,config->text_style,0);
++        make(i,POCKET_COMPONENT_TEXT,i->fields[f],12,config->input_locales?0:4,width-24,config->input_locales?24:36,config->muted_style,config->fields[f].label_ref);
++        for(unsigned n=0;n<preview_cells(i);n++)i->previews[f][n]=make(i,POCKET_COMPONENT_TEXT,i->fields[f],12+(int)n*CELL_WIDTH,config->input_locales?24:40,CELL_WIDTH,36,config->text_style,0);
+@@ -315 +564 @@ int pocket_keyboard_open(PocketKeyboard *out,const PocketKeyboardConfig *config)
+-    i->band=button(i,i->root,32,208,960,56,0,CMD_CARET,0);
++    i->band=button(i,i->root,32,config->input_locales?152:208,960,config->input_locales?52:56,0,CMD_CARET,0);
+@@ -322 +571 @@ int pocket_keyboard_open(PocketKeyboard *out,const PocketKeyboardConfig *config)
+-        PocketComponentHandle c=button(i,i->root,32+(int)n*120,276,112,48,LABEL_HOME+n,commands[n],0);
++        PocketComponentHandle c=button(i,i->root,32+(int)n*120,config->input_locales?208:276,112,config->input_locales?36:48,LABEL_HOME+n,commands[n],0);
+@@ -327 +576,2 @@ int pocket_keyboard_open(PocketKeyboard *out,const PocketKeyboardConfig *config)
+-    for(unsigned n=0;n<KEY_CELLS;n++)i->keys[n]=button(i,i->key_group,32+(int)(n%12)*62,(int)(n/12)*60,54,52,0,CMD_INSERT,0);
++    for(unsigned n=0;n<key_cells(i);n++)i->keys[n]=button(i,i->key_group,32+(int)(n%12)*62,(int)(n/12)*60,54,52,0,CMD_INSERT,0);
++    if(!config->input_locales){
+@@ -331,0 +582 @@ int pocket_keyboard_open(PocketKeyboard *out,const PocketKeyboardConfig *config)
++    }
+@@ -333,0 +585,17 @@ int pocket_keyboard_open(PocketKeyboard *out,const PocketKeyboardConfig *config)
++    if(config->input_locales){
++        for(unsigned n=0;n<PREEDIT_CELLS;n++)i->preedit[n]=make(i,POCKET_COMPONENT_TEXT,i->root,32+(int)n*CELL_WIDTH,(int)config->height-352,CELL_WIDTH,32,config->text_style,0);
++        i->candidate_group=make(i,POCKET_COMPONENT_VIEW,i->root,0,(int)config->height-316,1024,48,config->page_style,0);
++        i->candidate_previous=button(i,i->candidate_group,16,0,48,48,LABEL_LEFT,CMD_PAGE_PREV,0);
++        i->candidate_next=button(i,i->candidate_group,960,0,48,48,LABEL_RIGHT,CMD_PAGE_NEXT,0);
++        i->candidate_help=make(i,POCKET_COMPONENT_TEXT,i->candidate_group,80,6,864,36,config->muted_style,LABEL_NO_CANDIDATES);
++        for(unsigned n=0;n<5;n++){
++            i->candidates[n]=button(i,i->candidate_group,80+(int)n*176,0,168,48,0,CMD_CHOOSE,n);
++            for(unsigned j=0;j<CANDIDATE_CELLS;j++)i->candidate_glyphs[n][j]=make(i,POCKET_COMPONENT_TEXT,i->candidates[n],12+(int)j*CELL_WIDTH,6,CELL_WIDTH,36,config->text_style,0);
++        }
++        i->language_popup=make(i,POCKET_COMPONENT_BUTTON,i->root,0,0,1024,config->height,0,0);
++        if(!bind(i,i->language_popup,CMD_POPUP_DISMISS,0)||pocket_interaction_set_gestures(config->interaction,root_of(i,i->language_popup),POCKET_GESTURE_TAP)!=POCKET_INTERACTION_OK)goto fail;
++        PocketComponentHandle box=make(i,POCKET_COMPONENT_VIEW,i->language_popup,288,(int)config->height-256,448,172,config->field_style,0);
++        make(i,POCKET_COMPONENT_TEXT,box,16,8,416,36,config->text_style,LABEL_CHOOSE_LANGUAGE);
++        button(i,box,16,48,416,52,LABEL_ENGLISH,CMD_LOCALE,1);
++        button(i,box,16,108,416,52,LABEL_PINYIN,CMD_LOCALE,2);
++    }
+@@ -352,0 +621 @@ int pocket_keyboard_step(PocketKeyboard *out,uint64_t ms){
++    if(!sync_input(i))return 0;
+@@ -358 +627 @@ int pocket_keyboard_step(PocketKeyboard *out,uint64_t ms){
+-    if(i->press.released)memset(&i->press,0,sizeof(i->press));
++    if(i->press.released){memset(&i->press,0,sizeof(i->press));if(i->config.input_locales)i->dirty=1;}
+@@ -362,0 +632,13 @@ int pocket_keyboard_step(PocketKeyboard *out,uint64_t ms){
++    if(!sync_input(i))return 0;
++    if(i->ime.impl){
++        (void)pocket_ime_step(&i->ime,ms);PocketImeSnapshot current;
++        if(!pocket_ime_snapshot(&i->ime,&current))return 0;
++        if(current.request!=i->ime_seen.request||current.candidate_count!=i->ime_seen.candidate_count||
++           current.page!=i->ime_seen.page||current.pending!=i->ime_seen.pending||current.composing!=i->ime_seen.composing||
++           current.provider_status!=i->ime_seen.provider_status)i->dirty=1;
++        if(!current.pending&&current.candidate_count&&current.request!=i->last_candidate_request){
++            if(i->candidate_batches==UINT64_MAX)return 0;
++            i->candidate_batches++;i->last_candidate_request=current.request;
++        }
++        i->ime_seen=current;
++    }
+@@ -381,0 +664 @@ void pocket_keyboard_dispose(PocketKeyboard *out){
++    pocket_ime_close(&i->ime);
+@@ -384,0 +668,11 @@ void pocket_keyboard_dispose(PocketKeyboard *out){
++
++int pocket_keyboard_input_snapshot(const PocketKeyboard *out,PocketKeyboardInputSnapshot *snapshot){
++    const Impl *i=out?out->impl:NULL;if(!i||!snapshot)return 0;
++    memset(snapshot,0,sizeof(*snapshot));
++    if(!i->config.input_locales)return 1;
++    PocketImeSnapshot m={0};if(i->ime.impl)(void)pocket_ime_snapshot(&i->ime,&m);
++    snapshot->locale=i->input_layout.locale;snapshot->candidates=m.candidate_count;snapshot->page=m.page;snapshot->total=m.total;
++    snapshot->request=m.request;snapshot->layout_generation=i->input_layout.generation;snapshot->composing=m.composing;
++    snapshot->commits=i->ime_commits;snapshot->candidate_batches=i->candidate_batches;
++    snapshot->pending=m.pending;snapshot->language_popup=i->input_layout.popup;snapshot->provider_status=m.provider_status;return 1;
++}
+diff --git a/hosts/linux/text-input/keyboard.h b/hosts/linux/text-input/keyboard.h
+index 5dcd1cb69bb3e2c383f984a01d93a77f4c2af6f7..36fd2f6082a986814bd6fccdb4c89156c0e49b6b 10
