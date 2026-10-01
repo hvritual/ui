@@ -44,6 +44,11 @@ int host_open(LinuxHost *host, const char *profile, const char *root,
  * concatenated as executable source into this private rendering context. */
 int host_open_source(LinuxHost *host, const char *profile, const char *root,
                      const char *source, size_t length, const char *pack, uint64_t now);
+/* Copies both buffers. The private renderer's borrowed pack remains owned by
+ * this host until pocket_runtime_shutdown, independently of caller lifetime. */
+int host_open_buffers(LinuxHost *host, const char *profile, const char *source,
+                      size_t source_length, const unsigned char *pack_bytes,
+                      size_t pack_length, uint64_t now);
 int host_turn(LinuxHost *host, const PocketRuntimeInput *input);
 int host_turn_contacts(LinuxHost *host, const PocketRuntimeContactsInput *input);
 typedef int (*HostContactsSource)(void *context, PocketRuntimeContactsInput *out);

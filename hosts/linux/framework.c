@@ -6,29 +6,59 @@
 #include <unistd.h>
 
 static int fail(PocketFramework *r,const char *why){if(r&&!r->error)r->error=why;return 0;}
-int pocket_framework_open(PocketFramework *r,unsigned h,unsigned items,const char *assets,
-                          const char *media_root,const PocketDisplayBackend *display){
-    if(!r||r->opened||!assets||(h!=600&&h!=800))return 0;
+_Static_assert(PUI_CAP_CORE==POCKET_APP_CAP_CORE && PUI_CAP_ASCII_KEYBOARD==POCKET_APP_CAP_ASCII_KEYBOARD &&
+               PUI_CAP_IMAGES==POCKET_APP_CAP_IMAGES && PUI_MAX_HEAP==POCKET_APP_MAX_HEAP,"application policy mapping");
+static int open_framework(PocketFramework *r,unsigned h,unsigned items,const char *assets,
+                          const PuiLoadedPackage *package,const char *media_root,
+                          const PocketDisplayBackend *display){
+    if(!r||r->opened||r->package.impl||(!assets&&!package)||(assets&&package)||(h!=600&&h!=800))return 0;
     memset(r,0,sizeof(*r));
+    const PuiPackage *manifest=package?pui_loaded_manifest(package):NULL;
+    if(package){
+        const uint32_t target=h==600?PUI_TARGET_600:PUI_TARGET_800;
+        if(!manifest||!(manifest->targets&target)||manifest->runtime_min>PUI_RUNTIME_API||manifest->runtime_max<PUI_RUNTIME_API||
+           manifest->sdk_api!=PUI_SDK_API||!(manifest->capabilities&PUI_CAP_CORE)||(manifest->capabilities&~PUI_CAP_ALL)||
+           (media_root&&!(manifest->capabilities&PUI_CAP_IMAGES)))return fail(r,"PACKAGE_RUNTIME_POLICY");
+        if(!pui_loaded_retain(&r->package,package))return fail(r,"PACKAGE_RETAIN");
+    }
     if(display){
-        if(!pocket_backend_compatible(display->abi_major,display->struct_size,sizeof(*display))||!display->present)
-            return fail(r,"DISPLAY_CONTRACT");
+        if(!pocket_backend_compatible(display->abi_major,display->struct_size,sizeof(*display))||!display->present){
+            pui_loaded_close(&r->package);return fail(r,"DISPLAY_CONTRACT");
+        }
         r->display=*display;
     }
-    pocket_scene_engine_init(&r->engine,assets);
-    if(pocket_scene_engine_api.open(&r->engine,&(PocketEngineOpenConfig){1024,h,1})!=POCKET_ENGINE_OK)
-        return fail(r,"ENGINE_OPEN");
-    HostAsset source={0};
-    int loaded=host_asset_read(assets,"application.js",POCKET_PROGRAM_SOURCE_LIMIT,&source);
-    int opened=loaded&&pocket_application_open(&r->app,h,items,(const char *)source.data,source.length);
+    if(package)pocket_scene_engine_init_package(&r->engine,&r->package);
+    else pocket_scene_engine_init(&r->engine,assets);
+    if(pocket_scene_engine_api.open(&r->engine,&(PocketEngineOpenConfig){1024,h,1})!=POCKET_ENGINE_OK){
+        pui_loaded_close(&r->package);return fail(r,"ENGINE_OPEN");
+    }
+    HostAsset source={0};int loaded=0,opened=0;
+    if(package){
+        const PuiFile *file=pui_loaded_file(&r->package,"application.js");
+        /* The existing program contract makes its own bounded source copy. */
+        const PocketApplicationPolicy policy={manifest->heap_bytes,manifest->capabilities};
+        opened=file&&pocket_application_open_policy(&r->app,h,items,(const char *)file->data,file->length,&policy);
+    }else{
+        loaded=host_asset_read(assets,"application.js",POCKET_PROGRAM_SOURCE_LIMIT,&source);
+        opened=loaded&&pocket_application_open(&r->app,h,items,(const char *)source.data,source.length);
+    }
     host_asset_free(&source);
     if(!opened){
-        (void)pocket_scene_engine_api.close(&r->engine);return fail(r,"APP_OPEN");
+        (void)pocket_scene_engine_api.close(&r->engine);pui_loaded_close(&r->package);return fail(r,"APP_OPEN");
     }
     if(!pocket_input_interaction_bridge_init(&r->input,pocket_application_interaction(&r->app))){
-        pocket_application_close(&r->app);(void)pocket_scene_engine_api.close(&r->engine);return fail(r,"INPUT_BRIDGE");
+        pocket_application_close(&r->app);(void)pocket_scene_engine_api.close(&r->engine);
+        pui_loaded_close(&r->package);return fail(r,"INPUT_BRIDGE");
     }
     r->media.root=media_root;r->opened=1;return 1;
+}
+int pocket_framework_open(PocketFramework *r,unsigned h,unsigned items,const char *assets,
+                          const char *media_root,const PocketDisplayBackend *display){
+    return open_framework(r,h,items,assets,NULL,media_root,display);
+}
+int pocket_framework_open_package(PocketFramework *r,unsigned h,unsigned items,const PuiLoadedPackage *package,
+                                  const char *media_root,const PocketDisplayBackend *display){
+    return open_framework(r,h,items,NULL,package,media_root,display);
 }
 int pocket_framework_input(void *p,const InputFrame *frame,uint64_t ns){
     PocketFramework *r=p;if(!r||!r->opened||r->error)return 0;
@@ -112,8 +142,11 @@ int pocket_framework_snapshot(const PocketFramework *r,const char *path){
     return ok;
 }
 int pocket_framework_close(PocketFramework *r){
-    if(!r||!r->opened)return 1;
+    if(!r)return 1;
+    if(!r->opened)return pui_loaded_close(&r->package);
     pocket_framework_disconnect(r,r->clock_ns);
     pocket_application_close(&r->app);r->opened=0;
-    return pocket_scene_engine_api.close(&r->engine)==POCKET_ENGINE_OK;
+    int engine_ok=pocket_scene_engine_api.close(&r->engine)==POCKET_ENGINE_OK;
+    int package_ok=pui_loaded_close(&r->package);
+    return engine_ok&&package_ok;
 }

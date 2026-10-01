@@ -1,3 +1,8 @@
+> R3 follow-up: `--package` now loads a bounded immutable `.pui` snapshot and
+> applies native command/VM heap policy. See [package-runtime.md](package-runtime.md).
+> The R2 trusted-directory behavior below remains available explicitly; package
+> rejection never falls back to it. Signing/production/physical admission is not implied.
+
 # Independent applications on a fixed runtime
 
 This is the executable separation slice of #56 (R2). It is not the `.pui`

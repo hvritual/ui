@@ -1,6 +1,7 @@
 #ifndef POCKET_APPLICATION_H
 #define POCKET_APPLICATION_H
 #include "program.h"
+#include "policy.h"
 #include "../ui/scene.h"
 #include "../ui/navigation.h"
 #include "../ui/overlay.h"
@@ -23,6 +24,10 @@ typedef struct {
 } PocketApplicationStats;
 int pocket_application_open(PocketApplication *application, unsigned height,
                             unsigned item_count, const char *source, size_t length);
+int pocket_application_open_policy(PocketApplication *application, unsigned height,
+                                   unsigned item_count, const char *source, size_t length,
+                                   const PocketApplicationPolicy *policy);
+int pocket_application_policy_snapshot(const PocketApplication *application, PocketApplicationPolicy *out);
 void pocket_application_close(PocketApplication *application);
 PocketInteractionRuntime *pocket_application_interaction(PocketApplication *application);
 /* Drain bounded lifecycle events before dispatching a new external input. */

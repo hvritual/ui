@@ -34,7 +34,7 @@ class FrameworkGuardTests(unittest.TestCase):
             return result.stdout.decode()
         fake.run = run
 
-        def compile_binary(mode, test=False, sanitize=False, static=False, loop=False, application_test=False, reference=False):
+        def compile_binary(mode, test=False, sanitize=False, static=False, loop=False, application_test=False, reference=False, package_test=None):
             (self.root/'out').mkdir(exist_ok=True)
             fake.run(self.command, self.root/'out/build.log')
             return self.root/'out/unit'

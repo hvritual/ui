@@ -1,3 +1,7 @@
+> R3 package parser/loader are runtime-owned. Test-only package adapters and
+> deliberate memory-protection probes cannot enter the production executable.
+> Canonical Framework gates verify packaged execution separately from ownership.
+
 > R2 follow-up: the production builder now uses the fixed `runtime` consumer,
 > and Coffee runs as an independent application payload. The original C owner
 > survives only in a frozen `reference-test` comparator. See

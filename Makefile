@@ -241,3 +241,12 @@ test-runtime-boundary:
 	python3 -m unittest discover -s tests/boundary -v
 check: check-runtime-boundary
 test-framework test-framework-arm test-framework-sanitize build-board-framework: check-runtime-boundary
+
+# Actual production package integration; the canonical framework gates also run these.
+.PHONY: test-package-runtime test-package-runtime-arm test-package-runtime-sanitize
+test-package-runtime:
+	python3 scripts/framework_guard.py test-packages --mode native
+test-package-runtime-arm:
+	python3 scripts/framework_guard.py test-packages --mode arm
+test-package-runtime-sanitize:
+	python3 scripts/framework_guard.py test-packages --mode native --sanitize

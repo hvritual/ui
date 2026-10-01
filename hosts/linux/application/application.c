@@ -27,6 +27,7 @@ typedef struct {
 typedef struct { uint64_t id; PocketComponentHandle root; int keyboard; } Overlay;
 struct Application {
     PocketProgram program;
+    PocketApplicationPolicy policy;
     PocketUiTree tree;
     PocketLayoutContext layout;
     PocketStyleRuntime styles;
@@ -212,6 +213,11 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
     PocketComponentHandle c = {0};
     if (!a || a->disposing || a->error || a->phase == 2) return 0;
     *reply = (PocketProgramValue){.kind=POCKET_PROGRAM_INTEGER, .integer=1};
+    if (!(a->policy.capabilities & POCKET_APP_CAP_CORE)) return fail(a,"APPLICATION_CAPABILITY_CORE");
+    if (!strncmp(op,"keyboard.",9) && !(a->policy.capabilities & POCKET_APP_CAP_ASCII_KEYBOARD))
+        return fail(a,"APPLICATION_CAPABILITY_KEYBOARD");
+    if (!strcmp(op,"component.image") && !(a->policy.capabilities & POCKET_APP_CAP_IMAGES))
+        return fail(a,"APPLICATION_CAPABILITY_IMAGES");
     if (!strcmp(op, "keyboard.field")) {
         if (n != 8 || !numbers(7, args, v) || args[7].kind != POCKET_PROGRAM_TEXT || !a->keyboard_staged ||
             !between(v[0], 0, (int64_t)a->keyboard_config.field_count-1) || !between(v[1], 1, UINT32_MAX) ||
@@ -231,6 +237,8 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
         if (n != 9 || !between(v[0], 1, POCKET_COMPONENT_KIND_COUNT-1) || (v[1] && !component(a, v[1], &parent)) ||
             !between(v[2], -65536, 65536) || !between(v[3], -65536, 65536) || !between(v[4], 0, 65536) || !between(v[5], 0, 65536) ||
             !between(v[6], 0, 65535) || !between(v[7], 0, 65535) || !between(v[8], 0, 8)) return 0;
+        if ((v[0]==POCKET_COMPONENT_IMAGE || v[8]) && !(a->policy.capabilities & POCKET_APP_CAP_IMAGES))
+            return fail(a,"APPLICATION_CAPABILITY_IMAGES");
         PocketComponentProps p = pocket_component_props_default((PocketComponentKind)v[0]);
         p.style_ref = (uint64_t)v[6]; p.text_ref = (uint64_t)v[7]; p.resource_ref = (uint64_t)v[8];
         if (pocket_component_create(&a->components, (PocketComponentKind)v[0], parent, &p, &c) != POCKET_COMPONENT_OK ||
@@ -304,6 +312,8 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
     if (!strcmp(op, "navigation.pop")) { if (n) return 0; a->dirty = 1; return pocket_navigation_pop(&a->navigation) == POCKET_NAV_OK; }
     if (!strcmp(op, "overlay.present")) {
         if (n != 4 || v[0] <= 0 || !between(v[1], 1, 32) || !component(a, v[2], &c) || !between(v[3], 1, POCKET_OVERLAY_LOADING)) return 0;
+        if(v[3]==POCKET_OVERLAY_KEYBOARD && !(a->policy.capabilities & POCKET_APP_CAP_ASCII_KEYBOARD))
+            return fail(a,"APPLICATION_CAPABILITY_KEYBOARD");
         PocketOverlaySpec s = {.id=(uint64_t)v[0], .owner_route=(uint64_t)v[1], .kind=(PocketOverlayKind)v[3], .root=c,
             .focus_token=encoded(c.slot,c.generation), .owns_root=1, .captures_input=1, .captures_focus=1};
         if (pocket_overlay_present(&a->overlays, &s) != POCKET_OVERLAY_OK) return 0;
@@ -323,12 +333,16 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
     }
     if (!strcmp(op, "signal.set")) return n == 2 && v[0] > 0 && pocket_reactive_set(&a->reactive, signal_handle(v[0]), pocket_value_i64(v[1])) == POCKET_REACTIVE_OK;
     if (!strcmp(op, "signal.bind")) {
+        if(n==3 && v[2]==POCKET_BIND_RESOURCE_REF && !(a->policy.capabilities & POCKET_APP_CAP_IMAGES))
+            return fail(a,"APPLICATION_CAPABILITY_IMAGES");
         PocketReactiveSubscription subscription;
         return n == 3 && v[0] > 0 && component(a, v[1], &c) && between(v[2], 1, 7) &&
             pocket_reactive_bind_component(&a->reactive, signal_handle(v[0]), c, (PocketBindingTarget)v[2], &subscription) == POCKET_REACTIVE_OK;
     }
     if (!strcmp(op, "list.create")) {
         if (n != 4 || !component(a, v[0], &c) || !between(v[1], 1, 4096) || !between(v[2], 1, 32) || !between(v[3], 1, POCKET_COMPONENT_KIND_COUNT-1)) return 0;
+        if(v[3]==POCKET_COMPONENT_IMAGE && !(a->policy.capabilities & POCKET_APP_CAP_IMAGES))
+            return fail(a,"APPLICATION_CAPABILITY_IMAGES");
         Collection *list = NULL;
         for (unsigned i = 0; i < LISTS; ++i) if (!a->lists[i].collection.impl) { list = &a->lists[i]; break; }
         if (!list || a->next_list >= SAFE_INTEGER) return 0;
@@ -410,10 +424,17 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
     return 0;
 }
 int pocket_application_open(PocketApplication *out, unsigned height, unsigned items, const char *source, size_t length) {
-    if (!out || out->impl || (height!=600 && height!=800) || items>4096 || !source || !length) return 0;
+    const PocketApplicationPolicy policy={POCKET_APP_MAX_HEAP,POCKET_APP_CAP_ALL};
+    return pocket_application_open_policy(out,height,items,source,length,&policy);
+}
+int pocket_application_open_policy(PocketApplication *out, unsigned height, unsigned items,
+                                   const char *source, size_t length, const PocketApplicationPolicy *policy) {
+    if (!out || out->impl || (height!=600 && height!=800) || items>4096 || !source || !length ||
+        !policy || policy->heap_bytes<1024u*1024u || policy->heap_bytes>POCKET_APP_MAX_HEAP ||
+        !(policy->capabilities&POCKET_APP_CAP_CORE) || (policy->capabilities&~POCKET_APP_CAP_ALL)) return 0;
     Application *a=calloc(1,sizeof(*a));
     if (!a) return 0;
-    out->impl=a; a->height=height; a->dirty=1;
+    out->impl=a; a->height=height; a->dirty=1; a->policy=*policy;
     PocketUiTreeConfig tc={.initial_capacity=128,.update_queue_capacity=64,.update_budget=64};
     PocketLayoutConfig lc={.tree=&a->tree,.record_capacity=256};
     PocketStyleRuntimeConfig sc={.theme_capacity=2,.token_capacity=32,.rule_capacity=32};
@@ -425,6 +446,7 @@ int pocket_application_open(PocketApplication *out, unsigned height, unsigned it
         pocket_style_runtime_init(&a->styles,&sc)!=POCKET_STYLE_OK || pocket_component_runtime_init(&a->components,&cc)!=POCKET_COMPONENT_OK ||
         pocket_overlay_init(&a->overlays,&oc)!=POCKET_OVERLAY_OK || pocket_navigation_init(&a->navigation,&nc)!=POCKET_NAV_OK || pocket_reactive_init(&a->reactive,&rc)!=POCKET_REACTIVE_OK) goto failed;
     PocketProgramConfig config=pocket_program_config(); config.context=a; config.command=command;
+    config.memory_limit=a->policy.heap_bytes;
     a->phase=1;
     if (!pocket_program_open(&a->program,&config,source,length)) goto failed;
     char input[96], result[16]; size_t result_length=0;
@@ -433,6 +455,12 @@ int pocket_application_open(PocketApplication *out, unsigned height, unsigned it
     a->phase=0; return 1;
 failed:
     pocket_application_close(out); return 0;
+}
+int pocket_application_policy_snapshot(const PocketApplication *out,PocketApplicationPolicy *policy) {
+    const Application *a=out?out->impl:NULL;
+    if(policy)memset(policy,0,sizeof(*policy));
+    if(!a||!policy)return 0;
+    *policy=a->policy;return 1;
 }
 int pocket_application_step(PocketApplication *out, uint64_t ms) {
     Application *a=out?out->impl:NULL;
@@ -472,6 +500,10 @@ int pocket_application_scene(PocketApplication *out, PocketScene *scene) {
         layers[j]=s;
     }
     for (unsigned i=0;i<count;++i) if (!pocket_scene_append(scene,&source,root(a,layers[i].spec.root))) return 0;
+    if(!(a->policy.capabilities&POCKET_APP_CAP_IMAGES)){
+        for(uint32_t i=0;i<scene->count;++i)if(scene->records[i].resource_ref)
+            return fail(a,"APPLICATION_CAPABILITY_IMAGES");
+    }
     return 1;
 }
 int pocket_application_stats(const PocketApplication *out, PocketApplicationStats *stats) {

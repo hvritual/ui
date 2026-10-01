@@ -73,14 +73,16 @@ static int discover_input(InputLive *input, const char *directory,
 }
 
 int main(int argc,char **argv){
-    const char *profile=NULL,*assets=NULL,*output=NULL,*fbpath="/dev/fb0",*inputdir="/dev/input",*media=NULL,*touch_name=NULL,*replay=NULL;
+    const char *profile=NULL,*assets=NULL,*output=NULL,*fbpath="/dev/fb0",*inputdir="/dev/input",*media=NULL,*touch_name=NULL,*replay=NULL,*package_path=NULL;
     int headless=0,physical=0,seconds=60,items=0,rawmin=0,rawmax=0,slots=0,swap=0,ix=0,iy=0;
     unsigned touch_fields=0, discovery_attempts=0,replay_samples=0;
-    int input_wait_ms=3000;
+    int input_wait_ms=3000,allow_unsigned=0;
     for(int i=1;i<argc;i++){
         const char *key=argv[i];if(!strcmp(key,"--headless")){headless=1;continue;}if(!strcmp(key,"--physical")){physical=1;continue;}
+        if(!strcmp(key,"--allow-unsigned-package")){if(allow_unsigned)return 2;allow_unsigned=1;continue;}
         if(i+1>=argc){fprintf(stderr,"missing value: %s\n",key);return 2;}const char *v=argv[++i];
         if(!strcmp(key,"--profile"))profile=v;else if(!strcmp(key,"--asset-root"))assets=v;
+        else if(!strcmp(key,"--package")){if(package_path)return 2;package_path=v;}
         else if(!strcmp(key,"--replay-input"))replay=v;
         else if(!strcmp(key,"--output"))output=v;else if(!strcmp(key,"--fbdev"))fbpath=v;
         else if(!strcmp(key,"--input-dir"))inputdir=v;else if(!strcmp(key,"--media-store"))media=v;
@@ -96,9 +98,9 @@ int main(int argc,char **argv){
         else if(!strcmp(key,"--invert-y")){if(!number(v,0,1,&iy))return 2;touch_fields|=64;}
         else{fprintf(stderr,"unknown option: %s\n",key);return 2;}
     }
-    if(!profile||!assets||!output||strlen(output)>3800||
+    if(!profile||(!assets&&!package_path)||(assets&&package_path)||(!package_path&&allow_unsigned)||!output||strlen(output)>3800||
        (strcmp(profile,"imx6ul-1024x600")&&strcmp(profile,"imx6ul-1024x800"))){
-        fprintf(stderr,"usage: ui-framework --profile imx6ul-1024x600|imx6ul-1024x800 --asset-root DIR --output NEWDIR (--headless | --physical)\n");return 2;
+        fprintf(stderr,"usage: ui-framework --profile imx6ul-1024x600|imx6ul-1024x800 (--asset-root DIR | --package FILE [--allow-unsigned-package]) --output NEWDIR (--headless | --physical)\n");return 2;
     }
     unsigned h=!strcmp(profile,"imx6ul-1024x600")?600U:800U;
     if(replay&&!headless){fprintf(stderr,"replay input is headless only\n");return 2;}
@@ -106,10 +108,21 @@ int main(int argc,char **argv){
     if(!headless&&h==800&&((touch_fields&113U)!=113U||!touch_name||!strcmp(touch_name,"auto"))){fprintf(stderr,"800 target requires its own explicit verified touch configuration\n");return 2;}
     if((touch_fields&6U) && ((touch_fields&6U)!=6U || rawmin>=rawmax))return 2;
     if(!touch_name)touch_name="auto";
-    if(mkdir(output,0700)){perror("new output directory");return 2;}
-    FILE *trace=file_at(output,"timeline.csv");if(!trace)return 2;
+    PuiLoadedPackage package={0};PuiLoadedSnapshot package_info={0};
+    PocketApplicationPolicy applied_policy={0};
+    if(package_path){
+        const char *error=NULL;PuiPolicy policy=pui_runtime_policy(h,allow_unsigned);
+        if(!pui_loaded_open(&package,package_path,&policy,&error)){
+            fprintf(stderr,"FRAMEWORK_PACKAGE_REJECTED error=%s\n",error?error:"PUI_LOAD_FAILED");return 1;
+        }
+        if(!pui_loaded_snapshot(&package,&package_info)||(media&&!(package_info.capabilities&PUI_CAP_IMAGES))){
+            pui_loaded_close(&package);fprintf(stderr,"FRAMEWORK_PACKAGE_REJECTED error=PUI_CAPABILITY\n");return 1;
+        }
+    }
+    if(mkdir(output,0700)){pui_loaded_close(&package);perror("new output directory");return 2;}
+    FILE *trace=file_at(output,"timeline.csv");if(!trace){pui_loaded_close(&package);return 2;}
     fprintf(trace,"sample_ns,input_event_ns,guest_turns,scene_uploads,presents,page,modal,progress,nodes,pool,first,selected,locale,theme,scroll_x,dragging,settling,present_scroll_x,present_dragging,present_settling,present_complete_ns,update_duration_ns,render_duration_ns,present_duration_ns\n");
-    PocketFramework *r=calloc(1,sizeof(*r));if(!r){fclose(trace);return 1;}
+    PocketFramework *r=calloc(1,sizeof(*r));if(!r){fclose(trace);pui_loaded_close(&package);return 1;}
     FbDevice fb={0};InputLive input={0};int ok=0,unblank_errno=0,pending_input_wait=0;const char *failure="INITIALIZATION";
     uint64_t start=0,now=0,next_reconnect=0;struct rusage before={0},after={0};PocketApplicationStats stats={0};
     if(getrusage(RUSAGE_SELF,&before)){failure="USAGE_START";goto done;}
@@ -124,7 +137,14 @@ int main(int argc,char **argv){
         int wrote=fbdev_report(probe,fbpath,&fb);if(fclose(probe)||!wrote){failure="PROBE_WRITE";goto done;}
     }
     PocketDisplayBackend backend={1,sizeof(PocketDisplayBackend),&fb,present};
-    if(!pocket_framework_open(r,h,items,assets,media,headless?NULL:&backend)){failure=r->error;goto done;}
+    int framework_opened=package_path?
+        pocket_framework_open_package(r,h,items,&package,media,headless?NULL:&backend):
+        pocket_framework_open(r,h,items,assets,media,headless?NULL:&backend);
+    if(!framework_opened){failure=r->error;goto done;}
+    if(!pocket_application_policy_snapshot(&r->app,&applied_policy)){failure="APPLICATION_POLICY";goto done;}
+    if(package_path&&(applied_policy.heap_bytes!=package_info.heap_bytes||applied_policy.capabilities!=package_info.capabilities)){
+        failure="APPLICATION_POLICY_NOT_APPLIED";goto done;
+    }
     InputLiveConfig cfg={.expected_name=touch_name,.width=1024,.height=h,
         .swap_xy=swap,.invert_x=ix,.invert_y=iy,.expected_raw_min=rawmin,
         .expected_raw_max=rawmax,.expected_slots=(unsigned)slots};
@@ -200,6 +220,7 @@ int main(int argc,char **argv){
     (void)pocket_application_stats(&r->app,&stats);ok=1;failure=NULL;
 done:
     if(r->opened){(void)pocket_application_stats(&r->app,&stats);if(!pocket_framework_close(r)){ok=0;failure="ENGINE_CLOSE";}}
+    if(!pui_loaded_close(&package)){ok=0;failure="PACKAGE_CLOSE";}
     input_live_close(&input);if(!fbdev_close(&fb)){ok=0;failure="DISPLAY_CLOSE";}
     if(input.cleanup_errno){ok=0;failure="INPUT_CLOSE";}
     if(fclose(trace)){ok=0;failure="TRACE_CLOSE";}
@@ -217,6 +238,11 @@ done:
         fprintf(report,"\"schema\":1,\"commit\":\"%s\",\"profile\":\"%s\",\"ok\":%s,\"physical_io\":%s,\"visual_validated\":false,\"business_commands\":false,\"error\":",
           POCKET_BUILD_COMMIT,profile,ok?"true":"false",physical_io?"true":"false");
         if(failure)fprintf(report,"\"%s\"",failure);else fputs("null",report);
+        fprintf(report,",\"package_admitted\":%s,\"package_authenticated\":false,\"package_sha256\":",
+                package_path?"true":"false");
+        if(package_path)fprintf(report,"\"%s\"",package_info.sha256);else fputs("null",report);
+        fprintf(report,",\"application_heap_limit\":%zu,\"application_capabilities\":%u,\"package_bytes\":%zu",
+                applied_policy.heap_bytes,applied_policy.capabilities,package_info.container_bytes);
         fprintf(report,",\"synthetic_input\":%s,\"replay_samples\":%u,\"application_page\":%u,\"application_selection\":%u",
                 replay?"true":"false",replay_samples,stats.page,stats.selected);
         fprintf(report,",\"text_input_open\":%s,\"text_input_opens\":%u,\"text_input_confirms\":%u,\"text_input_cancels\":%u",
