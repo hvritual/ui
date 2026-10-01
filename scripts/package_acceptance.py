@@ -110,7 +110,7 @@ def prove_package_binary(binary: Path, mode: str, directory: Path, static: bool 
         '--package',tampered,'--allow-unsigned-package'], 1, 'PUI_INTEGRITY', True)
     for name, offset, value, error in [('runtime-version',16,2,'PUI_VERSION'),('sdk-version',24,2,'PUI_VERSION'),
                                       ('target',28,2,'PUI_TARGET'),('budget',48,64*1024*1024,'PUI_BUDGET'),
-                                      ('unknown-capability',32,15,'PUI_CAPABILITY'),('future-auth',60,1,'PUI_FORMAT')]:
+                                      ('unknown-capability',32,31,'PUI_CAPABILITY'),('future-auth',60,1,'PUI_FORMAT')]:
         payload = bytearray(packages['coffee'].read_bytes()); struct.pack_into('<I',payload,offset,value)
         payload[160:192] = pui.container_digest(payload); invalid = directory/(name+'.pui'); invalid.write_bytes(payload)
         run_case(name, [*base,'--package',invalid,'--allow-unsigned-package'],1,error,True)

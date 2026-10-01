@@ -60,7 +60,7 @@ def main() -> None:
             assert expected == known[i]
         assert run(prefix+['hash', str(path)]) == expected
     assets = out/'assets'; assets.mkdir()
-    for i, name in enumerate(sorted(pui.FILES)):
+    for i, name in enumerate(sorted(pui.FILES - {"input.atlas","pinyin.dat","PINYIN-NOTICE.txt"})):
         (assets/name).write_bytes(bytes([65+i])*(i*37+17))
     manifest = pui.load_manifest(ROOT/'contracts/application-package.example.json')
     valid = pui.build(manifest, assets)
@@ -91,7 +91,7 @@ def main() -> None:
         ('format',8,2,'PUI_VERSION'),('header-size',12,191,'PUI_FORMAT'),
         ('runtime-min',16,2,'PUI_VERSION'),('runtime-max',20,0,'PUI_VERSION'),
         ('sdk',24,2,'PUI_VERSION'),('unknown-target',28,4,'PUI_TARGET'),
-        ('wrong-target',28,2,'PUI_TARGET'),('unknown-cap',32,9,'PUI_CAPABILITY'),
+        ('wrong-target',28,2,'PUI_TARGET'),('unknown-cap',32,17,'PUI_CAPABILITY'),
         ('no-core',32,6,'PUI_CAPABILITY'),('file-count-zero',36,0,'PUI_FILE_TABLE'),
         ('file-count-max',36,17,'PUI_FILE_TABLE'),('heap-small',48,1,'PUI_BUDGET'),
         ('heap-large',48,pui.MAX_HEAP+1,'PUI_BUDGET'),('assets-too-small',52,1,'PUI_BUDGET'),

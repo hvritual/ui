@@ -166,10 +166,11 @@
     if (a.page!==HOME || a.editing) throw Error('APP_EDITOR_STATE');
     call('input.cancel'); a.pager.cancel(); a.viewportDirty=1;
     call('keyboard.begin',2,HOME,PAGE,LABEL,MUTED,CARD,KEY,PRIMARY,4);
-    call('keyboard.field',0,501,205,0,64,1,0,a.name);
+    call('keyboard.field',0,501,205,a.inputLocales?4:0,64,1,0,a.name);
     call('keyboard.field',1,502,206,1,16,1,0,a.number);
     call('keyboard.field',2,503,207,2,64,1,0,'');
     call('keyboard.field',3,504,208,3,8,1,0,'');
+    if(a.inputLocales) call('keyboard.languages',a.inputLocales,1);
     call('keyboard.show'); a.editing=1;
   }
   function keyboardStep() {
@@ -212,7 +213,7 @@
     start(config) {
       config.items=config.items||8;
       if ((config.height!==600 && config.height!==800) || (config.items!==8 && config.items!==100)) throw Error('APP_CONFIG');
-      a={height:config.height,items:config.items,page:HOME,first:0,selected:0,locale:0,theme:0,completed:0,actions:0,
+      a={height:config.height,items:config.items,inputLocales:config.inputLocales||0,page:HOME,first:0,selected:0,locale:0,theme:0,completed:0,actions:0,
         pending:0,pendingIndex:0,modal:0,progress:0,now:0,started:0,name:'Coffee',number:'',editing:0,
         cards:new Map(),pager:new Pager(config.items),materialized:-1,viewportDirty:0};
       themes(); a.signal=call('signal.create',0);

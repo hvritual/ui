@@ -38,7 +38,7 @@ static int visit(PocketScene *s,const PocketSceneSource *src,PocketUiHandle root
         alpha=(uint16_t)((uint32_t)alpha*(uint32_t)style.fields[POCKET_STYLE_OPACITY]/256U);
     /* Current adapter supports RGBA text/background alpha, but not image-node opacity. */
     if(c.kind==POCKET_COMPONENT_IMAGE&&alpha!=256)return 0;
-    if(n.stable_id>9007199254740991ULL||c.props.text_ref>65535||c.props.resource_ref>8)return 0;
+    if(n.stable_id>9007199254740991ULL||c.props.text_ref>131071||c.props.resource_ref>8)return 0;
     PocketSceneRecord *r=&s->records[s->count++];
     r->id=n.stable_id;r->kind=(uint32_t)c.kind;
     r->bounds=(PocketEngineRect){l.geometry.x,l.geometry.y,l.geometry.width,l.geometry.height};

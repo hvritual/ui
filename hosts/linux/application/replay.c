@@ -22,9 +22,10 @@ static int parse(const char *line, long long values[5]) {
         values[2]>=0 && values[2]<8 && values[3]>=-65536 && values[3]<=65536 &&
         values[4]>=-65536 && values[4]<=65536;
 }
-int pocket_framework_replay(PocketFramework *r,const char *path,uint64_t start,unsigned *samples) {
+static int replay(PocketFramework *r,const char *path,uint64_t start,unsigned *samples,int paced) {
     if (!r || !r->opened || !path || !samples || r->display.present || start>UINT64_MAX-60000000000ULL) return 0;
-    *samples=0;
+    *samples=0;uint64_t wall=0;
+    if(paced&&(!host_monotonic_ns(&wall)||wall>UINT64_MAX-60000000000ULL))return 0;
     int fd=open(path,O_RDONLY|O_CLOEXEC|O_NOFOLLOW|O_NONBLOCK);
     if (fd<0) return 0;
     struct stat st;
@@ -38,12 +39,15 @@ int pocket_framework_replay(PocketFramework *r,const char *path,uint64_t start,u
         if (++*samples>10000 || !strchr(line,'\n') || !parse(line,v) || (uint64_t)v[0]<previous) {ok=0;break;}
         previous=(uint64_t)v[0]; uint64_t now=start+previous*1000000ULL;
         while (clock.next_ns<=now) {
-            uint64_t tick=clock.next_ns;int due=host_clock_due(&clock,tick);
+            uint64_t tick=clock.next_ns;
+            if(paced&&!host_sleep_until(wall+(tick-start))){ok=0;break;}
+            int due=host_clock_due(&clock,tick);
             if (due<1 || due>4) {ok=0;break;}
             for(int i=0;i<due;i++) if(!pocket_framework_tick(r,tick,0)){ok=0;break;}
             if(!ok)break;
         }
         if(!ok)break;
+        if(paced&&!host_sleep_until(wall+(now-start))){ok=0;break;}
         unsigned phase=(unsigned)v[1],id=(unsigned)v[2];
         if(!phase) {
             if(id || v[3] || v[4] || !pocket_framework_tick(r,now,1))ok=0;
@@ -62,3 +66,6 @@ int pocket_framework_replay(PocketFramework *r,const char *path,uint64_t start,u
     if(fclose(file))ok=0;
     return ok;
 }
+
+int pocket_framework_replay(PocketFramework *r,const char *p,uint64_t start,unsigned *n){return replay(r,p,start,n,0);}
+int pocket_framework_replay_realtime(PocketFramework *r,const char *p,uint64_t start,unsigned *n){return replay(r,p,start,n,1);}

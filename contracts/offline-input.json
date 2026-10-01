@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "owner_issue": 12,
+  "scope": "optional-software-input-path",
+  "capability": "ui.ime.pinyin",
+  "required_capabilities": [
+    "ui.core",
+    "ui.keyboard.ascii",
+    "ui.ime.pinyin"
+  ],
+  "resources": [
+    "input.atlas",
+    "pinyin.dat",
+    "PINYIN-NOTICE.txt"
+  ],
+  "engine_lock": "toolchains/pinyin.lock.json",
+  "keyboard_api": "hosts/linux/text-input/keyboard.h",
+  "input_locales": [
+    "en-US",
+    "zh-CN"
+  ],
+  "display_locale_independent": true,
+  "field_policy": "printable-ASCII-and-admitted-single-BMP-Han; no implicit normalization",
+  "dictionary_sha256": "6bf0bbde4e3134cce38d08524a9f4dc1af40435243c8e36b38eb68d1e14462b2",
+  "font_inventory_glyphs": 16561,
+  "font_max_bytes": 13631488,
+  "font_transfer_max_bytes": 1048576,
+  "provider": {
+    "owner": "single-threaded-UI-before-fork",
+    "in_flight": 1,
+    "queued_newest": 1,
+    "timeout_ms": 2000,
+    "network": false,
+    "learning": false
+  },
+  "admission": {
+    "rendered_ui": true,
+    "composition_bridge": true,
+    "offline_ime": true,
+    "runtime_package_integration": true,
+    "physical_hardware": false,
+    "product_language_admitted": false,
+    "qt_linked": false,
+    "production_admission": false
+  },
+  "evidence": [
+    "tests/ime/test_keyboard_view.c",
+    "scripts/input_acceptance.py",
+    "scripts/input_assets.py"
+  ],
+  "remaining": [
+    "per-locale-release-evidence-R5",
+    "independent-600-800-physical-review-R6",
+    "performance-P5",
+    "signing-and-recovery-P7"
+  ]
+}

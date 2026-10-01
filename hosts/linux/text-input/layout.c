@@ -28,8 +28,8 @@ static void row(PocketKeyLayout *out,int y,const char *characters,int functions)
 int pocket_key_layout_build(const PocketKeyLayoutState *s,unsigned height,PocketKeyLayout *out){
     if(!valid(s)||!out||(height!=600&&height!=800))return 0;
     memset(out,0,sizeof(*out));
-    out->generation=s->generation;out->space_locale=s->locale;out->editor=(PocketKeyRect){32,144,960,64};
-    out->preedit=(PocketKeyRect){32,(int)height-364,960,32};out->candidates=(PocketKeyRect){16,(int)height-320,992,52};
+    out->generation=s->generation;out->space_locale=s->locale;out->editor=(PocketKeyRect){32,152,960,52};
+    out->preedit=(PocketKeyRect){32,(int)height-352,960,32};out->candidates=(PocketKeyRect){16,(int)height-316,992,48};
     out->language_popup=(PocketKeyRect){288,(int)height-256,448,172};
     for(unsigned mask=1;mask<=2;mask<<=1)if(mask&s->active_locales)out->language_choices[out->language_count++]=mask;
     int y=(int)height-256;

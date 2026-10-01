@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "owner_issue": 12,
-  "status": "native-ascii-keyboard-software",
+  "status": "optional-pinyin-keyboard-software",
   "independent_settings": [
     "ui_locale",
     "input_locale",
@@ -32,14 +32,23 @@
     {
       "locale": "zh-CN",
       "proposed_layout": "pinyin",
-      "engine": "pending-selection",
-      "dictionary": null,
+      "engine": "aosp-pinyin-pinned",
+      "dictionary": "pinyin.dat",
       "direction": "ltr",
-      "layout_status": "not-implemented",
-      "ime_status": "not-implemented",
-      "font_shaping_status": "not-validated-for-editable-text",
-      "native_text_status": "unicode-buffer-only",
-      "product_input_admitted": false
+      "layout_status": "optional-weighted-pinyin-software",
+      "ime_status": "optional-rendered-offline-software",
+      "font_shaping_status": "pinned-BMP-Han-inventory-fixed-cell; no-general-shaping-or-BiDi",
+      "native_text_status": "optional-BMP-Han-field-software",
+      "product_input_admitted": false,
+      "capability": "ui.ime.pinyin",
+      "engine_lock": "toolchains/pinyin.lock.json",
+      "evidence": [
+        "tests/ime/test_keyboard_view.c",
+        "scripts/input_acceptance.py"
+      ],
+      "physical_600": "pending",
+      "physical_800": "pending",
+      "restrictions": "Opt-in packages only; 32 ASCII pinyin letters, bounded full/partial candidates; no history/learning, no password/PIN composition, no arbitrary Unicode or hardware keyboard"
     },
     {
       "locale": "de-DE",
@@ -159,10 +168,11 @@
     "composition_admitted": false
   },
   "remaining": [
+    "R5-per-locale-evidence-and-release-policy",
     "regional-keyboard-layouts",
-    "candidate-list-and-bounded-provider-queue",
-    "real-offline-language-engines",
-    "shaping-BiDi-caret-layout",
+    "other-offline-language-engines",
+    "general-shaping-BiDi-caret-layout",
     "dual-board-acceptance"
-  ]
+  ],
+  "optional_input_contract": "contracts/offline-input.json"
 }

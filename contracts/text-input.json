@@ -61,5 +61,7 @@
     "input_locale": "en-US",
     "snapshot_policy": "deny-while-editor-open-and-until-safe-frame",
     "physical_verified": false
-  }
+  },
+  "admission_scope": "default-legacy-ascii-path",
+  "optional_input_contract": "contracts/offline-input.json"
 }

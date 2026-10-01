@@ -250,3 +250,12 @@ test-package-runtime-arm:
 	python3 scripts/framework_guard.py test-packages --mode arm
 test-package-runtime-sanitize:
 	python3 scripts/framework_guard.py test-packages --mode native --sanitize
+
+# Real offline keyboard/candidate view and package execution, also in Framework gates.
+.PHONY: test-input-view test-input-view-arm test-input-view-sanitize
+test-input-view:
+	python3 scripts/framework_guard.py test-input --mode native
+test-input-view-arm:
+	python3 scripts/framework_guard.py test-input --mode arm
+test-input-view-sanitize:
+	ASAN_OPTIONS=detect_leaks=1 python3 scripts/framework_guard.py test-input --mode native --sanitize

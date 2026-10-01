@@ -17,9 +17,11 @@ MAX_BYTES = 16 * 1024 * 1024
 MAX_HEAP = 8 * 1024 * 1024
 SOURCE_LIMIT = 256 * 1024
 TARGETS = {'imx6ul-1024x600': 1, 'imx6ul-1024x800': 2}
-CAPABILITIES = {'ui.core': 1, 'ui.keyboard.ascii': 2, 'ui.images': 4}
+CAPABILITIES = {'ui.core': 1, 'ui.keyboard.ascii': 2, 'ui.images': 4, 'ui.ime.pinyin': 8}
 FILES = {'application.js', 'catalog.json', 'labels.atlas', 'builtin.rgba',
-         'alternate.rgba', 'Noto-LICENSE.txt', 'IMAGE-LICENSE.txt'}
+         'alternate.rgba', 'Noto-LICENSE.txt', 'IMAGE-LICENSE.txt',
+         'input.atlas', 'pinyin.dat', 'PINYIN-NOTICE.txt'}
+IME_FILES = {'input.atlas', 'pinyin.dat', 'PINYIN-NOTICE.txt'}
 REQUIRED = {'application.js', 'catalog.json', 'labels.atlas', 'builtin.rgba'}
 ROOT_KEYS = {'format_version', 'runtime_api', 'sdk_api', 'targets', 'capabilities',
              'app_id', 'app_version', 'budgets', 'authentication'}
@@ -94,6 +96,12 @@ def build(manifest: dict, assets: Path) -> bytes:
     require(not assets.is_symlink() and assets.is_dir(), 'PUI_ASSET_ROOT')
     names = {p.name for p in assets.iterdir()}
     require(REQUIRED <= names <= FILES and len(names) <= 16, 'PUI_FILE_TABLE')
+    caps = mask(m['capabilities'], CAPABILITIES, 'PUI_CAPABILITY')
+    require(not (caps & 8) or caps & 2, 'PUI_CAPABILITY')
+    if caps & 8:
+        require(IME_FILES <= names, 'PUI_REQUIRED_FILE')
+    else:
+        require(not (IME_FILES & names), 'PUI_CAPABILITY')
     table = bytearray()
     payload = bytearray()
     for name in sorted(names):
@@ -127,7 +135,7 @@ def fixed_text(data: bytes, pattern: str) -> str:
     return text
 
 def verify(data: bytes, target: str, *, allow_unsigned: bool = False,
-           runtime_api: int = 1, sdk_api: int = 1, capabilities: int = 7,
+           runtime_api: int = 1, sdk_api: int = 1, capabilities: int = 15,
            max_heap_bytes: int = MAX_HEAP, max_asset_bytes: int = MAX_BYTES) -> dict:
     require(target in TARGETS, 'PUI_ARGUMENT')
     require(len(data) >= HEADER, 'PUI_TRUNCATED')
@@ -137,7 +145,7 @@ def verify(data: bytes, target: str, *, allow_unsigned: bool = False,
     require(data[:8] == MAGIC and header == HEADER and auth == 0, 'PUI_FORMAT')
     require(fmt == 1 and 0 < rmin <= runtime_api <= rmax and sdk == sdk_api, 'PUI_VERSION')
     require(targets and not targets & ~3 and targets & TARGETS[target], 'PUI_TARGET')
-    require(caps & 1 and not caps & ~7 and not caps & ~capabilities, 'PUI_CAPABILITY')
+    require(caps & 1 and not caps & ~15 and not caps & ~capabilities, 'PUI_CAPABILITY')
     require(1024*1024 <= heap <= min(MAX_HEAP, max_heap_bytes) and 0 < budget <= min(MAX_BYTES, max_asset_bytes)
             and size <= budget and source == SOURCE_LIMIT, 'PUI_BUDGET')
     require(allow_unsigned, 'PUI_UNSIGNED')
@@ -163,6 +171,12 @@ def verify(data: bytes, target: str, *, allow_unsigned: bool = False,
         cursor += length
     require(cursor == size, 'PUI_FILE_TABLE')
     require(REQUIRED <= {f['name'] for f in files}, 'PUI_REQUIRED_FILE')
+    names = {f['name'] for f in files}
+    require(not (caps & 8) or caps & 2, 'PUI_CAPABILITY')
+    if caps & 8:
+        require(IME_FILES <= names, 'PUI_REQUIRED_FILE')
+    else:
+        require(not (IME_FILES & names), 'PUI_CAPABILITY')
     return {'status': 'container-verified', 'format_version': fmt, 'runtime_api': runtime_api,
             'sdk_api': sdk, 'app_id': app_id, 'app_version': app_version, 'files': files,
             'heap_bytes': heap, 'asset_bytes': budget, 'capabilities': caps, 'target': target,

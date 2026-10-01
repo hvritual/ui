@@ -1,4 +1,6 @@
 #include "application.h"
+#include "../ime/pinyin.h"
+#include "../text-input/input_font.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +30,8 @@ typedef struct { uint64_t id; PocketComponentHandle root; int keyboard; } Overla
 struct Application {
     PocketProgram program;
     PocketApplicationPolicy policy;
+    const void *dictionary,*input_font;
+    size_t dictionary_bytes,input_font_bytes;
     PocketUiTree tree;
     PocketLayoutContext layout;
     PocketStyleRuntime styles;
@@ -38,7 +42,7 @@ struct Application {
     PocketReactiveRuntime reactive;
     PocketKeyboard keyboard;
     PocketKeyboardConfig keyboard_config;
-    char initial[POCKET_KEYBOARD_MAX_FIELDS][POCKET_KEYBOARD_MAX_CHARS + 1];
+    char initial[POCKET_KEYBOARD_MAX_FIELDS][POCKET_KEYBOARD_MAX_BYTES + 1];
     unsigned configured_fields, keyboard_staged;
     Binding bindings[BINDINGS];
     QueuedEvent queued[QUEUED_EVENTS];
@@ -46,6 +50,7 @@ struct Application {
     Collection lists[LISTS];
     Overlay layers[OVERLAYS];
     uint64_t next_list, next_binding, now;
+    uint64_t previous_ime_commits,previous_ime_batches;
     unsigned height, media_ready;
     uint32_t background;
     PocketApplicationStats stats;
@@ -221,11 +226,13 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
     if (!strcmp(op, "keyboard.field")) {
         if (n != 8 || !numbers(7, args, v) || args[7].kind != POCKET_PROGRAM_TEXT || !a->keyboard_staged ||
             !between(v[0], 0, (int64_t)a->keyboard_config.field_count-1) || !between(v[1], 1, UINT32_MAX) ||
-            !between(v[2], 1, 65535) || !between(v[3], 0, 3) || !between(v[4], 1, 64) ||
-            !between(v[5], 0, 1) || !between(v[6], 0, 1) || args[7].length > (size_t)v[4]) return 0;
+            !between(v[2], 1, 65535) || !between(v[3], 0, 4) || !between(v[4], 1, 64) ||
+            !between(v[5], 0, 1) || !between(v[6], 0, 1) || args[7].length > (size_t)v[4]*(v[3]==POCKET_KEYBOARD_TEXT?4U:1U)) return 0;
         unsigned i = (unsigned)v[0];
         if ((a->configured_fields & (1U << i)) || ((v[3] == POCKET_KEYBOARD_PASSWORD || v[3] == POCKET_KEYBOARD_PIN) && args[7].length)) return 0;
-        for (size_t j = 0; j < args[7].length; ++j) if ((unsigned char)args[7].text[j] < 32 || (unsigned char)args[7].text[j] > 126) return 0;
+        if(v[3]==POCKET_KEYBOARD_TEXT){
+            if(!(a->policy.capabilities&POCKET_APP_CAP_PINYIN)||!a->dictionary)return fail(a,"APPLICATION_CAPABILITY_PINYIN");
+        }else for(size_t j=0;j<args[7].length;++j)if((unsigned char)args[7].text[j]<32||(unsigned char)args[7].text[j]>126)return 0;
         memcpy(a->initial[i], args[7].text, args[7].length);
         a->initial[i][args[7].length] = 0;
         a->keyboard_config.fields[i] = (PocketKeyboardField){(uint64_t)v[1], (uint64_t)v[2], (PocketKeyboardMode)v[3], (uint32_t)v[4], (uint8_t)v[5], (uint8_t)v[6], a->initial[i]};
@@ -385,9 +392,16 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
             .muted_style=(uint64_t)v[4],.field_style=(uint64_t)v[5],.key_style=(uint64_t)v[6],.primary_style=(uint64_t)v[7]};
         a->configured_fields=0; a->keyboard_staged=1; return 1;
     }
+    if (!strcmp(op,"keyboard.languages")){
+        if(!(a->policy.capabilities&POCKET_APP_CAP_PINYIN)||!a->dictionary)return fail(a,"APPLICATION_CAPABILITY_PINYIN");
+        if(n!=2||!a->keyboard_staged||!between(v[0],1,3)||(v[1]!=1&&v[1]!=2)||!(v[0]&v[1]))return 0;
+        a->keyboard_config.dictionary=a->dictionary;a->keyboard_config.dictionary_bytes=a->dictionary_bytes;
+        a->keyboard_config.input_font=a->input_font;a->keyboard_config.input_font_bytes=a->input_font_bytes;
+        a->keyboard_config.input_locales=(unsigned)v[0];a->keyboard_config.initial_locale=(unsigned)v[1];return 1;
+    }
     if (!strcmp(op, "keyboard.show")) {
         if (n || !a->keyboard_staged || a->configured_fields != (1U<<a->keyboard_config.field_count)-1U || !pocket_keyboard_open(&a->keyboard,&a->keyboard_config)) return 0;
-        a->keyboard_staged=0; ++a->stats.editor_opens;
+        a->keyboard_staged=0;a->previous_ime_commits=a->previous_ime_batches=0; ++a->stats.editor_opens;
         return remember_layer(a,a->keyboard_config.overlay_id,1);
     }
     if (!strcmp(op, "keyboard.step")) {
@@ -395,6 +409,12 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
         if (!a->keyboard.impl) { reply->integer=-1; return 1; }
         PocketKeyboardSnapshot s;
         if (!pocket_keyboard_step(&a->keyboard,a->now) || !pocket_keyboard_snapshot(&a->keyboard,&s)) return 0;
+        PocketKeyboardInputSnapshot input;
+        if(!pocket_keyboard_input_snapshot(&a->keyboard,&input)||input.commits<a->previous_ime_commits||input.candidate_batches<a->previous_ime_batches)return 0;
+        uint64_t commits=input.commits-a->previous_ime_commits,batches=input.candidate_batches-a->previous_ime_batches;
+        if(commits>UINT64_MAX-a->stats.ime_commits||batches>UINT64_MAX-a->stats.ime_candidate_batches)return 0;
+        a->stats.ime_commits+=commits;a->stats.ime_candidate_batches+=batches;
+        a->previous_ime_commits=input.commits;a->previous_ime_batches=input.candidate_batches;
         reply->integer=s.result; return 1;
     }
     if (!strcmp(op, "keyboard.result")) {
@@ -424,17 +444,27 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
     return 0;
 }
 int pocket_application_open(PocketApplication *out, unsigned height, unsigned items, const char *source, size_t length) {
-    const PocketApplicationPolicy policy={POCKET_APP_MAX_HEAP,POCKET_APP_CAP_ALL};
+    const PocketApplicationPolicy policy={POCKET_APP_MAX_HEAP,POCKET_APP_CAP_LEGACY};
     return pocket_application_open_policy(out,height,items,source,length,&policy);
 }
 int pocket_application_open_policy(PocketApplication *out, unsigned height, unsigned items,
                                    const char *source, size_t length, const PocketApplicationPolicy *policy) {
+    return pocket_application_open_input(out,height,items,source,length,policy,NULL,0,NULL,0);
+}
+int pocket_application_open_input(PocketApplication *out,unsigned height,unsigned items,
+                                 const char *source,size_t length,const PocketApplicationPolicy *policy,
+                                 const void *dictionary,size_t dictionary_bytes,const void *font,size_t font_bytes){
+    if(policy&&((policy->capabilities&POCKET_APP_CAP_PINYIN)?(!dictionary||!dictionary_bytes||!font||!font_bytes):(dictionary||font)))return 0;
     if (!out || out->impl || (height!=600 && height!=800) || items>4096 || !source || !length ||
         !policy || policy->heap_bytes<1024u*1024u || policy->heap_bytes>POCKET_APP_MAX_HEAP ||
         !(policy->capabilities&POCKET_APP_CAP_CORE) || (policy->capabilities&~POCKET_APP_CAP_ALL)) return 0;
+    if((policy->capabilities&POCKET_APP_CAP_PINYIN)&&
+       (!(policy->capabilities&POCKET_APP_CAP_ASCII_KEYBOARD)||!pocket_pinyin_dictionary_valid(dictionary,dictionary_bytes)||
+        !pocket_input_font_valid(font,font_bytes)))return 0;
     Application *a=calloc(1,sizeof(*a));
     if (!a) return 0;
     out->impl=a; a->height=height; a->dirty=1; a->policy=*policy;
+    a->dictionary=dictionary;a->dictionary_bytes=dictionary_bytes;a->input_font=font;a->input_font_bytes=font_bytes;
     PocketUiTreeConfig tc={.initial_capacity=128,.update_queue_capacity=64,.update_budget=64};
     PocketLayoutConfig lc={.tree=&a->tree,.record_capacity=256};
     PocketStyleRuntimeConfig sc={.theme_capacity=2,.token_capacity=32,.rule_capacity=32};
@@ -450,7 +480,7 @@ int pocket_application_open_policy(PocketApplication *out, unsigned height, unsi
     a->phase=1;
     if (!pocket_program_open(&a->program,&config,source,length)) goto failed;
     char input[96], result[16]; size_t result_length=0;
-    snprintf(input,sizeof(input),"{\"width\":1024,\"height\":%u,\"items\":%u}",height,items);
+    snprintf(input,sizeof(input),"{\"width\":1024,\"height\":%u,\"items\":%u,\"inputLocales\":%u}",height,items,(policy->capabilities&POCKET_APP_CAP_PINYIN)?3U:0U);
     if (!invoke(a,"start",input,result,sizeof(result),&result_length) || result_length!=4 || memcmp(result,"true",4) || !a->interaction.impl || !sync_layout(a)) goto failed;
     a->phase=0; return 1;
 failed:
@@ -522,6 +552,10 @@ int pocket_application_stats(const PocketApplication *out, PocketApplicationStat
 int pocket_application_keyboard_snapshot(const PocketApplication *out, PocketKeyboardSnapshot *snapshot) {
     const Application *a=out?out->impl:NULL;
     return a && a->keyboard.impl && pocket_keyboard_snapshot(&a->keyboard,snapshot);
+}
+int pocket_application_keyboard_input_snapshot(const PocketApplication *out,PocketKeyboardInputSnapshot *snapshot) {
+    const Application *a=out?out->impl:NULL;
+    return a && a->keyboard.impl && pocket_keyboard_input_snapshot(&a->keyboard,snapshot);
 }
 int pocket_application_snapshot_allowed(const PocketApplication *out) {
     const Application *a=out?out->impl:NULL; return a && !a->error && !a->keyboard.impl;

@@ -1,11 +1,19 @@
 #include "keyboard.h"
+#include "layout.h"
+#include "input_font.h"
+#include "../ime/session.h"
+#include <utf8proc.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define VIEW_CELLS 36U
 #define PREVIEW_CELLS 8U
 #define KEY_CELLS 48U
-#define BINDINGS 72U
+#define BINDINGS 96U
+#define INPUT_KEYS 33U
+#define INPUT_PREVIEW 4U
+#define PREEDIT_CELLS 32U
+#define CANDIDATE_CELLS 5U
 #define CELL_WIDTH 24
 /* Same contact-owned, bounded-repeat principles as pinned keyboard-touch.ts.
  * F6 supplies hit testing, cancellation and long press; no second gesture tree. */
@@ -16,16 +24,20 @@ enum { LABEL_TITLE=200,LABEL_HELP,LABEL_CANCEL,LABEL_CONFIRM,LABEL_ENTRY,
        LABEL_RIGHT,LABEL_END,LABEL_ALL,LABEL_CLEAR,LABEL_SHIFT,LABEL_CAPS,
        LABEL_SYMBOLS,LABEL_LETTERS,LABEL_BACKSPACE,LABEL_SPACE,LABEL_NEXT,
        LABEL_HIDE,LABEL_SHOW,LABEL_LIMIT,LABEL_POLICY,LABEL_PAUSED };
+enum { LABEL_LANGUAGE=300,LABEL_ENGLISH,LABEL_PINYIN,LABEL_LOADING,LABEL_NO_CANDIDATES,
+       LABEL_INPUT_UNAVAILABLE,LABEL_PREVIOUS,LABEL_INPUT_NEXT,LABEL_CHOOSE_LANGUAGE,
+       LABEL_ENTER,LABEL_COMPOSITION,LABEL_INPUT_HELP,LABEL_SYMBOL_MODE,LABEL_DELETE };
 enum { CMD_INSERT=1,CMD_BACKSPACE,CMD_LEFT,CMD_RIGHT,CMD_HOME,CMD_END,
        CMD_ALL,CMD_CLEAR,CMD_SHIFT,CMD_CAPS,CMD_MODE,CMD_NEXT,CMD_HIDE,
-       CMD_CONFIRM,CMD_CANCEL,CMD_CARET,CMD_FIELD };
+       CMD_CONFIRM,CMD_CANCEL,CMD_CARET,CMD_FIELD,CMD_LANGUAGE,CMD_LOCALE,CMD_CHOOSE,
+       CMD_PAGE_PREV,CMD_PAGE_NEXT,CMD_ENTER,CMD_POPUP_DISMISS };
 typedef struct Impl Impl;
 typedef struct { Impl *owner; PocketComponentHandle component; unsigned command,value; } Binding;
 typedef struct {
     int active,released,cancelled,repeating;
     uint32_t id;unsigned binding;int x,y;
     PocketTextToken token;
-    uint64_t next_repeat;
+    uint64_t next_repeat,layout_generation,request;
 } Press;
 struct Impl {
     PocketKeyboardConfig config;
@@ -42,6 +54,14 @@ struct Impl {
     int pending;unsigned pending_command,pending_value;
     PocketTextToken pending_token;
     uint64_t now;
+    PocketImeSession ime;
+    PocketKeyLayoutState input_layout;
+    PocketImeSnapshot ime_seen;
+    PocketComponentHandle preedit[PREEDIT_CELLS],candidate_group,candidates[5],candidate_glyphs[5][CANDIDATE_CELLS];
+    PocketComponentHandle candidate_previous,candidate_next,candidate_help,language_popup;
+    unsigned input_locale,needs_input_sync;
+    uint64_t pending_request,ime_commits,candidate_batches,last_candidate_request;
+
 };
 static int same_ui(PocketUiHandle a,PocketUiHandle b){return a.slot==b.slot&&a.generation==b.generation;}
 static int same_component(PocketComponentHandle a,PocketComponentHandle b){
@@ -89,12 +109,13 @@ static int focused(Impl *i,PocketTextSnapshot *out){
 }
 static void lose_focus(Impl *i){
     if(i->focused)(void)pocket_text_blur(&i->sessions[i->active]);
-    i->focused=0;i->pending=0;memset(&i->press,0,sizeof(i->press));i->dirty=1;
+    i->focused=0;i->pending=0;i->needs_input_sync=1;memset(&i->press,0,sizeof(i->press));i->dirty=1;
 }
 static void queue(Impl *i,unsigned command,unsigned value,PocketTextToken token){
     /* At most one semantic command from a snapshot; never replay late actions. */
     if(i->pending)return;
     i->pending=1;i->pending_command=command;i->pending_value=value;i->pending_token=token;
+    i->pending_request=i->press.request;
 }
 static PocketUiEventAction event(void *context,PocketUiEvent *e){
     Binding *b=context;Impl *i=b->owner;
@@ -117,7 +138,7 @@ static PocketUiEventAction event(void *context,PocketUiEvent *e){
         return POCKET_UI_EVENT_CONTINUE;
     }
     if(e->type==POCKET_UI_EVENT_POINTER_CANCEL||e->type==POCKET_UI_EVENT_GESTURE_CANCEL){
-        if(i->press.active&&i->press.id==e->pointer_id)memset(&i->press,0,sizeof(i->press));
+        if(i->press.active&&i->press.id==e->pointer_id){memset(&i->press,0,sizeof(i->press));i->dirty=1;}
         return POCKET_UI_EVENT_CONTINUE;
     }
     PocketTextSnapshot s;
@@ -125,17 +146,21 @@ static PocketUiEventAction event(void *context,PocketUiEvent *e){
     if(e->type==POCKET_UI_EVENT_POINTER_DOWN){
         if(i->press.active)return POCKET_UI_EVENT_CONTINUE;
         i->press=(Press){.active=1,.id=e->pointer_id,.binding=(unsigned)(b-i->bindings),
-                        .x=e->x,.y=e->y,.token=s.token};
+                        .x=e->x,.y=e->y,.token=s.token,.layout_generation=i->input_layout.generation};
+        if(b->command==CMD_CHOOSE){PocketImeSnapshot snapshot;
+            if(pocket_ime_snapshot(&i->ime,&snapshot))i->press.request=snapshot.request;
+            i->dirty=1;
+        }
     }else if(i->press.active&&i->press.id==e->pointer_id&&i->press.binding==(unsigned)(b-i->bindings)){
         Press *p=&i->press;
         if(e->type==POCKET_UI_EVENT_POINTER_MOVE){
             int64_t dx=(int64_t)e->x-p->x,dy=(int64_t)e->y-p->y;
-            if(dx>12||dx< -12||dy>12||dy< -12){p->cancelled=1;p->repeating=0;}
+            if(dx>12||dx< -12||dy>12||dy< -12){p->cancelled=1;p->repeating=0;i->dirty=1;}
         }else if(e->type==POCKET_UI_EVENT_POINTER_UP){p->released=1;p->repeating=0;}
         else if(e->type==POCKET_UI_EVENT_LONG_PRESS&&b->command==CMD_BACKSPACE&&!p->cancelled&&same_token(p->token,s.token)){
             p->repeating=1;p->next_repeat=e->timestamp_ms+REPEAT_MS;
             queue(i,CMD_BACKSPACE,0,p->token);
-        }else if(e->type==POCKET_UI_EVENT_TAP&&!p->cancelled&&same_token(p->token,s.token)){
+        }else if(e->type==POCKET_UI_EVENT_TAP&&!p->cancelled&&same_token(p->token,s.token)&&p->layout_generation==i->input_layout.generation){
             unsigned value=b->value;
             if(b->command==CMD_CARET){
                 int x=e->x-48;value=i->view_start+(unsigned)(x<0?0:(x+CELL_WIDTH/2)/CELL_WIDTH);
@@ -163,7 +188,148 @@ static int digit_mode(const Impl *i){
     PocketKeyboardMode m=i->config.fields[i->active].mode;
     return m==POCKET_KEYBOARD_NUMBER||m==POCKET_KEYBOARD_PIN;
 }
+
+static unsigned preview_cells(const Impl *i){return i->config.input_locales?INPUT_PREVIEW:PREVIEW_CELLS;}
+static unsigned key_cells(const Impl *i){return i->config.input_locales?INPUT_KEYS:KEY_CELLS;}
+static int input_chars(Impl *i,const char *str,size_t bytes,uint32_t *codes,unsigned cap,unsigned *count){
+    size_t at=0;unsigned n=0;
+    while(at<bytes){
+        utf8proc_int32_t cp;utf8proc_ssize_t used=utf8proc_iterate((const utf8proc_uint8_t *)str+at,(utf8proc_ssize_t)(bytes-at),&cp);
+        if(used<=0||n==cap||cp<32||cp==127||!pocket_input_font_has(i->config.input_font,i->config.input_font_bytes,(uint32_t)cp))return 0;
+        /* This input view admits ASCII and standalone BMP Han, not arbitrary
+         * grapheme clusters, accents, RTL or a shaping engine. */
+        if(cp>126&&cp!=0x3007&&(cp<0x3400||cp>0x9fff))return 0;
+        codes[n++]=(uint32_t)cp;at+=(size_t)used;
+    }
+    *count=n;return 1;
+}
+static int glyph_line(Impl *i,PocketComponentHandle *nodes,unsigned cells,const char *str,size_t bytes,unsigned start,int ellipsis){
+    uint32_t codes[128];unsigned count=0;
+    if(!input_chars(i,str,bytes,codes,128,&count))return 0;
+    for(unsigned n=0;n<cells;n++){
+        unsigned at=start+n;int show=at<count;uint32_t cp=show?codes[at]:0;
+        if(ellipsis&&n==cells-1&&count>start+cells)cp='.';
+        uint64_t ref=cp>126?POCKET_INPUT_GLYPH_BASE+cp:POCKET_KEYBOARD_ASCII_BASE+cp;
+        if(!visible(i,nodes[n],show)||(show&&!text(i,nodes[n],ref))){wipe(codes,sizeof(codes));return 0;}
+    }
+    wipe(codes,sizeof(codes));return 1;
+}
+static int sync_input(Impl *i){
+    if(!i->config.input_locales||!i->needs_input_sync)return 1;
+    /* Focus callbacks only flag this transition. Process cleanup/fork never
+     * runs inside borrowed F6 dispatch. */
+    pocket_ime_close(&i->ime);memset(&i->ime_seen,0,sizeof(i->ime_seen));i->last_candidate_request=0;
+    PocketTextSnapshot t;
+    if(!focused(i,&t)){i->needs_input_sync=0;return 1;}
+    uint64_t generation=i->input_layout.generation;
+    int full=i->config.fields[i->active].mode==POCKET_KEYBOARD_TEXT&&!t.read_only;
+    unsigned active=full?i->config.input_locales:POCKET_KEY_LAYOUT_EN;
+    unsigned locale=full?i->input_locale:POCKET_KEY_LAYOUT_EN;
+    if(!(locale&active))locale=POCKET_KEY_LAYOUT_EN;
+    if(generation==UINT64_MAX||!pocket_key_layout_init(&i->input_layout,3,active,locale,!full))return 0;
+    i->input_layout.generation=generation+1;i->shift=i->caps=0;
+    if(digit_mode(i)&&!pocket_key_layout_mode(&i->input_layout,POCKET_LAYOUT_DIGITS))return 0;
+    if(full){
+        if(!pocket_ime_open(&i->ime,&i->sessions[i->active],i->config.dictionary,i->config.dictionary_bytes))return 0;
+        if(locale==POCKET_KEY_LAYOUT_ZH){
+            i->edit_status=pocket_ime_locale(&i->ime,t.token,POCKET_INPUT_ZH_CN,i->now);
+            if(i->edit_status!=POCKET_TEXT_OK){
+                i->input_layout.locale=POCKET_KEY_LAYOUT_EN;
+                /* Explicit error remains visible. No silent successful locale admission. */
+            }
+        }
+    }
+    i->needs_input_sync=0;i->dirty=1;return 1;
+}
+static int paint_input(Impl *i){
+    PocketTextSnapshot t;PocketKeyLayout geometry;
+    char buffer[POCKET_KEYBOARD_MAX_BYTES+1];size_t bytes=0;
+    if(!sync_input(i)||pocket_text_snapshot(&i->sessions[i->active],&t)!=POCKET_TEXT_OK||
+       !pocket_key_layout_build(&i->input_layout,i->config.height,&geometry))return 0;
+    if(t.focus_grapheme<i->view_start)i->view_start=t.focus_grapheme;
+    if(t.focus_grapheme>=i->view_start+VIEW_CELLS)i->view_start=t.focus_grapheme-VIEW_CELLS+1;
+    if(pocket_text_copy_display(&i->sessions[i->active],buffer,sizeof(buffer),&bytes)!=POCKET_TEXT_OK||
+       !glyph_line(i,i->glyphs,VIEW_CELLS,buffer,bytes,i->view_start,0)){wipe(buffer,sizeof(buffer));return 0;}
+    wipe(buffer,sizeof(buffer));
+    unsigned lo=t.anchor_grapheme<t.focus_grapheme?t.anchor_grapheme:t.focus_grapheme;
+    unsigned hi=t.anchor_grapheme>t.focus_grapheme?t.anchor_grapheme:t.focus_grapheme;
+    if(lo<i->view_start)lo=i->view_start;
+    if(hi>i->view_start+VIEW_CELLS)hi=i->view_start+VIEW_CELLS;
+    if(!visible(i,i->selection,i->focused&&hi>lo)||!visible(i,i->caret,i->focused))return 0;
+    if(hi>lo&&!layout(i,i->selection,16+(int)(lo-i->view_start)*CELL_WIDTH,8,(int)(hi-lo)*CELL_WIDTH,36))return 0;
+    if(!layout(i,i->caret,16+(int)(t.focus_grapheme-i->view_start)*CELL_WIDTH,8,2,36))return 0;
+    for(unsigned f=0;f<i->config.field_count;f++){
+        if(pocket_text_copy_display(&i->sessions[f],buffer,sizeof(buffer),&bytes)!=POCKET_TEXT_OK||
+           !glyph_line(i,i->previews[f],INPUT_PREVIEW,buffer,bytes,0,1)){wipe(buffer,sizeof(buffer));return 0;}
+        wipe(buffer,sizeof(buffer));
+        if(pocket_component_set_style_ref(i->config.components,i->fields[f],f==i->active?i->config.key_style:i->config.field_style)!=POCKET_COMPONENT_OK)return 0;
+    }
+    PocketPinyinResult candidates={0};PocketImeSnapshot meta={0};
+    if(i->ime.impl){(void)pocket_ime_snapshot(&i->ime,&meta);(void)pocket_ime_candidates(&i->ime,&candidates);}
+    buffer[0]=0;bytes=0;
+    if(!t.sensitive&&pocket_text_copy_preedit(&i->sessions[i->active],buffer,sizeof(buffer),&bytes)!=POCKET_TEXT_OK)return 0;
+    /* Holding a candidate previews its complete text in the existing strip;
+     * release commits, movement/cancel restores composition. No new focus owner. */
+    if(i->press.active&&!i->press.cancelled&&!i->press.released&&i->press.binding<i->binding_count){
+        Binding *held=&i->bindings[i->press.binding];
+        if(held->command==CMD_CHOOSE&&i->press.request==candidates.request&&held->value<candidates.count){
+            bytes=strlen(candidates.candidates[held->value].text);memcpy(buffer,candidates.candidates[held->value].text,bytes+1);
+        }
+    }
+    uint32_t cps[128];unsigned count=0;
+    if(!input_chars(i,buffer,bytes,cps,128,&count)){wipe(buffer,sizeof(buffer));return 0;}
+    wipe(cps,sizeof(cps));
+    if(!glyph_line(i,i->preedit,PREEDIT_CELLS,buffer,bytes,count>PREEDIT_CELLS?count-PREEDIT_CELLS:0,0)){wipe(buffer,sizeof(buffer));return 0;}
+    wipe(buffer,sizeof(buffer));
+    for(unsigned n=0;n<5;n++){
+        int show=i->visible&&n<candidates.count;
+        if(!visible(i,i->candidates[n],show)){wipe(&candidates,sizeof(candidates));return 0;}
+        if(show&&!glyph_line(i,i->candidate_glyphs[n],CANDIDATE_CELLS,candidates.candidates[n].text,
+                            strlen(candidates.candidates[n].text),0,1)){wipe(&candidates,sizeof(candidates));return 0;}
+    }
+    wipe(&candidates,sizeof(candidates));
+    int has_ime=i->ime.impl!=NULL&&i->input_layout.locale==POCKET_KEY_LAYOUT_ZH;
+    if(!visible(i,i->candidate_group,i->visible&&has_ime)||
+       !disabled(i,i->candidate_previous,meta.pending||!meta.page)||
+       !disabled(i,i->candidate_next,meta.pending||!meta.total||(meta.page+1)*5>=meta.total))return 0;
+    int unavailable=meta.provider_status!=POCKET_PINYIN_OK&&meta.provider_status!=POCKET_PINYIN_PENDING;
+    if(!visible(i,i->candidate_help,!meta.candidate_count)||!text(i,i->candidate_help,unavailable?LABEL_INPUT_UNAVAILABLE:meta.pending?LABEL_LOADING:LABEL_NO_CANDIDATES))return 0;
+    if(!visible(i,i->key_group,i->visible)||!visible(i,i->language_popup,i->input_layout.popup)||
+       !text(i,i->hide_key,i->visible?LABEL_HIDE:LABEL_SHOW))return 0;
+    for(unsigned n=0;n<INPUT_KEYS;n++){
+        int show=n<geometry.count;
+        if(!visible(i,i->keys[n],show))return 0;
+        if(!show)continue;
+        const PocketKeyGeometry *g=&geometry.keys[n];unsigned cmd=0,value=0;uint64_t label=0;
+        switch(g->role){
+        case POCKET_KEY_CHAR:cmd=CMD_INSERT;value=g->codepoint;label=POCKET_KEYBOARD_ASCII_BASE+value;break;
+        case POCKET_KEY_SHIFT:cmd=CMD_SHIFT;label=LABEL_SHIFT;break;
+        case POCKET_KEY_BACKSPACE:cmd=CMD_BACKSPACE;label=LABEL_DELETE;break;
+        case POCKET_KEY_MODE:cmd=CMD_MODE;label=i->input_layout.mode==POCKET_LAYOUT_LETTERS?LABEL_SYMBOLS:LABEL_LETTERS;break;
+        case POCKET_KEY_LANGUAGE:cmd=CMD_LANGUAGE;label=LABEL_LANGUAGE;break;
+        case POCKET_KEY_SPACE:cmd=CMD_INSERT;value=32;label=i->input_layout.locale==POCKET_KEY_LAYOUT_ZH?LABEL_PINYIN:LABEL_ENGLISH;break;
+        case POCKET_KEY_ENTER:cmd=CMD_ENTER;label=LABEL_ENTER;break;
+        case POCKET_KEY_HIDE:cmd=CMD_HIDE;label=LABEL_HIDE;break;
+        }
+        for(unsigned b=0;b<i->binding_count;b++)if(same_component(i->bindings[b].component,i->keys[n])){
+            i->bindings[b].command=cmd;i->bindings[b].value=value;
+        }
+        if(!layout(i,i->keys[n],g->bounds.x,g->bounds.y-((int)i->config.height-256),g->bounds.width,g->bounds.height)||
+           !text(i,i->keys[n],label)||!disabled(i,i->keys[n],(cmd==CMD_MODE&&digit_mode(i))||
+              (cmd==CMD_SHIFT&&i->input_layout.mode!=POCKET_LAYOUT_LETTERS)||
+              (cmd==CMD_LANGUAGE&&(!i->ime.impl||i->config.input_locales!=3))))return 0;
+        if(pocket_interaction_set_gestures(i->config.interaction,root_of(i,i->keys[n]),
+           POCKET_GESTURE_TAP|(cmd==CMD_BACKSPACE?POCKET_GESTURE_LONG_PRESS:0))!=POCKET_INTERACTION_OK)return 0;
+    }
+    uint64_t help=unavailable?LABEL_INPUT_UNAVAILABLE:!i->focused?LABEL_PAUSED:i->edit_status==POCKET_TEXT_LIMIT?LABEL_LIMIT:
+                  i->edit_status==POCKET_TEXT_POLICY?LABEL_POLICY:LABEL_INPUT_HELP;
+    if(!text(i,i->help,help)||!disabled(i,i->shift_key,digit_mode(i))||!disabled(i,i->caps_key,digit_mode(i)))return 0;
+    if(pocket_layout_run(i->config.layout,root_of(i,i->root),1024,i->config.height)!=POCKET_UI_OK)return 0;
+    i->dirty=0;return 1;
+}
+
 static int paint(Impl *i){
+    if(i->config.input_locales)return paint_input(i);
     PocketTextSnapshot s;char display[POCKET_KEYBOARD_MAX_CHARS+1];size_t length;
     if(pocket_text_snapshot(&i->sessions[i->active],&s)!=POCKET_TEXT_OK)return 0;
     if(s.focus_grapheme<i->view_start)i->view_start=s.focus_grapheme;
@@ -236,8 +402,80 @@ static int close_overlay(Impl *i,PocketKeyboardResult result){
     }
     i->root=(PocketComponentHandle){0};i->presented=0;return 1;
 }
+
+static int execute_input(Impl *i,unsigned cmd,unsigned value,PocketTextToken token){
+    if(!i->config.input_locales)return -1;
+    PocketTextSnapshot t;if(!focused(i,&t))return 1;
+    if(cmd==CMD_LANGUAGE||cmd==CMD_POPUP_DISMISS||cmd==CMD_LOCALE){
+        pocket_interaction_cancel_all(i->config.interaction,i->now);memset(&i->press,0,sizeof(i->press));
+        if(cmd==CMD_POPUP_DISMISS){i->input_layout.popup=0;if(i->input_layout.generation==UINT64_MAX)return 0;i->input_layout.generation++;return 1;}
+        if(!i->ime.impl)return 1;
+        if(cmd==CMD_LANGUAGE){return pocket_key_layout_languages(&i->input_layout,1);}
+        if(!i->input_layout.popup)return 1;
+        i->edit_status=pocket_ime_locale(&i->ime,token,value==2?POCKET_INPUT_ZH_CN:POCKET_INPUT_EN_US,i->now);
+        if(i->edit_status==POCKET_TEXT_OK){
+            if(!pocket_key_layout_choose(&i->input_layout,value))return 0;
+            i->input_locale=value;
+        }
+        return 1;
+    }
+    if(cmd==CMD_SHIFT||cmd==CMD_CAPS||cmd==CMD_MODE||cmd==CMD_HIDE){
+        pocket_interaction_cancel_all(i->config.interaction,i->now);memset(&i->press,0,sizeof(i->press));
+        if(i->ime.impl&&t.composing)i->edit_status=pocket_ime_cancel(&i->ime,token);
+        if(cmd==CMD_MODE){
+            if(digit_mode(i))return 1;
+            return pocket_key_layout_mode(&i->input_layout,i->input_layout.mode==POCKET_LAYOUT_LETTERS?POCKET_LAYOUT_SYMBOLS:POCKET_LAYOUT_LETTERS);
+        }
+        if(cmd==CMD_HIDE){i->visible=!i->visible;i->input_layout.popup=0;if(i->input_layout.generation==UINT64_MAX)return 0;i->input_layout.generation++;return 1;}
+        if(digit_mode(i)||i->input_layout.mode!=POCKET_LAYOUT_LETTERS)return 1;
+        if(cmd==CMD_SHIFT)i->shift=!i->shift;else i->caps=!i->caps;
+        return pocket_key_layout_shift(&i->input_layout,i->shift!=i->caps);
+    }
+    if(i->ime.impl){
+        if(cmd==CMD_CHOOSE){
+            i->edit_status=pocket_ime_choose(&i->ime,token,i->pending_request,value,i->now);
+            PocketTextSnapshot after;if(pocket_text_snapshot(&i->sessions[i->active],&after)!=POCKET_TEXT_OK)return 0;
+            if(i->edit_status==POCKET_TEXT_OK&&t.composing&&!after.composing){if(i->ime_commits==UINT64_MAX)return 0;i->ime_commits++;}
+            return 1;
+        }
+        if(cmd==CMD_PAGE_PREV||cmd==CMD_PAGE_NEXT){
+            PocketImeSnapshot m;if(!pocket_ime_snapshot(&i->ime,&m))return 0;
+            if(cmd==CMD_PAGE_PREV&&!m.page)return 1;
+            i->edit_status=pocket_ime_page(&i->ime,token,cmd==CMD_PAGE_PREV?m.page-1:m.page+1,i->now);return 1;
+        }
+        if(cmd==CMD_ENTER||(cmd==CMD_CONFIRM&&t.composing)||(cmd==CMD_INSERT&&value==32&&t.composing)){
+            PocketTextEffect effect;i->edit_status=pocket_ime_enter(&i->ime,token,i->now,&effect);
+            if(i->edit_status==POCKET_TEXT_OK&&effect==POCKET_TEXT_EFFECT_COMMITTED){if(i->ime_commits==UINT64_MAX)return 0;i->ime_commits++;}
+            if(i->edit_status==POCKET_TEXT_OK&&effect==POCKET_TEXT_EFFECT_SUBMIT)return close_overlay(i,POCKET_KEYBOARD_CONFIRMED);
+            return 1;
+        }
+        if(cmd==CMD_BACKSPACE){
+            i->edit_status=pocket_ime_backspace(&i->ime,token,i->now);
+            if(i->press.repeating&&pocket_text_snapshot(&i->sessions[i->active],&t)==POCKET_TEXT_OK)i->press.token=t.token;
+            return 1;
+        }
+        if(cmd==CMD_INSERT&&i->input_layout.mode==POCKET_LAYOUT_LETTERS){
+            if(i->input_layout.locale==POCKET_KEY_LAYOUT_ZH){if(value>='A'&&value<='Z')value+=32;}
+            i->edit_status=pocket_ime_key(&i->ime,token,(char)value,i->now);
+            i->shift=0;(void)pocket_key_layout_shift(&i->input_layout,i->caps);return 1;
+        }
+        if(t.composing&&cmd!=CMD_CANCEL&&cmd!=CMD_CONFIRM){
+            i->edit_status=pocket_ime_cancel(&i->ime,token);
+            if(i->edit_status!=POCKET_TEXT_OK)return 1;
+        }
+    }
+    if(cmd==CMD_ENTER)return close_overlay(i,POCKET_KEYBOARD_CONFIRMED);
+    return -1;
+}
+
 static int execute(Impl *i,unsigned cmd,unsigned value,PocketTextToken token){
     PocketTextSnapshot s;if(!focused(i,&s)||!same_token(s.token,token))return 1;
+    i->edit_status=POCKET_TEXT_OK;i->dirty=1;
+    int input_result=execute_input(i,cmd,value,token);
+    if(input_result>=0)return input_result;
+    /* Composition cancellation may advance the token before an editor action. */
+    if(!focused(i,&s))return 1;
+    token=s.token;
     if(cmd==CMD_CONFIRM)return close_overlay(i,POCKET_KEYBOARD_CONFIRMED);
     if(cmd==CMD_CANCEL)return close_overlay(i,POCKET_KEYBOARD_CANCELLED);
     i->edit_status=POCKET_TEXT_OK;i->dirty=1;
@@ -284,17 +522,28 @@ int pocket_keyboard_open(PocketKeyboard *out,const PocketKeyboardConfig *config)
        !config->overlays||!config->overlay_id||!config->field_count||config->field_count>4||
        (config->height!=600&&config->height!=800))return 0;
     Impl *i=calloc(1,sizeof(*i));if(!i)return 0;out->impl=i;i->config=*config;i->visible=1;i->dirty=1;
+    if(config->input_locales){
+        if((config->input_locales&~3U)||!(config->input_locales&1U)||
+           (config->initial_locale!=1&&config->initial_locale!=2)||!(config->initial_locale&config->input_locales)||
+           !config->dictionary||!config->dictionary_bytes||!pocket_input_font_valid(config->input_font,config->input_font_bytes))goto fail;
+        i->input_locale=config->initial_locale;i->needs_input_sync=1;
+    }
     unsigned enabled=0;
     for(unsigned f=0;f<config->field_count;f++){
         const PocketKeyboardField *field=&config->fields[f];
-        if(!field->field_id||field->mode<POCKET_KEYBOARD_ASCII||field->mode>POCKET_KEYBOARD_PIN||!field->max_chars||field->max_chars>64||field->enabled>1||field->read_only>1)goto fail;
+        if(!field->field_id||field->mode<POCKET_KEYBOARD_ASCII||field->mode>POCKET_KEYBOARD_TEXT||!field->max_chars||field->max_chars>64||field->enabled>1||field->read_only>1)goto fail;
         for(unsigned prev=0;prev<f;prev++)if(config->fields[prev].field_id==field->field_id)goto fail;
         const char *initial=field->initial?field->initial:"";size_t n=0;
-        for(;n<=64&&initial[n];n++)if((unsigned char)initial[n]<32||(unsigned char)initial[n]>126||
-            ((field->mode==POCKET_KEYBOARD_NUMBER||field->mode==POCKET_KEYBOARD_PIN)&&(initial[n]<'0'||initial[n]>'9')))goto fail;
-        if(n>64)goto fail;
-        PocketTextConfig policy=pocket_text_config_default();policy.mode=POCKET_TEXT_ASCII;
-        policy.max_bytes=policy.max_graphemes=field->max_chars;policy.enabled=field->enabled;policy.read_only=field->read_only;
+        int unicode=field->mode==POCKET_KEYBOARD_TEXT;
+        if(unicode&&!config->input_locales)goto fail;
+        size_t limit=unicode?POCKET_KEYBOARD_MAX_BYTES:64;
+        while(n<=limit&&initial[n])n++;
+        if(n>limit)goto fail;
+        if(unicode){uint32_t codes[64];unsigned count;if(!input_chars(i,initial,n,codes,64,&count))goto fail;wipe(codes,sizeof(codes));}
+        else for(size_t j=0;j<n;j++)if((unsigned char)initial[j]<32||(unsigned char)initial[j]>126||
+            ((field->mode==POCKET_KEYBOARD_NUMBER||field->mode==POCKET_KEYBOARD_PIN)&&(initial[j]<'0'||initial[j]>'9')))goto fail;
+        PocketTextConfig policy=pocket_text_config_default();policy.mode=unicode?POCKET_TEXT_PLAIN:POCKET_TEXT_ASCII;
+        policy.max_bytes=field->max_chars*(unicode?4U:1U);policy.max_graphemes=field->max_chars;policy.enabled=field->enabled;policy.read_only=field->read_only;
         policy.sensitive=field->mode==POCKET_KEYBOARD_PASSWORD||field->mode==POCKET_KEYBOARD_PIN;
         if(pocket_text_init(&i->sessions[f],field->field_id,&policy,initial,n)!=POCKET_TEXT_OK)goto fail;
         i->config.fields[f].initial=NULL;enabled+=field->enabled;
@@ -307,30 +556,49 @@ int pocket_keyboard_open(PocketKeyboard *out,const PocketKeyboardConfig *config)
     button(i,i->root,832,16,160,48,LABEL_CONFIRM,CMD_CONFIRM,0);
     int width=(960-16*(int)(config->field_count-1))/(int)config->field_count;
     for(unsigned f=0;f<config->field_count;f++){
-        i->fields[f]=make(i,POCKET_COMPONENT_TEXT_FIELD,i->root,32+(int)f*(width+16),104,width,84,config->field_style,0);
+        i->fields[f]=make(i,POCKET_COMPONENT_TEXT_FIELD,i->root,32+(int)f*(width+16),config->input_locales?92:104,width,config->input_locales?52:84,config->field_style,0);
         if(!bind(i,i->fields[f],CMD_FIELD,f)||!disabled(i,i->fields[f],!config->fields[f].enabled))goto fail;
-        make(i,POCKET_COMPONENT_TEXT,i->fields[f],12,4,width-24,36,config->muted_style,config->fields[f].label_ref);
-        for(unsigned n=0;n<PREVIEW_CELLS;n++)i->previews[f][n]=make(i,POCKET_COMPONENT_TEXT,i->fields[f],12+(int)n*CELL_WIDTH,40,CELL_WIDTH,36,config->text_style,0);
+        make(i,POCKET_COMPONENT_TEXT,i->fields[f],12,config->input_locales?0:4,width-24,config->input_locales?24:36,config->muted_style,config->fields[f].label_ref);
+        for(unsigned n=0;n<preview_cells(i);n++)i->previews[f][n]=make(i,POCKET_COMPONENT_TEXT,i->fields[f],12+(int)n*CELL_WIDTH,config->input_locales?24:40,CELL_WIDTH,36,config->text_style,0);
     }
-    i->band=button(i,i->root,32,208,960,56,0,CMD_CARET,0);
+    i->band=button(i,i->root,32,config->input_locales?152:208,960,config->input_locales?52:56,0,CMD_CARET,0);
     if(pocket_component_set_style_ref(config->components,i->band,config->field_style)!=POCKET_COMPONENT_OK)goto fail;
     i->selection=make(i,POCKET_COMPONENT_VIEW,i->band,16,8,1,36,config->key_style,0);
     for(unsigned n=0;n<VIEW_CELLS;n++)i->glyphs[n]=make(i,POCKET_COMPONENT_TEXT,i->band,16+(int)n*CELL_WIDTH,8,CELL_WIDTH,36,config->text_style,0);
     i->caret=make(i,POCKET_COMPONENT_VIEW,i->band,16,8,2,36,config->primary_style,0);
     const unsigned commands[]={CMD_HOME,CMD_LEFT,CMD_RIGHT,CMD_END,CMD_ALL,CMD_CLEAR,CMD_SHIFT,CMD_CAPS};
     for(unsigned n=0;n<8;n++){
-        PocketComponentHandle c=button(i,i->root,32+(int)n*120,276,112,48,LABEL_HOME+n,commands[n],0);
+        PocketComponentHandle c=button(i,i->root,32+(int)n*120,config->input_locales?208:276,112,config->input_locales?36:48,LABEL_HOME+n,commands[n],0);
         if(n==6)i->shift_key=c;
         if(n==7)i->caps_key=c;
     }
     i->key_group=make(i,POCKET_COMPONENT_VIEW,i->root,0,(int)config->height-256,1024,240,config->page_style,0);
-    for(unsigned n=0;n<KEY_CELLS;n++)i->keys[n]=button(i,i->key_group,32+(int)(n%12)*62,(int)(n/12)*60,54,52,0,CMD_INSERT,0);
+    for(unsigned n=0;n<key_cells(i);n++)i->keys[n]=button(i,i->key_group,32+(int)(n%12)*62,(int)(n/12)*60,54,52,0,CMD_INSERT,0);
+    if(!config->input_locales){
     i->mode_key=button(i,i->key_group,816,0,176,52,LABEL_SYMBOLS,CMD_MODE,0);
     button(i,i->key_group,816,60,176,52,LABEL_BACKSPACE,CMD_BACKSPACE,0);
     i->space_key=button(i,i->key_group,816,120,176,52,LABEL_SPACE,CMD_INSERT,32);
     button(i,i->key_group,816,180,176,52,LABEL_NEXT,CMD_NEXT,0);
+    }
     /* Kept outside the hidden key group so the keyboard can always reopen. */
     i->hide_key=button(i,i->root,496,16,160,48,LABEL_HIDE,CMD_HIDE,0);
+    if(config->input_locales){
+        for(unsigned n=0;n<PREEDIT_CELLS;n++)i->preedit[n]=make(i,POCKET_COMPONENT_TEXT,i->root,32+(int)n*CELL_WIDTH,(int)config->height-352,CELL_WIDTH,32,config->text_style,0);
+        i->candidate_group=make(i,POCKET_COMPONENT_VIEW,i->root,0,(int)config->height-316,1024,48,config->page_style,0);
+        i->candidate_previous=button(i,i->candidate_group,16,0,48,48,LABEL_LEFT,CMD_PAGE_PREV,0);
+        i->candidate_next=button(i,i->candidate_group,960,0,48,48,LABEL_RIGHT,CMD_PAGE_NEXT,0);
+        i->candidate_help=make(i,POCKET_COMPONENT_TEXT,i->candidate_group,80,6,864,36,config->muted_style,LABEL_NO_CANDIDATES);
+        for(unsigned n=0;n<5;n++){
+            i->candidates[n]=button(i,i->candidate_group,80+(int)n*176,0,168,48,0,CMD_CHOOSE,n);
+            for(unsigned j=0;j<CANDIDATE_CELLS;j++)i->candidate_glyphs[n][j]=make(i,POCKET_COMPONENT_TEXT,i->candidates[n],12+(int)j*CELL_WIDTH,6,CELL_WIDTH,36,config->text_style,0);
+        }
+        i->language_popup=make(i,POCKET_COMPONENT_BUTTON,i->root,0,0,1024,config->height,0,0);
+        if(!bind(i,i->language_popup,CMD_POPUP_DISMISS,0)||pocket_interaction_set_gestures(config->interaction,root_of(i,i->language_popup),POCKET_GESTURE_TAP)!=POCKET_INTERACTION_OK)goto fail;
+        PocketComponentHandle box=make(i,POCKET_COMPONENT_VIEW,i->language_popup,288,(int)config->height-256,448,172,config->field_style,0);
+        make(i,POCKET_COMPONENT_TEXT,box,16,8,416,36,config->text_style,LABEL_CHOOSE_LANGUAGE);
+        button(i,box,16,48,416,52,LABEL_ENGLISH,CMD_LOCALE,1);
+        button(i,box,16,108,416,52,LABEL_PINYIN,CMD_LOCALE,2);
+    }
     if(i->failed)goto fail;
     if(pocket_overlay_present(config->overlays,&(PocketOverlaySpec){.id=config->overlay_id,.owner_route=config->owner_route,
        .kind=POCKET_OVERLAY_KEYBOARD,.root=i->root,.focus_token=((uint64_t)i->root.generation<<32)|i->root.slot,
@@ -350,15 +618,29 @@ int pocket_keyboard_step(PocketKeyboard *out,uint64_t ms){
        !same_component(overlay.spec.root,i->root)||!pocket_ui_handle_valid(root_of(i,i->root)))return close_overlay(i,POCKET_KEYBOARD_CANCELLED);
     PocketTextSnapshot s;
     if(!focused(i,&s))lose_focus(i);
+    if(!sync_input(i))return 0;
     if(i->pending){
         unsigned cmd=i->pending_command,value=i->pending_value;PocketTextToken token=i->pending_token;i->pending=0;
         if(!execute(i,cmd,value,token))return 0;
     }
     if(i->result!=POCKET_KEYBOARD_EDITING)return 1;
-    if(i->press.released)memset(&i->press,0,sizeof(i->press));
+    if(i->press.released){memset(&i->press,0,sizeof(i->press));if(i->config.input_locales)i->dirty=1;}
     if(i->press.repeating&&ms>=i->press.next_repeat){
         if(!focused(i,&s)||!same_token(s.token,i->press.token))memset(&i->press,0,sizeof(i->press));
         else{if(!execute(i,CMD_BACKSPACE,0,i->press.token))return 0;i->press.next_repeat=ms+REPEAT_MS;}
+    }
+    if(!sync_input(i))return 0;
+    if(i->ime.impl){
+        (void)pocket_ime_step(&i->ime,ms);PocketImeSnapshot current;
+        if(!pocket_ime_snapshot(&i->ime,&current))return 0;
+        if(current.request!=i->ime_seen.request||current.candidate_count!=i->ime_seen.candidate_count||
+           current.page!=i->ime_seen.page||current.pending!=i->ime_seen.pending||current.composing!=i->ime_seen.composing||
+           current.provider_status!=i->ime_seen.provider_status)i->dirty=1;
+        if(!current.pending&&current.candidate_count&&current.request!=i->last_candidate_request){
+            if(i->candidate_batches==UINT64_MAX)return 0;
+            i->candidate_batches++;i->last_candidate_request=current.request;
+        }
+        i->ime_seen=current;
     }
     return !i->dirty||paint(i);
 }
@@ -379,6 +661,18 @@ PocketTextStatus pocket_keyboard_copy_result(const PocketKeyboard *out,uint32_t 
 void pocket_keyboard_dispose(PocketKeyboard *out){
     Impl *i=out?out->impl:NULL;if(!i)return;
     (void)close_overlay(i,POCKET_KEYBOARD_CANCELLED);
+    pocket_ime_close(&i->ime);
     for(unsigned f=0;f<POCKET_KEYBOARD_MAX_FIELDS;f++)pocket_text_dispose(&i->sessions[f]);
     wipe(i,sizeof(*i));free(i);out->impl=NULL;
+}
+
+int pocket_keyboard_input_snapshot(const PocketKeyboard *out,PocketKeyboardInputSnapshot *snapshot){
+    const Impl *i=out?out->impl:NULL;if(!i||!snapshot)return 0;
+    memset(snapshot,0,sizeof(*snapshot));
+    if(!i->config.input_locales)return 1;
+    PocketImeSnapshot m={0};if(i->ime.impl)(void)pocket_ime_snapshot(&i->ime,&m);
+    snapshot->locale=i->input_layout.locale;snapshot->candidates=m.candidate_count;snapshot->page=m.page;snapshot->total=m.total;
+    snapshot->request=m.request;snapshot->layout_generation=i->input_layout.generation;snapshot->composing=m.composing;
+    snapshot->commits=i->ime_commits;snapshot->candidate_batches=i->candidate_batches;
+    snapshot->pending=m.pending;snapshot->language_popup=i->input_layout.popup;snapshot->provider_status=m.provider_status;return 1;
 }

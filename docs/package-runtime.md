@@ -120,3 +120,11 @@ panel `.pui` files and `PACKAGES.md`. Reports retain `authenticated=false`,
 board manifest remains false for production, while `pui_development_loader=true` records
 this bounded software path. #56 remains open until the R3 review/acceptance is complete;
 #12/#49 are not auto-approved.
+
+## Optional offline input capability
+
+`ui.ime.pinyin` (bit 8) is an opt-in additive capability requiring ASCII keyboard
+capability and the full admitted dictionary/font/NOTICE member set. Legacy
+packages retain their original behavior and do not acquire IME permission merely
+because the Runtime links a decoder. See [input-keyboard.md](input-keyboard.md)
+for the exact rendered repertoire, resource budgets and separate acceptance.
