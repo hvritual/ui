@@ -155,5 +155,25 @@ class LanguageGuards(unittest.TestCase):
     def test_report_rejects_fabricated_physical_receipt(self):
         receipt=self.formatting_fixture();receipt['physical_hardware']=True
         with self.assertRaises(ValueError):a.build_report(self.p,self.m,self.o,receipt,{},'2'*40,'unit')
+    def test_image_paths_preserve_each_viewport(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);expected={}
+            for height in (600,800):
+                folder=root/('input-'+str(height));folder.mkdir()
+                path=folder/'candidate.ppm';path.write_bytes(b'P6 fixture '+str(height).encode())
+                expected[path.relative_to(root).as_posix()]=e.sha(path)
+            self.assertEqual(e.image_manifest(root),expected)
+            e.compare_images(root,expected)
+            (root/'input-800/candidate.ppm').write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError,'different'):e.compare_images(root,expected)
+    def test_missing_viewport_and_extra_pixels_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);(root/'input-600').mkdir();path=root/'input-600/candidate.ppm';path.write_bytes(b'fixture')
+            expected={'input-600/candidate.ppm':e.sha(path),'input-800/candidate.ppm':e.sha(path)}
+            with self.assertRaisesRegex(ValueError,'missing'):e.compare_images(root,expected)
+            with self.assertRaisesRegex(ValueError,'extra'):e.compare_images(root,{})
+    def test_empty_pixel_proof_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaisesRegex(ValueError,'empty'):e.compare_images(Path(d),{})
 
 if __name__=='__main__':unittest.main()

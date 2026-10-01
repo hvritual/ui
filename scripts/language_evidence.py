@@ -148,8 +148,8 @@ def check_source_report(report: dict, identity: dict):
         need(report.get(key, False) is False, 'overclaimed software evidence: ' + key)
 
 def record_directory(record: dict) -> str:
-    # The accepted R2 production-reuse format names this evidence_root. R3/R4
-    # name it directory. Admit either exact contract, never guess or skip it.
+    # R2 named this evidence_root; R3/R4 name it directory. Admit one explicit
+    # contract, never guess the location or skip its raw evidence.
     names=[record[key] for key in ('directory','evidence_root') if key in record]
     need(len(names)==1 and type(names[0]) is str,'missing/ambiguous evidence root')
     return names[0]
@@ -160,6 +160,18 @@ def check_record_files(root: Path, record: dict):
     need(actual == record['evidence'], 'raw evidence manifest differs')
     for name, digest in record['evidence'].items():
         check_hash(folder, name, digest)
+
+def image_manifest(directory: Path) -> dict:
+    """Preserve viewport subdirectories; equal basenames are different evidence."""
+    return {p.relative_to(directory).as_posix():sha(member(directory,p.relative_to(directory).as_posix()))
+            for p in sorted(directory.rglob('*.ppm')) if p.is_file()}
+
+def compare_images(directory: Path, expected: dict):
+    actual=image_manifest(directory)
+    missing=sorted(set(expected)-set(actual));extra=sorted(set(actual)-set(expected))
+    different=sorted(n for n in set(actual)&set(expected) if actual[n]!=expected[n])
+    need(not missing and not extra and not different,'rerun pixel evidence differs: '+json.dumps({'missing':missing,'extra':extra,'different':different}))
+    need(bool(actual),'empty image evidence')
 
 def verify_bundle(source: Path, framework: Path, baseline: dict):
     identity = source_identity(source, baseline)
@@ -187,8 +199,7 @@ def verify_bundle(source: Path, framework: Path, baseline: dict):
         check_hash(framework, 'input-atlas.json', r['font_receipt_sha256'])
         check_hash(framework, 'packages/coffee-ime.pui', r['package_sha256'])
         check_record_files(framework, r)
-        for name, digest in r['images'].items():
-            check_hash(member(framework,r['directory'])/'cases', name, digest)
+        compare_images(member(framework,r['directory'])/'cases',r['images'])
         records.append(r)
     need(all(r['images'] == records[0]['images'] for r in records), 'Native/ARM/sanitizer pixel disagreement')
     need(records[0]['production_proof']['results'] == records[1]['production_proof']['results'], 'Native/ARM input behavior disagreement')
@@ -271,8 +282,7 @@ def rerun_original(source: Path, framework: Path):
             if label=='negative':
                 need('INTENTIONAL_IME_VIEW_ASSERTION_FAILURE' in text,'wrong deliberate-failure path')
             else:
-                actual={p.name:sha(p) for p in dest.glob('*.ppm')}
-                need(actual == r['images'],'rerun pixels differ from accepted pinned-font images')
+                compare_images(dest,r['images'])
     results['original_native_view_and_sanitizer']='positive-repeat-negative-passed'
     results['fresh_compile']=False
     results['execution_environment']='GitHub-Actions-independent-audit-job'
