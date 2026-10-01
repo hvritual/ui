@@ -50,7 +50,7 @@ jobs:
       - name: Install pinned build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user patch
+          sudo apt-get install -y --no-install-recommends gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross binutils-arm-linux-gnueabihf qemu-user patch
           rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target armv7-unknown-linux-gnueabihf
           rustup toolchain install nightly-2026-07-02 --profile minimal --component rust-src --target armv7-unknown-linux-gnueabihf
           curl -fsSL --max-time 180 https://go.dev/dl/go1.26.8.linux-amd64.tar.gz -o /tmp/go.tar.gz
@@ -78,6 +78,18 @@ jobs:
         run: make verify-demo verify-scene
       - name: Preserve validated ARM device package
         run: make build-device-package package-demo package-scene
+      - name: Checkout the locked standalone offline dictionary implementation
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: qt/qtvirtualkeyboard
+          ref: eb8cedd4fa466a3710573a6664e7fec3a328a4d7
+          path: out/ime/checkout
+          sparse-checkout: src/plugins/pinyin/3rdparty/pinyin
+          persist-credentials: false
+      - name: Verify and prepare exact no-Qt input dependencies
+        run: |
+          test "$(git -C out/ime/checkout rev-parse HEAD)" = eb8cedd4fa466a3710573a6664e7fec3a328a4d7
+          python3 scripts/ime.py prepare
       - name: Full framework Native and ARM integration
         run: make test-keyboard-layouts test-framework test-framework-arm test-framework-sanitize verify-framework
       - name: Framework static board package and fail-closed HIL checker
