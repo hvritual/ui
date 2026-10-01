@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Verify immutable upstream software evidence and rerun its ORIGINAL executables.
-
-No compilation, font downloads, expected-result changes or physical admission.
-The audit runner is GitHub Actions when no interactive shell is available.
-"""
+"""Verify immutable software evidence and rerun ORIGINAL executables, not rebuilds."""
 from __future__ import annotations
 import argparse
 import hashlib
@@ -122,6 +118,22 @@ def extract(archive: Path, target: Path):
                 if stream.read(4) == b'\x7fELF':
                     path.chmod(0o755)
 
+def verify_extracted(archive: Path, target: Path):
+    """Bind extracted bytes back to the digest-anchored ZIP, not self-written hashes."""
+    count=0
+    with zipfile.ZipFile(archive) as z:
+        for item in z.infolist():
+            if item.is_dir():
+                continue
+            h=hashlib.sha256()
+            with z.open(item) as stream:
+                for chunk in iter(lambda:stream.read(1024*1024),b''):
+                    h.update(chunk)
+            check_hash(target,item.filename,h.hexdigest())
+            count+=1
+    need(count>0,'empty evidence archive')
+    return count
+
 def source_identity(root: Path, baseline: dict):
     need(git(root, 'rev-parse', 'HEAD') == baseline['commit'], 'baseline checkout is not the evidence commit')
     need(git(root, 'rev-parse', 'HEAD^{tree}') == baseline['tree'], 'baseline tree changed')
@@ -135,8 +147,15 @@ def check_source_report(report: dict, identity: dict):
     for key in ('product_language_admitted', 'authenticated', 'production_admission', 'qt_linked'):
         need(report.get(key, False) is False, 'overclaimed software evidence: ' + key)
 
+def record_directory(record: dict) -> str:
+    # The accepted R2 production-reuse format names this evidence_root. R3/R4
+    # name it directory. Admit either exact contract, never guess or skip it.
+    names=[record[key] for key in ('directory','evidence_root') if key in record]
+    need(len(names)==1 and type(names[0]) is str,'missing/ambiguous evidence root')
+    return names[0]
+
 def check_record_files(root: Path, record: dict):
-    folder = member(root, record['directory'])
+    folder = member(root, record_directory(record))
     actual = {p.relative_to(folder).as_posix(): sha(p) for p in sorted(folder.rglob('*')) if p.is_file()}
     need(actual == record['evidence'], 'raw evidence manifest differs')
     for name, digest in record['evidence'].items():
@@ -228,6 +247,7 @@ def rerun_original(source: Path, framework: Path):
     sys.path.insert(0,str(source/'scripts'))
     import framework as f
     import input_acceptance as acceptance
+    import package_acceptance
     need(f.OUT.resolve() == framework.resolve(), 'review path differs from original Runtime root')
     folder=framework/'language-independent-rerun'
     need(not folder.exists(), 'refuse overwrite of old review')
@@ -236,9 +256,11 @@ def rerun_original(source: Path, framework: Path):
     for mode, static, binary in [('native',False,framework/'native/ui-framework'),('arm',True,framework/'arm/ui-framework-static')]:
         proof=acceptance.prove_input_binary(binary,mode,folder/(mode+'-production'),static=static)
         need(proof['cases'] >= 18,'missing original executable cases')
-        results[mode]={'cases':proof['cases'],'runtime_sha256':proof['runtime_sha256'],'package_sha256':proof['package_sha256']}
+        legacy=package_acceptance.prove_package_binary(binary,mode,folder/(mode+'-legacy-packages'),static=static)
+        need(legacy['same_binary_packaged_applications'] is True and legacy['runtime_sha256']==proof['runtime_sha256'],'legacy/new packages did not use the same Runtime')
+        results[mode]={'cases':proof['cases'],'legacy_package_cases':legacy['cases'],'runtime_sha256':proof['runtime_sha256'],'package_sha256':proof['package_sha256']}
         (folder/(mode+'-proof.json')).write_text(json.dumps(proof,sort_keys=True,indent=2)+'\n')
-    # Actual original view executables, no recompilation and no replacement font.
+        (folder/(mode+'-legacy-proof.json')).write_text(json.dumps(legacy,sort_keys=True,indent=2)+'\n')
     for san in (False,True):
         r=load(framework/('native/input-sanitize.json' if san else 'native/input.json'))
         for label in ('cases','repeat','negative'):
@@ -273,6 +295,10 @@ def main():
             z=downloads/(kind+'.zip')
             download_artifact(base[kind+'_artifact'],base,z)
             extract(z,target)
+    for kind,target in [('framework',framework),('emulator',source/'out/verified-emulator')]:
+        z=downloads/(kind+'.zip')
+        need(sha(z)==base[kind+'_artifact']['sha256'],'archive digest mismatch')
+        print('EXTRACTED_ARCHIVE_VERIFIED',kind,verify_extracted(z,target),flush=True)
     emulator=source/'out/verified-emulator/qemu-arm'
     need(sha(emulator)==base['emulator_sha256'],'emulator hash mismatch')
     os.environ['PATH']=str(emulator.parent)+os.pathsep+os.environ['PATH']
@@ -293,5 +319,8 @@ if __name__=='__main__':
     try:
         main()
     except Exception as exc:
+        if isinstance(exc,(KeyError,FileNotFoundError)):
+            import traceback
+            traceback.print_exc()
         print('LANGUAGE_EVIDENCE_FAILED',type(exc).__name__,str(exc) if isinstance(exc,(EvidenceError,FileNotFoundError,KeyError)) else 'see preceding build/test log',file=sys.stderr)
         sys.exit(1)

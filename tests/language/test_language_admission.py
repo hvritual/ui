@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import zipfile
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'scripts'))
 import language_admission as a
@@ -87,5 +88,72 @@ class LanguageGuards(unittest.TestCase):
             with self.assertRaises(ValueError):e.check_record_files(root,record)
     def test_missing_independent_rerun(self):
         with self.assertRaises(ValueError):a.audit_rerun({},ROOT)
+    def test_legacy_evidence_root_uses_full_hash_validation(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);folder=root/'case';folder.mkdir();(folder/'a').write_bytes(b'original')
+            record={'evidence_root':'case','evidence':{'a':e.sha(folder/'a')}}
+            e.check_record_files(root,record)
+            (folder/'a').write_bytes(b'changed')
+            with self.assertRaises(ValueError):e.check_record_files(root,record)
+    def test_ambiguous_evidence_root_rejected(self):
+        with self.assertRaises(ValueError):e.record_directory({'directory':'a','evidence_root':'a'})
+    def test_missing_evidence_root_rejected(self):
+        with self.assertRaises(ValueError):e.record_directory({'evidence':{}})
+    def test_bad_evidence_root_type_rejected(self):
+        with self.assertRaises(ValueError):e.record_directory({'directory':None})
+    def test_extracted_bytes_remain_bound_to_zip(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);archive=root/'evidence.zip';dest=root/'unpacked'
+            with zipfile.ZipFile(archive,'w') as z:z.writestr('result.json','{"status":"original"}')
+            e.extract(archive,dest)
+            self.assertEqual(e.verify_extracted(archive,dest),1)
+            (dest/'result.json').write_text('{"status":"forged"}')
+            with self.assertRaises(ValueError):e.verify_extracted(archive,dest)
+    def test_zip_traversal_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);archive=root/'bad.zip'
+            with zipfile.ZipFile(archive,'w') as z:z.writestr('../escape','bad')
+            with self.assertRaises(ValueError):e.extract(archive,root/'out')
+    def test_zip_duplicate_rejected(self):
+        import warnings
+        with tempfile.TemporaryDirectory() as d:
+            root=Path(d);archive=root/'bad.zip'
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore',UserWarning)
+                with zipfile.ZipFile(archive,'w') as z:
+                    z.writestr('same','one');z.writestr('same','two')
+            with self.assertRaises(ValueError):e.extract(archive,root/'out')
+    def test_schema_matches_policy_shape(self):
+        schema=e.load(ROOT/'contracts/language-release.schema.json')
+        self.assertFalse(schema['additionalProperties'])
+        self.assertEqual(set(schema['required']),set(self.p))
+        for key,spec in schema['properties'].items():
+            if 'const' in spec:self.assertEqual(self.p[key],spec['const'])
+        self.assertEqual(set(schema['properties']['deferred']['required']),set(self.p['deferred']))
+    def formatting_fixture(self):
+        # Synthetic formatting data only; accept/current still require raw files.
+        return {'status':'verified','software_only':True,'physical_hardware':False,
+            'product_language_admitted':False,'authenticated':False,
+            'basis':{'commit':'0'*40,'tree':'1'*40},'font_receipt':{},'packages':{}}
+    def test_report_and_markdown_are_one_projection(self):
+        report=a.build_report(self.p,self.m,self.o,self.formatting_fixture(),{'de-DE':{}},'2'*40,'unit-formatting-only')
+        self.assertEqual([r['locale'] for r in report['rows']],list(a.LOCALES))
+        self.assertEqual(sum(r['software_status']=='supported-with-restrictions' for r in report['rows']),2)
+        text=a.markdown(report)
+        for r in report['rows']:
+            self.assertIn('| '+r['locale']+' |',text)
+            self.assertFalse(r['product_input_admitted'])
+            self.assertFalse(r['production_admitted'])
+            self.assertEqual({t['physical'] for t in r['targets'].values()},{'pending'})
+        german=next(r for r in report['rows'] if r['locale']=='de-DE')
+        self.assertTrue(german['display']['ui_catalog_present'])
+        self.assertFalse(german['display']['input_support_implied'])
+        self.assertEqual(german['software_status'],'not-supported-this-release')
+        self.assertFalse(report['rows'][0]['ime']['required'])
+        self.assertTrue(report['rows'][1]['ime']['required'])
+        self.assertEqual(text,a.markdown(copy.deepcopy(report)))
+    def test_report_rejects_fabricated_physical_receipt(self):
+        receipt=self.formatting_fixture();receipt['physical_hardware']=True
+        with self.assertRaises(ValueError):a.build_report(self.p,self.m,self.o,receipt,{},'2'*40,'unit')
 
 if __name__=='__main__':unittest.main()

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Derive language support from ONE capability matrix and verified raw evidence.
+"""One-source language claims; check declarations, then verify real raw evidence.
 
-`check` validates declarations only. `current` consumes the fresh canonical
-Framework job. `accept` additionally checks an immutable historical artifact and
-independent reruns. No mode promotes hardware, publisher or product admission.
+`check` is not acceptance. `current` checks the fresh canonical build. `accept`
+also checks immutable historical bytes and original-binary independent reruns.
+No path promotes software evidence into hardware, product or authentication.
 """
 from __future__ import annotations
 import argparse
@@ -13,7 +13,8 @@ import os
 from pathlib import Path
 import re
 import sys
-from language_evidence import EvidenceError, need, load, member, sha, git, verify_bundle, check_hash
+from language_evidence import (EvidenceError, need, load, member, sha, git,
+    verify_bundle, check_hash, verify_extracted, check_record_files, check_source_report)
 import text_input
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -129,10 +130,14 @@ def audit_rerun(receipt: dict, framework: Path):
         check_hash(directory,path,digest)
     for mode in ('native','arm'):
         proof=load(directory/(mode+'-proof.json'))
-        need(proof['commit']==receipt['basis']['commit'] and proof['tree']==receipt['basis']['tree'] and proof['development'] is False,'wrong rerun source')
+        check_source_report(proof,receipt['basis'])
         need(proof['runtime_sha256']==r[mode]['runtime_sha256'] and proof['package_sha256']==receipt['packages']['coffee-ime.pui']['sha256'] and proof['cases']==r[mode]['cases'] and proof['cases']>=18,'incomplete exact-binary rerun')
-        from language_evidence import check_record_files
         check_record_files(framework,proof)
+        legacy=load(directory/(mode+'-legacy-proof.json'))
+        check_source_report(legacy,receipt['basis'])
+        need(legacy['same_binary_packaged_applications'] is True and legacy['runtime_sha256']==proof['runtime_sha256'] and legacy['cases']==r[mode]['legacy_package_cases'],'legacy/new package binary identity differs')
+        need(set(legacy['runs'])=={'coffee-600','coffee-800','control-panel-600','control-panel-800'},'missing legacy app/target')
+        check_record_files(framework,legacy)
 
 
 def build_report(policy,matrix,offline,receipt,display,checker_commit,validation_scope):
@@ -164,8 +169,7 @@ def build_report(policy,matrix,offline,receipt,display,checker_commit,validation
         locales=list(CANDIDATES) if caps&8 else ['en-US'] if caps&2 else []
         need(not (caps&8) or name=='coffee-ime.pui','unreviewed IME application variant')
         packages[name]={'sha256':p['sha256'],'capability_mask':caps,'authorized_input_locales':locales,
-            'application_input_entry_not_implied':True,'authenticated':False,
-            'files':p['targets'][0]['files']}
+            'application_input_entry_not_implied':True,'authenticated':False,'files':p['targets'][0]['files']}
     return {'schema_version':1,'owner_issue':67,'status':'software-language-evidence-complete',
         'validation_scope':validation_scope,'checker_commit':checker_commit,'evidence_commit':receipt['basis']['commit'],
         'evidence_tree':receipt['basis']['tree'],'market_confirmation':policy['market_confirmation'],
@@ -217,6 +221,7 @@ def main():
         need(receipt['artifacts']==policy['baseline'],'receipt does not match immutable anchor')
         archive=a.evidence.resolve().parent/'downloads/framework.zip'
         need(sha(archive)==policy['baseline']['framework_artifact']['sha256'],'immutable artifact missing/tampered')
+        verify_extracted(archive,framework)
         fresh=verify_bundle(a.baseline.resolve(),framework,policy['baseline'])
         need({k:v for k,v in receipt.items() if k!='independent_rerun'}==fresh,'receipt differs from checked raw artifact')
         inherited_sources(ROOT,a.baseline.resolve(),receipt)
