@@ -1,5 +1,6 @@
 #include "scene_runtime.h"
 #include "../media/store.h"
+#include "../text-input/input_font.h"
 #include "private_scene_guest.generated.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,12 +48,36 @@ void pocket_scene_engine_init(PocketSceneEngine *e,const char *root) {
 void pocket_scene_engine_init_package(PocketSceneEngine *e,const PuiLoadedPackage *package) {
     if(e){memset(e,0,sizeof(*e));e->package=package;}
 }
+static int input_font_upload(const PuiFile *font) {
+    if(!font||!pocket_input_font_valid(font->data,font->length))return 0;
+    const size_t chunk=1024u*1024u;
+    unsigned char *wire=malloc(chunk+16);if(!wire)return 0;
+    int ok=1;
+    for(size_t offset=0;offset<font->length;){
+        size_t length=font->length-offset;if(length>chunk)length=chunk;
+        const uint32_t header[]={0x31464950u,(uint32_t)font->length,(uint32_t)offset,(uint32_t)length};
+        for(unsigned i=0;i<4;i++)for(unsigned j=0;j<4;j++)wire[i*4+j]=(unsigned char)(header[i]>>(j*8));
+        memcpy(wire+16,font->data+offset,length);
+        if(pocket_runtime_resource_pack(wire,length+16)!=1){ok=0;break;}
+        offset+=length;
+    }
+    free(wire);return ok;
+}
 static PocketEngineStatus open_engine(void *p,const PocketEngineOpenConfig *c) {
     PocketSceneEngine *e=p;
     if(!e||e->opened||!c||c->width!=1024||(c->height!=600&&c->height!=800)||
        c->target_api_level!=1)return POCKET_ENGINE_INVALID_ARGUMENT;
     const char *profile=c->height==600?"imx6ul-1024x600":"imx6ul-1024x800";
     if(!boot_scene(&e->host,profile,e->asset_root,e->package))return POCKET_ENGINE_BACKEND_FAILED;
+    if(e->package){
+        const PuiPackage *m=pui_loaded_manifest(e->package);
+        if(m&&(m->capabilities&PUI_CAP_PINYIN)){
+            const PuiFile *font=pui_loaded_file(e->package,"input.atlas");
+            if(!input_font_upload(font)){
+                host_close(&e->host);return POCKET_ENGINE_BACKEND_FAILED;
+            }
+        }
+    }
     int media_ok=0;
     if(e->package){
         const PuiPackage *manifest=pui_loaded_manifest(e->package);
@@ -109,7 +134,7 @@ static PocketEngineStatus upload(void *p,uint32_t kind,const void *data,size_t l
         const PocketSceneRecord *r=&s->records[i];
         if(!r->id||r->id>9007199254740991ULL||r->bounds.width<0||r->bounds.height<0||
            r->clip.width<0||r->clip.height<0||r->opacity_256>256||
-           r->text_ref>65535||r->resource_ref>8)return POCKET_ENGINE_INVALID_ARGUMENT;
+           r->text_ref>131071||r->resource_ref>8)return POCKET_ENGINE_INVALID_ARGUMENT;
         for(uint32_t j=0;j<i;j++)if(s->records[j].id==r->id)return POCKET_ENGINE_INVALID_ARGUMENT;
         const uint32_t words[]={ (uint32_t)r->id,(uint32_t)(r->id>>32),r->kind,
             (uint32_t)r->bounds.x,(uint32_t)r->bounds.y,(uint32_t)r->bounds.width,(uint32_t)r->bounds.height,

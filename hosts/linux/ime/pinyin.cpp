@@ -110,6 +110,7 @@ bool drive(Worker *w,uint64_t now){
     erase(&w->next,sizeof(w->next));w->queued=false;w->flight=true;w->deadline=now+POCKET_PINYIN_TIMEOUT_MS;return true;
 }
 }
+int pocket_pinyin_dictionary_valid(const void *data,size_t bytes){return digest_valid(data,bytes)?1:0;}
 PocketPinyinStatus pocket_pinyin_open(PocketPinyin *out,const void *data,size_t bytes,uint64_t now){
     if(!out||out->impl||now>UINT64_MAX-POCKET_PINYIN_TIMEOUT_MS)return POCKET_PINYIN_INVALID;
     if(!data||bytes!=dictionary_bytes)return POCKET_PINYIN_UNAVAILABLE;

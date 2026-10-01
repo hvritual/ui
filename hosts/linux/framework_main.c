@@ -76,10 +76,11 @@ int main(int argc,char **argv){
     const char *profile=NULL,*assets=NULL,*output=NULL,*fbpath="/dev/fb0",*inputdir="/dev/input",*media=NULL,*touch_name=NULL,*replay=NULL,*package_path=NULL;
     int headless=0,physical=0,seconds=60,items=0,rawmin=0,rawmax=0,slots=0,swap=0,ix=0,iy=0;
     unsigned touch_fields=0, discovery_attempts=0,replay_samples=0;
-    int input_wait_ms=3000,allow_unsigned=0;
+    int input_wait_ms=3000,allow_unsigned=0,replay_realtime=0;
     for(int i=1;i<argc;i++){
         const char *key=argv[i];if(!strcmp(key,"--headless")){headless=1;continue;}if(!strcmp(key,"--physical")){physical=1;continue;}
         if(!strcmp(key,"--allow-unsigned-package")){if(allow_unsigned)return 2;allow_unsigned=1;continue;}
+        if(!strcmp(key,"--replay-realtime")){if(replay_realtime)return 2;replay_realtime=1;continue;}
         if(i+1>=argc){fprintf(stderr,"missing value: %s\n",key);return 2;}const char *v=argv[++i];
         if(!strcmp(key,"--profile"))profile=v;else if(!strcmp(key,"--asset-root"))assets=v;
         else if(!strcmp(key,"--package")){if(package_path)return 2;package_path=v;}
@@ -103,6 +104,7 @@ int main(int argc,char **argv){
         fprintf(stderr,"usage: ui-framework --profile imx6ul-1024x600|imx6ul-1024x800 (--asset-root DIR | --package FILE [--allow-unsigned-package]) --output NEWDIR (--headless | --physical)\n");return 2;
     }
     unsigned h=!strcmp(profile,"imx6ul-1024x600")?600U:800U;
+    if(replay_realtime&&(!replay||!headless)){fprintf(stderr,"paced replay requires explicit headless replay input\n");return 2;}
     if(replay&&!headless){fprintf(stderr,"replay input is headless only\n");return 2;}
     if(headless==physical){fprintf(stderr,"exactly one of --headless or --physical is required\n");return 2;}
     if(!headless&&h==800&&((touch_fields&113U)!=113U||!touch_name||!strcmp(touch_name,"auto"))){fprintf(stderr,"800 target requires its own explicit verified touch configuration\n");return 2;}
@@ -172,7 +174,8 @@ int main(int argc,char **argv){
 #endif
     fprintf(stderr,"FRAMEWORK_FIRST_PRESENT profile=%s mode=%s commit=%s\n",profile,io_mode,POCKET_BUILD_COMMIT);
     if(replay){
-        if(!pocket_framework_replay(r,replay,start,&replay_samples)){failure="REPLAY_REJECTED";goto done;}
+        int replay_ok=replay_realtime?pocket_framework_replay_realtime(r,replay,start,&replay_samples):pocket_framework_replay(r,replay,start,&replay_samples);
+        if(!replay_ok){failure="REPLAY_REJECTED";goto done;}
         now=r->clock_ns;
     }
     while(!replay&&!stopping){
@@ -247,6 +250,7 @@ done:
                 replay?"true":"false",replay_samples,stats.page,stats.selected);
         fprintf(report,",\"text_input_open\":%s,\"text_input_opens\":%u,\"text_input_confirms\":%u,\"text_input_cancels\":%u",
                 stats.editor_active?"true":"false",stats.editor_opens,stats.editor_confirms,stats.editor_cancels);
+        fprintf(report,",\"ime_commits\":%llu,\"ime_candidate_batches\":%llu,\"replay_realtime\":%s",(unsigned long long)stats.ime_commits,(unsigned long long)stats.ime_candidate_batches,replay_realtime?"true":"false");
         fprintf(report,",\"scroll_x\":%d,\"scroll_dragging\":%u,\"scroll_settling\":%u,\"motion_presents\":%llu,\"layout_runs\":%llu",
                 stats.scroll_x,stats.scroll_dragging,stats.scroll_settling,
                 (unsigned long long)r->motion_presents,(unsigned long long)stats.layout_runs);

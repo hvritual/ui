@@ -147,7 +147,7 @@ def parse_command(command: list[str], root: Path, policy: dict, consumer: str) -
                 preprocessor.append(arg)
         elif arg.startswith(('-D', '-U', '-std=', '-mcpu=', '-mfpu=', '-mfloat-abi=')):
             preprocessor.append(arg)
-        elif arg in ('-Wall', '-Wextra', '-Werror', '-Wpedantic', '-O2', '-g', '-fno-omit-frame-pointer', '-static', '-Wl,--gc-sections', '-lm', '-ldl', '-lpthread', '-lrt', '-fsanitize=address,undefined'):
+        elif arg in ('-Wall', '-Wextra', '-Werror', '-Wpedantic', '-O2', '-g', '-fno-omit-frame-pointer', '-static', '-Wl,--gc-sections', '-lm', '-lstdc++', '-ldl', '-lpthread', '-lrt', '-fsanitize=address,undefined'):
             pass
         elif arg.startswith('-Wl,--wrap=') and consumer.endswith('-test') and re.fullmatch(r'-Wl,--wrap=[A-Za-z_][A-Za-z0-9_]*', arg):
             pass

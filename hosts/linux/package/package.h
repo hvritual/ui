@@ -17,7 +17,9 @@
 #define PUI_CAP_CORE 1u
 #define PUI_CAP_ASCII_KEYBOARD 2u
 #define PUI_CAP_IMAGES 4u
-#define PUI_CAP_ALL 7u
+#define PUI_CAP_PINYIN 8u
+#define PUI_CAP_ALL 15u
+#define PUI_CAP_LEGACY 7u
 
 typedef enum {
     PUI_OK, PUI_ARGUMENT, PUI_TRUNCATED, PUI_FORMAT, PUI_VERSION,

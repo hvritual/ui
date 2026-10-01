@@ -152,3 +152,11 @@ lifetime within the runtime, authorized package resources/capability, same-ELF
 real Coffee package scenarios and dual-target visual tests. R5 records per-locale
 software/physical evidence afterward. Real boards, SDK, signing and performance
 admission are independent.
+
+## Rendered integration follow-up
+
+The optional package-authorized candidate/keyboard/language view is described in
+[input-keyboard.md](input-keyboard.md). Its actual Core/pixel/production package
+proofs are separate from this core-only suite; `rendered_ui=false` remains correct
+for this document's original provider test artifact. Do not reuse that flag or
+core-only evidence as a claim about the whole Runtime's latest implementation.

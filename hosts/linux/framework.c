@@ -7,7 +7,7 @@
 
 static int fail(PocketFramework *r,const char *why){if(r&&!r->error)r->error=why;return 0;}
 _Static_assert(PUI_CAP_CORE==POCKET_APP_CAP_CORE && PUI_CAP_ASCII_KEYBOARD==POCKET_APP_CAP_ASCII_KEYBOARD &&
-               PUI_CAP_IMAGES==POCKET_APP_CAP_IMAGES && PUI_MAX_HEAP==POCKET_APP_MAX_HEAP,"application policy mapping");
+               PUI_CAP_IMAGES==POCKET_APP_CAP_IMAGES && PUI_CAP_PINYIN==POCKET_APP_CAP_PINYIN && PUI_MAX_HEAP==POCKET_APP_MAX_HEAP,"application policy mapping");
 static int open_framework(PocketFramework *r,unsigned h,unsigned items,const char *assets,
                           const PuiLoadedPackage *package,const char *media_root,
                           const PocketDisplayBackend *display){
@@ -37,7 +37,10 @@ static int open_framework(PocketFramework *r,unsigned h,unsigned items,const cha
         const PuiFile *file=pui_loaded_file(&r->package,"application.js");
         /* The existing program contract makes its own bounded source copy. */
         const PocketApplicationPolicy policy={manifest->heap_bytes,manifest->capabilities};
-        opened=file&&pocket_application_open_policy(&r->app,h,items,(const char *)file->data,file->length,&policy);
+        const PuiFile *dictionary=(manifest->capabilities&PUI_CAP_PINYIN)?pui_loaded_file(&r->package,"pinyin.dat"):NULL;
+        const PuiFile *font=(manifest->capabilities&PUI_CAP_PINYIN)?pui_loaded_file(&r->package,"input.atlas"):NULL;
+        opened=file&&pocket_application_open_input(&r->app,h,items,(const char *)file->data,file->length,&policy,
+                 dictionary?dictionary->data:NULL,dictionary?dictionary->length:0,font?font->data:NULL,font?font->length:0);
     }else{
         loaded=host_asset_read(assets,"application.js",POCKET_PROGRAM_SOURCE_LIMIT,&source);
         opened=loaded&&pocket_application_open(&r->app,h,items,(const char *)source.data,source.length);

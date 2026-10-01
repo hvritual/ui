@@ -62,6 +62,11 @@
       "reference_only": false,
       "role": "runtime"
     },
+    "hosts/linux/ime/session.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
     "hosts/linux/input/interaction_bridge.c": {
       "origin": "repository",
       "reference_only": false,
@@ -87,7 +92,17 @@
       "reference_only": false,
       "role": "runtime"
     },
+    "hosts/linux/text-input/input_font.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
     "hosts/linux/text-input/keyboard.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/text-input/layout.c": {
       "origin": "repository",
       "reference_only": false,
       "role": "runtime"
@@ -144,6 +159,21 @@
     },
     "hosts/linux/ui/style.c": {
       "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/ime/runtime-arm/libpocket_ime.a": {
+      "origin": "locked:toolchains/pinyin.lock.json+ime_runtime.py",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/ime/runtime-native/libpocket_ime.a": {
+      "origin": "locked:toolchains/pinyin.lock.json+ime_runtime.py",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "out/ime/runtime-sanitize/libpocket_ime.a": {
+      "origin": "locked:toolchains/pinyin.lock.json+ime_runtime.py",
       "reference_only": false,
       "role": "runtime"
     },
@@ -268,6 +298,11 @@
       "role": "test-only"
     },
     "tests/framework/test_scene_wire.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
+    "tests/ime/test_keyboard_view.c": {
       "origin": "repository",
       "reference_only": false,
       "role": "test-only"

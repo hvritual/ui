@@ -103,3 +103,16 @@ class TextContractTests(unittest.TestCase):
     def test_keyboard_not_generic_unicode_rendering(self):
         self.contract["keyboard_limits"]["input_locale"] = "all"
         with self.assertRaises(RuntimeError): runtime.validate_text_contract(self.contract)
+
+class OptionalInputTests(unittest.TestCase):
+    def setUp(self): self.c = runtime.read_json(ROOT / 'contracts/offline-input.json')
+    def reject(self, change):
+        change(self.c)
+        with self.assertRaises(RuntimeError): runtime.validate_optional_input(self.c)
+    def test_exact_software_contract(self): runtime.validate_optional_input(self.c)
+    def test_no_physical_claim(self): self.reject(lambda c:c['admission'].update(physical_hardware=True))
+    def test_no_network(self): self.reject(lambda c:c['provider'].update(network=True))
+    def test_no_learning(self): self.reject(lambda c:c['provider'].update(learning=True))
+    def test_no_unbounded_queue(self): self.reject(lambda c:c['provider'].update(queued_newest=1024))
+    def test_no_missing_evidence(self): self.reject(lambda c:c.update(evidence=[]))
+    def test_no_unverified_locale(self): self.reject(lambda c:c['input_locales'].append('ar'))

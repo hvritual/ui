@@ -80,7 +80,18 @@ def matrix_check(matrix: dict) -> None:
     rows = matrix['rows']
     if matrix['schema_version'] != 1 or len(rows) != len(required) or {r['locale'] for r in rows} != required:
         raise ValueError('missing/duplicate language row')
+    optional = matrix.get('status') == 'optional-pinyin-keyboard-software'
+    if optional and matrix.get('optional_input_contract') != 'contracts/offline-input.json':
+        raise ValueError('missing optional input contract')
     for row in rows:
+        if optional and row['locale'] == 'zh-CN':
+            expected = {'engine':'aosp-pinyin-pinned','dictionary':'pinyin.dat',
+                'layout_status':'optional-weighted-pinyin-software','ime_status':'optional-rendered-offline-software',
+                'capability':'ui.ime.pinyin','engine_lock':'toolchains/pinyin.lock.json',
+                'product_input_admitted':False,'physical_600':'pending','physical_800':'pending',
+                'evidence':['tests/ime/test_keyboard_view.c','scripts/input_acceptance.py']}
+            if any(row.get(k)!=v for k,v in expected.items()):raise ValueError('unverified optional locale claim')
+            continue
         expected_layout = 'software-ascii-qwerty' if row['locale'] == 'en-US' else 'not-implemented'
         if row['product_input_admitted'] is not False or row['layout_status'] != expected_layout or row['dictionary'] is not None:
             raise ValueError('unverified product locale admission')
@@ -92,17 +103,20 @@ def matrix_check(matrix: dict) -> None:
 def matrix_tests() -> None:
     m = json.loads((ROOT/'assets/locales/input-capabilities.json').read_text())
     matrix_check(m)
-    for mutation in ('admit', 'missing', 'privacy'):
+    for mutation in ('admit', 'missing', 'privacy', 'zh-physical', 'zh-evidence', 'other-engine'):
         bad = json.loads(json.dumps(m))
         if mutation == 'admit': bad['rows'][0]['product_input_admitted'] = True
         elif mutation == 'missing': bad['rows'].pop()
-        else: bad['sensitive_policy']['log_text'] = True
+        elif mutation == 'privacy': bad['sensitive_policy']['log_text'] = True
+        elif mutation == 'zh-physical': next(r for r in bad['rows'] if r['locale']=='zh-CN')['physical_600']='passed'
+        elif mutation == 'zh-evidence': next(r for r in bad['rows'] if r['locale']=='zh-CN')['evidence']=[]
+        else: next(r for r in bad['rows'] if r['locale']=='ar')['ime_status']='implemented'
         try:
             matrix_check(bad)
         except ValueError:
             continue
         raise ValueError('matrix negative gate failed open')
-    print('LANGUAGE_MATRIX_OK admitted=0 planned_rows=11 negative_cases=3')
+    print('LANGUAGE_MATRIX_OK admitted=0 planned_rows=11 negative_cases=6')
 
 def run(args: list, log: Path, expected: int = 0, env: dict | None = None) -> str:
     command = list(map(str,args))

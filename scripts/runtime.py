@@ -79,8 +79,25 @@ def validate_board(board):
     require(board["board_admission"] == "blocked-libc-loader-sdk-unverified", "board ABI has not been admitted")
 
 
+def validate_optional_input(c):
+    require(c["schema_version"] == 1 and c["owner_issue"] == 12 and c["scope"] == "optional-software-input-path", "unknown input contract")
+    require(c["capability"] == "ui.ime.pinyin" and c["resources"] == ["input.atlas", "pinyin.dat", "PINYIN-NOTICE.txt"], "input resource authority missing")
+    require(c["engine_lock"] == "toolchains/pinyin.lock.json" and c["keyboard_api"] == "hosts/linux/text-input/keyboard.h", "input implementation binding missing")
+    require(c["input_locales"] == ["en-US", "zh-CN"] and c["display_locale_independent"] is True, "unverified locale expansion")
+    require(c["font_inventory_glyphs"] == 16561 and c["font_max_bytes"] == 13631488 and c["font_transfer_max_bytes"] == 1048576, "unreviewed glyph budgets")
+    require(c["admission"] == {"rendered_ui":True,"composition_bridge":True,"offline_ime":True,"runtime_package_integration":True,
+        "physical_hardware":False,"product_language_admitted":False,"qt_linked":False,"production_admission":False}, "unverified product input admission")
+    require(c["provider"] == {"owner":"single-threaded-UI-before-fork","in_flight":1,"queued_newest":1,"timeout_ms":2000,"network":False,"learning":False}, "input worker/privacy bounds changed")
+    require(c["evidence"] == ["tests/ime/test_keyboard_view.c","scripts/input_acceptance.py","scripts/input_assets.py"], "input implementation evidence missing")
+    require(all((ROOT/n).is_file() for n in c["evidence"]), "input evidence implementation absent")
+
+
 def validate_text_contract(contract):
     require(contract["schema_version"] == 1, "unsupported text contract version")
+    if "optional_input_contract" in contract:
+        require(contract["optional_input_contract"] == "contracts/offline-input.json" and
+                contract.get("admission_scope") == "default-legacy-ascii-path", "optional input must not redefine legacy admission")
+        validate_optional_input(read_json(ROOT / contract["optional_input_contract"]))
     keyboard = contract["status"] == "native-ascii-keyboard-software"
     native_core = keyboard or contract["status"] == "native-text-session-core-only"
     require(native_core or contract["status"] == "contract-only-not-implemented", "unreviewed text admission stage")

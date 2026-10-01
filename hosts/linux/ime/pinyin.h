@@ -27,6 +27,8 @@ typedef struct { void *impl; } PocketPinyin;
 /* The caller is the single UI owner, before starting threads. Dictionary bytes
  * are copied and pinned; no user dictionary, filesystem learning, or network.
  * Decoding runs in an owned child, not on the UI thread. This is not a sandbox. */
+/* Structural package admission uses the pinned dictionary identity without forking. */
+int pocket_pinyin_dictionary_valid(const void *,size_t);
 PocketPinyinStatus pocket_pinyin_open(PocketPinyin *,const void *dictionary,size_t bytes,uint64_t now_ms);
 /* At most one in-flight + one newest queued request. Replaced text is erased. */
 PocketPinyinStatus pocket_pinyin_request(PocketPinyin *,PocketTextToken,const char *,size_t,

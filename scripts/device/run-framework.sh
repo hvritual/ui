@@ -6,6 +6,11 @@ BASE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 2
 PROFILE=${1:-imx6ul-1024x600}; [ "$#" -eq 0 ] || shift
 SECONDS=${1:-180}; [ "$#" -eq 0 ] || shift
 case "$PROFILE" in imx6ul-1024x600|imx6ul-1024x800) ;; *) exit 2;; esac
+case "${FRAMEWORK_APPLICATION:-coffee}" in
+  coffee) set -- --asset-root "$BASE/assets" "$@";;
+  coffee-ime) set -- --package "$BASE/packages/coffee-ime.pui" --allow-unsigned-package "$@";;
+  *) echo "Unknown diagnostic application" >&2; exit 2;;
+esac
 (cd "$BASE" && sha256sum -c SHA256SUMS) || exit 1
 mkdir -p "$BASE/logs" || exit 1
 RUN="$BASE/logs/framework-$(date +%Y%m%d-%H%M%S)-$$"
@@ -23,6 +28,7 @@ mkdir -p "$STORE" || exit 1
   echo "=== BUILD MANIFEST ==="
   cat "$BASE/manifest.json"
   echo "MEDIA_STORE=$STORE"
+  echo "APPLICATION=${FRAMEWORK_APPLICATION:-coffee}; unsigned IME package is a DEVELOPMENT diagnostic, not publisher authentication."
   echo "=== INPUT INVENTORY (read only) ==="
   echo "INPUT_DIR=${FRAMEWORK_INPUT_DIR:-/dev/input}"
   ls -ld "${FRAMEWORK_INPUT_DIR:-/dev/input}" 2>/dev/null || true
@@ -33,7 +39,7 @@ mkdir -p "$STORE" || exit 1
     printf '%s: ' "$NAME"
     cat "$NAME" 2>/dev/null || true
   done
-  "$BASE/ui-framework" --profile "$PROFILE" --asset-root "$BASE/assets" \
+  "$BASE/ui-framework" --profile "$PROFILE" \
      --output "$RUN/runtime" --seconds "$SECONDS" --media-store "$STORE" \
      --fbdev "${FRAMEWORK_FBDEV:-/dev/fb0}" --input-dir "${FRAMEWORK_INPUT_DIR:-/dev/input}" \
      --items "${FRAMEWORK_ITEMS:-8}" --physical "$@"

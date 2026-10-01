@@ -85,7 +85,8 @@ static int atom(const unsigned char *p,size_t n,int version) {
 }
 static int file_kind(const unsigned char *p) {
     static const char *const names[]={"application.js","catalog.json","labels.atlas","builtin.rgba",
-        "alternate.rgba","Noto-LICENSE.txt","IMAGE-LICENSE.txt"};
+        "alternate.rgba","Noto-LICENSE.txt","IMAGE-LICENSE.txt",
+        "input.atlas","pinyin.dat","PINYIN-NOTICE.txt"};
     for(unsigned i=0;i<sizeof(names)/sizeof(names[0]);i++) {
         size_t n=strlen(names[i]);
         if(!memcmp(p,names[i],n)&&p[n]==0){for(size_t j=n;j<48;j++)if(p[j])return -1;return (int)i;}
@@ -134,6 +135,11 @@ PuiStatus pui_validate(const void *bytes,size_t length,const PuiPolicy *p,PuiPac
     }
     if(cursor!=payload)return PUI_FILE_TABLE;
     if((found&15u)!=15u)return PUI_REQUIRED_FILE;
+    const unsigned input_files=(1u<<7)|(1u<<8)|(1u<<9);
+    if(result.capabilities&PUI_CAP_PINYIN){
+        if(!(result.capabilities&PUI_CAP_ASCII_KEYBOARD))return PUI_CAPABILITY;
+        if((found&input_files)!=input_files)return PUI_REQUIRED_FILE;
+    }else if(found&input_files)return PUI_CAPABILITY;
     *out=result;return PUI_OK;
 }
 const char *pui_status_name(PuiStatus s) {

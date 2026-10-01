@@ -21,12 +21,15 @@ typedef struct {
     unsigned scroll_dragging, scroll_settling;
     uint64_t layout_runs;
     unsigned editor_opens, editor_confirms, editor_cancels, editor_active;
+    uint64_t ime_commits,ime_candidate_batches;
 } PocketApplicationStats;
 int pocket_application_open(PocketApplication *application, unsigned height,
                             unsigned item_count, const char *source, size_t length);
 int pocket_application_open_policy(PocketApplication *application, unsigned height,
                                    unsigned item_count, const char *source, size_t length,
                                    const PocketApplicationPolicy *policy);
+int pocket_application_open_input(PocketApplication *,unsigned,unsigned,const char *,size_t,
+                                   const PocketApplicationPolicy *,const void *,size_t,const void *,size_t);
 int pocket_application_policy_snapshot(const PocketApplication *application, PocketApplicationPolicy *out);
 void pocket_application_close(PocketApplication *application);
 PocketInteractionRuntime *pocket_application_interaction(PocketApplication *application);
@@ -36,6 +39,7 @@ int pocket_application_step(PocketApplication *application, uint64_t monotonic_m
 int pocket_application_scene(PocketApplication *application, PocketScene *scene);
 int pocket_application_stats(const PocketApplication *application, PocketApplicationStats *stats);
 int pocket_application_keyboard_snapshot(const PocketApplication *application, PocketKeyboardSnapshot *snapshot);
+int pocket_application_keyboard_input_snapshot(const PocketApplication *,PocketKeyboardInputSnapshot *);
 int pocket_application_snapshot_allowed(const PocketApplication *application);
 const char *pocket_application_error(const PocketApplication *application);
 #endif
