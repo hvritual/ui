@@ -35,8 +35,9 @@ def runtime_check(mode):
     rt=importlib.util.module_from_spec(spec);spec.loader.exec_module(rt)
     data,_,_=rt.config();rt.check_build(data,mode)
 
-def compile_binary(mode,test=False,sanitize=False,static=False,loop=False,application_test=False,reference=False):
+def compile_binary(mode,test=False,sanitize=False,static=False,loop=False,application_test=False,reference=False,package_test=None):
     if (application_test or reference) and (not test or loop):raise RuntimeError('invalid test build kind')
+    if package_test and (package_test not in ('framework','lifetime') or not test or loop or application_test or reference):raise RuntimeError('invalid package test kind')
     if application_test and reference:raise RuntimeError('test consumers must stay distinct')
     runtime_check(mode);state()
     import text_input,port
@@ -50,6 +51,7 @@ def compile_binary(mode,test=False,sanitize=False,static=False,loop=False,applic
     target='x86_64-unknown-linux-gnu' if mode=='native' else 'armv7-unknown-linux-gnueabihf'
     rt=ROOT/'out/runtime'/mode;core=ROOT/'out/runtime/cargo'/target/'release/libpocketjs_symbian_core.a'
     sources=[ROOT/'hosts/linux/ui'/f'{n}.c' for n in UI]
+    sources += [ROOT/'hosts/linux/package/package.c',ROOT/'hosts/linux/package/loaded.c']
     sources += [ROOT/'hosts/linux/engine/scene_runtime.c',ROOT/'hosts/linux/input/interaction_bridge.c',ROOT/'hosts/linux/input/state.c']
     if reference:
         sources += [ROOT/'apps/coffee-framework/app.c',ROOT/'apps/coffee-framework/pager.c',
@@ -58,16 +60,21 @@ def compile_binary(mode,test=False,sanitize=False,static=False,loop=False,applic
         sources += [ROOT/'hosts/linux/framework.c',ROOT/'hosts/linux/application/program.c',
                     ROOT/'hosts/linux/application/application.c',ROOT/'hosts/linux/application/replay.c']
     sources += [ROOT/'hosts/linux/text-input/session.c',ROOT/'hosts/linux/text-input/keyboard.c',unicode_dep/'utf8proc.c']
-    if reference:entry='tests/application/reference/test_framework.c';name='native-reference-test'
+    if package_test:entry='tests/package/test_'+package_test+'.c';name='package-'+package_test+'-test'
+    elif reference:entry='tests/application/reference/test_framework.c';name='native-reference-test'
     elif application_test:entry='tests/application/test_applications.c';name='application-test'
     elif loop:entry='tests/framework/test_live_loop.c';name='framework-loop'
     elif test:entry='tests/framework/test_framework.c';name='framework-test'
     else:entry='hosts/linux/framework_main.c';name='ui-framework'
     sources.append(ROOT/entry)
     objects=[rt/n for n in ('host.o','platform.o','runtime-host.o','personality.o','libquickjs.a','media-store.o')]
+    if sanitize:
+        objects.remove(rt/'host.o');sources.append(ROOT/'hosts/linux/host.c')
     if test:
         sources.append(ROOT/'hosts/linux/display/presenter.c')
-        if not application_test:
+        if package_test=='framework':
+            sources += [ROOT/'tests/text-input/test_keyboard_owner.c',ROOT/'tests/package/test_keyboard.c',ROOT/'tests/package/test_scene_wire.c']
+        elif not application_test and not package_test:
             prefix='tests/application/reference' if reference else 'tests/framework'
             sources += [ROOT/'tests/text-input/test_keyboard_owner.c',ROOT/prefix/'test_keyboard.c',ROOT/prefix/'test_scene_wire.c']
     else:
@@ -148,6 +155,8 @@ def test(mode,sanitize=False):
             if 'FRAMEWORK_LOOP_OK' not in text or r.get('synthetic') is not True or r['physical_io'] or not r['ok'] or r['page_mask']!=15 or r['completed']!=1 or r['disconnects']!=1 or r['reconnects']!=1 or r['syn_dropped']!=1:raise RuntimeError('production device loop gate failed')
     from application_acceptance import test_applications
     test_applications(mode,sanitize,d,sets[0])
+    from package_acceptance import test_runtime_packages
+    test_runtime_packages(mode,sanitize,sets[0])
     if before!=state():raise RuntimeError('source changed during test')
     record={**before,'mode':mode,'real_core':True,'physical_hardware':False,'sanitizer':sanitize,
        'run_dir':str(d.relative_to(OUT)),'test_binary_sha256':sha(binary),'assets_sha256':sha(OUT/'assets.json'),
@@ -181,9 +190,12 @@ def verify():
         if sha(OUT/sanitized['run_dir']/n)!=v:raise RuntimeError('sanitizer log evidence drift')
     from application_acceptance import verify_applications
     verify_applications(current)
+    from package_acceptance import verify_runtime_packages
+    verify_runtime_packages(current)
     write(OUT/'verification.json',{'status':'passed',**current,'scope':'software-functional-only','physical_hardware':False,
           'engine':'current-pocket-scene','image_count':42,'replay_count':6,'motion_pool_limit':12,
           'application_separation':True,'application_verification_sha256':sha(OUT/'application-verification.json'),
+          'pui_development_loader':True,'package_runtime_verification_sha256':sha(OUT/'package-runtime-verification.json'),
           'test_reports':{m:sha(OUT/m/'test.json') for m in ('native','arm')}})
     print('FRAMEWORK_VERIFY_OK physical_hardware=false')
 
@@ -197,12 +209,15 @@ def package():
     if 'ELF32' not in elf or 'Machine:                           ARM' not in elf or 'Tag_ABI_VFP_args: VFP registers' not in elf or 'INTERP' in elf or 'NEEDED' in elf:raise RuntimeError('ARM static ABI gate')
     symbols=run(['arm-linux-gnueabihf-nm',binary],d/'symbols.log')
     if any(x in symbols for x in ('__wrap_','pocket_runtime_harness_','fake_fb','coffee_app_','coffee_pager_')):raise RuntimeError('test/application symbol leak')
-    for name in ('pocket_framework_tick','pocket_application_step','pocket_program_call','pocket_interaction_pointer','pocket_reactive_flush','input_live_discover','fbdev_present','JS_Eval'):
+    for name in ('pocket_framework_tick','pocket_application_step','pocket_program_call','pocket_interaction_pointer','pocket_reactive_flush','input_live_discover','fbdev_present','JS_Eval','pui_validate','pui_loaded_open','pocket_framework_open_package'):
         if name not in symbols:raise RuntimeError('missing real chain: '+name)
     cli_checks(binary,'arm',d/'cli',static=True)
     from application_acceptance import prove_same_binary
     proof=prove_same_binary(binary,'arm',d/'applications',static=True)
     write(OUT/'static-application-proof.json',proof)
+    from package_acceptance import prove_package_binary
+    package_proof=prove_package_binary(binary,'arm',d/'packaged-applications',static=True)
+    write(OUT/'static-package-proof.json',package_proof)
     dest=OUT/'device/coffee-framework'
     if dest.exists():shutil.rmtree(dest)
     dest.mkdir(parents=True);shutil.copy2(binary,dest/'ui-framework');(dest/'ui-framework').chmod(0o755)
@@ -211,6 +226,9 @@ def package():
     (dest/'applications/control-panel/alternate.rgba').unlink()
     shutil.copy2(ROOT/'docs/framework-board.md',dest/'README.md')
     shutil.copy2(ROOT/'docs/application-runtime.md',dest/'APPLICATIONS.md')
+    shutil.copy2(ROOT/'docs/package-runtime.md',dest/'PACKAGES.md')
+    shutil.copytree(d/'packaged-applications/packages',dest/'packages')
+    shutil.copy2(OUT/'static-package-proof.json',dest/'package-proof.json')
     shutil.copy2(ROOT/'scripts/device/run-framework.sh',dest/'run-framework.sh');(dest/'run-framework.sh').chmod(0o755)
     # Reuse the already signed/validated P4 installer and its public demo packages.
     old=ROOT/'out/coffee/device/coffee-demo'
@@ -226,7 +244,10 @@ def package():
        'software_verification_sha256':sha(dest/'software-verification.json'),'physical_hardware':False,
        'physical_gate':'pending independent 600 and 800 reports and human review',
        'business_commands':False,'input_method':False,'ascii_keyboard':True,'keyboard_physical_verified':False,'source_font_included':False,
-       'fixed_runtime':True,'application_format':'trusted-directory-v0','pui_admission':False,
+       'fixed_runtime':True,'application_format':'trusted-directory-v0+pui-v1-development','pui_admission':False,
+       'pui_development_loader':True,'package_authenticated':False,'unsigned_default':'deny',
+       'packages':{p.name:sha(p) for p in sorted((dest/'packages').glob('*.pui'))},
+       'package_proof_sha256':sha(dest/'package-proof.json'),
        'applications':['assets','applications/control-panel'],'application_proof_sha256':sha(dest/'application-proof.json')})
     for p in dest.rglob('*'):
         if p.suffix.lower() in ('.ttf','.otf','.ttc','.key','.pem') or 'private' in p.name.lower():raise RuntimeError('private/font asset in package')
@@ -246,13 +267,28 @@ def package_check():
     if sha(dest/'ui-framework')!=m['static_binary_sha256']:raise RuntimeError('deployed ELF differs')
     proof=json.loads((dest/'application-proof.json').read_text())
     if proof['runtime_sha256']!=m['static_binary_sha256'] or not proof['same_binary_interactive_apps']:raise RuntimeError('deployed application proof mismatch')
-    print('FRAMEWORK_PACKAGE_VERIFIED physical_hardware=false')
+    package_proof=json.loads((dest/'package-proof.json').read_text())
+    from application_acceptance import files
+    if package_proof['runtime_sha256']!=m['static_binary_sha256'] or not package_proof['same_binary_packaged_applications'] or package_proof['authenticated'] or package_proof['physical_hardware']:raise RuntimeError('deployed package proof mismatch')
+    if files(OUT/package_proof['directory'])!=package_proof['evidence']:raise RuntimeError('static package evidence changed')
+    manifest=json.loads((dest/'manifest.json').read_text())
+    if manifest['package_proof_sha256']!=sha(dest/'package-proof.json') or not manifest['pui_development_loader'] or manifest['pui_admission'] or manifest['package_authenticated']:raise RuntimeError('package admission scope mismatch')
+    for name,digest in manifest['packages'].items():
+        if sha(dest/'packages'/name)!=digest:raise RuntimeError('deployed application package changed')
+        app=name[:-4]
+        if package_proof['runs'][app+'-600']['package_sha256']!=digest:raise RuntimeError('packaged application differs from tested payload')
+    print('FRAMEWORK_PACKAGE_VERIFIED physical_hardware=false authenticated=false')
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument('action',choices=['assets','test','build','verify','package','package-check']);p.add_argument('--mode',choices=['native','arm'],default='native');p.add_argument('--sanitize',action='store_true');a=p.parse_args()
+    p=argparse.ArgumentParser();p.add_argument('action',choices=['assets','test','build','verify','package','package-check','test-packages']);p.add_argument('--mode',choices=['native','arm'],default='native');p.add_argument('--sanitize',action='store_true');a=p.parse_args()
     if a.action=='assets':assets()
     elif a.action=='test':test(a.mode,a.sanitize)
     elif a.action=='build':assets();compile_binary(a.mode)
+    elif a.action=='test-packages':
+        assets()
+        from package_acceptance import test_runtime_packages
+        if not a.sanitize:compile_binary(a.mode)
+        test_runtime_packages(a.mode,a.sanitize)
     elif a.action=='verify':verify()
     elif a.action=='package':package()
     elif a.action=='package-check':package_check()

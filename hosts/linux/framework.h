@@ -8,6 +8,7 @@
 
 typedef struct {
     PocketApplication app;
+    PuiLoadedPackage package; /* own retained sealed input until close */
     PocketSceneEngine engine;
     PocketInputInteractionBridge input;
     PocketScene scene;
@@ -30,6 +31,11 @@ typedef struct {
 int pocket_framework_open(PocketFramework *runtime,unsigned height,unsigned items,
                           const char *application_root,const char *media_root,
                           const PocketDisplayBackend *display);
+/* The prepared package is retained. Caller may release its handle immediately
+ * after return; application/atlas/image reads never reopen the input pathname. */
+int pocket_framework_open_package(PocketFramework *runtime,unsigned height,unsigned items,
+                                  const PuiLoadedPackage *package,const char *media_root,
+                                  const PocketDisplayBackend *display);
 int pocket_framework_input(void *runtime,const InputFrame *frame,uint64_t event_ns);
 void pocket_framework_disconnect(PocketFramework *runtime,uint64_t now_ns);
 int pocket_framework_tick(PocketFramework *runtime,uint64_t now_ns,int force_present);

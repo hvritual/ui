@@ -57,6 +57,11 @@
       "reference_only": false,
       "role": "runtime"
     },
+    "hosts/linux/host.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
     "hosts/linux/input/interaction_bridge.c": {
       "origin": "repository",
       "reference_only": false,
@@ -71,6 +76,16 @@
       "origin": "repository",
       "reference_only": false,
       "role": "target"
+    },
+    "hosts/linux/package/loaded.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/package/package.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
     },
     "hosts/linux/text-input/keyboard.c": {
       "origin": "repository",
@@ -253,6 +268,26 @@
       "role": "test-only"
     },
     "tests/framework/test_scene_wire.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
+    "tests/package/test_framework.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
+    "tests/package/test_keyboard.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
+    "tests/package/test_lifetime.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
+    "tests/package/test_scene_wire.c": {
       "origin": "repository",
       "reference_only": false,
       "role": "test-only"

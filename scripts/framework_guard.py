@@ -15,10 +15,10 @@ def install() -> None:
     original_compile = framework.compile_binary
 
     @functools.wraps(original_compile)
-    def compile_guarded(mode, test=False, sanitize=False, static=False, loop=False, application_test=False, reference=False):
+    def compile_guarded(mode, test=False, sanitize=False, static=False, loop=False, application_test=False, reference=False, package_test=None):
         # Legacy workload wrappers/reference C are test-owned. Production and
         # generic application tests cannot use their application exceptions.
-        consumer = 'reference-test' if reference or (test and not application_test) else 'runtime-test' if test or loop else 'runtime'
+        consumer = 'reference-test' if reference or package_test=='framework' or (test and not application_test and not package_test) else 'runtime-test' if test or loop else 'runtime'
         original_run = framework.run
         records = []
 
@@ -30,7 +30,7 @@ def install() -> None:
 
         framework.run = guarded_run
         try:
-            binary = original_compile(mode, test, sanitize, static, loop, application_test, reference)
+            binary = original_compile(mode, test, sanitize, static, loop, application_test, reference, package_test)
         finally:
             framework.run = original_run
         if len(records) != 1:
