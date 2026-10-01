@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "owner_issue": 67,
+  "capability_source": "assets/locales/input-capabilities.json",
+  "software_candidates": ["en-US", "zh-CN"],
+  "market_confirmation": "pending",
+  "scope": "restricted-software-evidence-only",
+  "baseline": {
+    "repository": "hvritual/ui",
+    "pr": 66,
+    "commit": "882fb7bf872308a78bdc6246f0124643144ea299",
+    "tree": "4423f7338a5d7c3e31a53c1e9417466b28737585",
+    "run_id": 36819123999,
+    "framework_artifact": {"id": 11143245402, "sha256": "e2394e7b40fa80d5fe4ecf5db330f95c33e5ae475fac2155ecc8128b9ba0fb2b"},
+    "emulator_artifact": {"id": 11142732397, "sha256": "bfdcca09a0a1131266705cd8c04183a507fdbc2948318f0d51bf56781d44112e"},
+    "emulator_sha256": "47a63bcbdf3030cf42230a0521dae38ff9d62ba1268d5cafc7d8ccf7da7c761c"
+  },
+  "deferred": {"de-DE": 68, "fr-FR": 68, "es-ES": 68, "pt-PT": 68, "zh-TW": 69, "ja-JP": 70, "ko-KR": 71, "ar": 72, "th-TH": 73},
+  "handoff": {"physical": 49, "performance": 7, "release_recovery": 9, "reliability": 10}
+}
