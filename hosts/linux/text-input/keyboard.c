@@ -674,5 +674,6 @@ int pocket_keyboard_input_snapshot(const PocketKeyboard *out,PocketKeyboardInput
     snapshot->locale=i->input_layout.locale;snapshot->candidates=m.candidate_count;snapshot->page=m.page;snapshot->total=m.total;
     snapshot->request=m.request;snapshot->layout_generation=i->input_layout.generation;snapshot->composing=m.composing;
     snapshot->commits=i->ime_commits;snapshot->candidate_batches=i->candidate_batches;
-    snapshot->pending=m.pending;snapshot->language_popup=i->input_layout.popup;snapshot->provider_status=m.provider_status;return 1;
+    snapshot->pending=m.pending;snapshot->language_popup=i->input_layout.popup;snapshot->provider_status=m.provider_status;
+    snapshot->provider_stage=m.provider_stage;snapshot->provider_errno=m.provider_errno;snapshot->provider_storage=m.provider_storage;return 1;
 }
