@@ -152,7 +152,13 @@ PocketPinyinStatus pocket_pinyin_open(PocketPinyin *out,const void *data,size_t 
     if(!out||out->impl||now>UINT64_MAX-POCKET_PINYIN_TIMEOUT_MS)return POCKET_PINYIN_INVALID;
     out->diagnostic_stage=POCKET_PINYIN_STAGE_NONE;out->diagnostic_errno=0;out->storage_mode=POCKET_PINYIN_STORAGE_NONE;
     if(!data||bytes!=dictionary_bytes)return open_fail(out,POCKET_PINYIN_STAGE_DICTIONARY,0);
-    int memory=int(syscall(SYS_memfd_create,"pocket-pinyin",MFD_CLOEXEC|MFD_ALLOW_SEALING));
+    int memory=-1;
+#ifdef POCKET_PINYIN_TEST_HOOKS
+    const char *forced=getenv("POCKET_PINYIN_FORCE_UNLINKED_FILE");
+    if(forced&&forced[0]=='1'&&!forced[1])errno=ENOSYS;
+    else
+#endif
+    memory=int(syscall(SYS_memfd_create,"pocket-pinyin",MFD_CLOEXEC|MFD_ALLOW_SEALING));
     if(memory>=0){
         out->storage_mode=POCKET_PINYIN_STORAGE_MEMFD;
         if(!write_all(memory,data,bytes)){int e=errno;close(memory);return open_fail(out,POCKET_PINYIN_STAGE_MEMFD,e);}
