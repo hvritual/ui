@@ -75,6 +75,18 @@ static void provider_tests(const std::vector<unsigned char> &dict){
         value(&e.text,"你好");
     }
     CHECK(!unsetenv("POCKET_PINYIN_FORCE_UNLINKED_FILE"));
+    CHECK(!setenv("POCKET_PINYIN_TEST_SEAL_UNSUPPORTED","1",1));
+    {
+        Editing e(dict);
+        type(&e.ime,&e.text,"nihao");
+        const auto candidates=wait(&e.ime);
+        CHECK(candidates.count&&std::strcmp(candidates.candidates[0].text,"你好")==0);
+        PocketImeSnapshot snap{};
+        CHECK(pocket_ime_snapshot(&e.ime,&snap)&&snap.provider_storage==POCKET_PINYIN_STORAGE_UNLINKED_FILE);
+        CHECK(pocket_ime_choose(&e.ime,token(&e.text),candidates.request,0,now())==POCKET_TEXT_OK);
+        value(&e.text,"你好");
+    }
+    CHECK(!unsetenv("POCKET_PINYIN_TEST_SEAL_UNSUPPORTED"));
     uint64_t start=now();CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),start)==POCKET_PINYIN_OK);
     PocketPinyinResult r{};CHECK(pocket_pinyin_poll(&p,start+POCKET_PINYIN_TIMEOUT_MS,&r)==POCKET_PINYIN_TIMEOUT);CHECK(!r.count);pocket_pinyin_close(&p);
     CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),now())==POCKET_PINYIN_OK);
