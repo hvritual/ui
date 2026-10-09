@@ -250,7 +250,7 @@ done:
                 replay?"true":"false",replay_samples,stats.page,stats.selected);
         fprintf(report,",\"text_input_open\":%s,\"text_input_opens\":%u,\"text_input_confirms\":%u,\"text_input_cancels\":%u",
                 stats.editor_active?"true":"false",stats.editor_opens,stats.editor_confirms,stats.editor_cancels);
-        fprintf(report,",\"ime_commits\":%llu,\"ime_candidate_batches\":%llu,\"replay_realtime\":%s",(unsigned long long)stats.ime_commits,(unsigned long long)stats.ime_candidate_batches,replay_realtime?"true":"false");
+        fprintf(report,",\"ime_commits\":%llu,\"ime_candidate_batches\":%llu,\"ime_provider_status\":%d,\"ime_provider_stage\":%d,\"ime_provider_errno\":%d,\"ime_provider_storage\":%u,\"ime_input_locale\":%u,\"replay_realtime\":%s",(unsigned long long)stats.ime_commits,(unsigned long long)stats.ime_candidate_batches,stats.ime_provider_status,stats.ime_provider_stage,stats.ime_provider_errno,stats.ime_provider_storage,stats.ime_input_locale,replay_realtime?"true":"false");
         fprintf(report,",\"scroll_x\":%d,\"scroll_dragging\":%u,\"scroll_settling\":%u,\"motion_presents\":%llu,\"layout_runs\":%llu",
                 stats.scroll_x,stats.scroll_dragging,stats.scroll_settling,
                 (unsigned long long)r->motion_presents,(unsigned long long)stats.layout_runs);
