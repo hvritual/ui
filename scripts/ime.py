@@ -114,7 +114,7 @@ def test(mode: str) -> None:
         flags += ['-mcpu=cortex-a7', '-mfpu=neon-vfpv4', '-mfloat-abi=hard']
     if sanitize:
         flags += ['-g', '-fsanitize=address,undefined', '-fno-sanitize-recover=all', '-fno-omit-frame-pointer']
-    includes = ['-I.', '-I'+str(vendor/'include'), '-I'+str(unicode_source), '-DUTF8PROC_STATIC']
+    includes = ['-I.', '-I'+str(vendor/'include'), '-I'+str(unicode_source), '-DUTF8PROC_STATIC', '-DPOCKET_PINYIN_TEST_HOOKS']
     sources = [(cxx, ROOT/'hosts/linux/ime/pinyin.cpp'), (cc, ROOT/'hosts/linux/ime/session.c'),
                (cc, ROOT/'hosts/linux/text-input/layout.c'), (cc, ROOT/'hosts/linux/text-input/session.c'),
                (cc, ROOT/'hosts/linux/package/package.c'), (cc, unicode_source/'utf8proc.c')]
