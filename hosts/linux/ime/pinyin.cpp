@@ -141,10 +141,10 @@ static int readonly_fallback(PocketPinyin *out,const void *data,size_t bytes){
         int e=errno;close(write_fd);unlink(path);if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=e;}return -1;
     }
     int read_fd=open(path,O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
-    int e=errno;
-    if(unlink(path)&&!e)e=errno;
+    int open_errno=read_fd<0?errno:0;
+    if(read_fd<0){close(write_fd);unlink(path);if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=open_errno;}return -1;}
+    if(unlink(path)){int e=errno;close(read_fd);close(write_fd);if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=e;}return -1;}
     close(write_fd);
-    if(read_fd<0){if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=e;}return -1;}
     out->storage_mode=POCKET_PINYIN_STORAGE_UNLINKED_FILE;
     return read_fd;
 }
