@@ -22,6 +22,8 @@ typedef struct {
     uint64_t layout_runs;
     unsigned editor_opens, editor_confirms, editor_cancels, editor_active;
     uint64_t ime_commits,ime_candidate_batches;
+    int ime_provider_status,ime_provider_stage,ime_provider_errno;
+    unsigned ime_provider_storage,ime_input_locale;
 } PocketApplicationStats;
 int pocket_application_open(PocketApplication *application, unsigned height,
                             unsigned item_count, const char *source, size_t length);
