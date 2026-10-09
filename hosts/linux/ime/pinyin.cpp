@@ -173,7 +173,14 @@ PocketPinyinStatus pocket_pinyin_open(PocketPinyin *out,const void *data,size_t 
     if(memory>=0){
         out->storage_mode=POCKET_PINYIN_STORAGE_MEMFD;
         if(!write_all(memory,data,bytes)){int e=errno;close(memory);return open_fail(out,POCKET_PINYIN_STAGE_MEMFD,e);}
-        if(fcntl(memory,F_ADD_SEALS,F_SEAL_WRITE|F_SEAL_GROW|F_SEAL_SHRINK|F_SEAL_SEAL)<0){
+        int seal_result;
+#ifdef POCKET_PINYIN_TEST_HOOKS
+        const char *unsupported=getenv("POCKET_PINYIN_TEST_SEAL_UNSUPPORTED");
+        if(unsupported&&unsupported[0]=='1'&&!unsupported[1]){errno=EINVAL;seal_result=-1;}
+        else
+#endif
+        seal_result=fcntl(memory,F_ADD_SEALS,F_SEAL_WRITE|F_SEAL_GROW|F_SEAL_SHRINK|F_SEAL_SEAL);
+        if(seal_result<0){
             int e=errno;close(memory);
             if(!legacy_unavailable(e))return open_fail(out,POCKET_PINYIN_STAGE_SEAL,e);
             memory=readonly_fallback(out,data,bytes);
