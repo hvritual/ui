@@ -116,7 +116,7 @@ int pocket_pinyin_dictionary_valid(const void *data,size_t bytes){return digest_
 void pocket_pinyin_diagnostics(const PocketPinyin *p,int *stage,int *system_errno,unsigned *storage_mode){
     if(stage)*stage=p?p->diagnostic_stage:POCKET_PINYIN_STAGE_NONE;
     if(system_errno)*system_errno=p?p->diagnostic_errno:0;
-    if(storage_mode)*storage_mode=p?p->storage_mode:POCKET_PINYIN_STORAGE_NONE;
+    if(storage_mode)*storage_mode=p?p->storage_mode:unsigned(POCKET_PINYIN_STORAGE_NONE);
 }
 static PocketPinyinStatus open_fail(PocketPinyin *out,int stage,int err){
     if(out){out->diagnostic_stage=stage;out->diagnostic_errno=err;}
@@ -143,6 +143,13 @@ static int readonly_fallback(PocketPinyin *out,const void *data,size_t bytes){
     int read_fd=open(path,O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
     int open_errno=read_fd<0?errno:0;
     if(read_fd<0){close(write_fd);unlink(path);if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=open_errno;}return -1;}
+    struct stat wrote{},readback{};
+    if(fstat(write_fd,&wrote)||fstat(read_fd,&readback)||!S_ISREG(readback.st_mode)||
+       wrote.st_dev!=readback.st_dev||wrote.st_ino!=readback.st_ino||
+       readback.st_size!=static_cast<off_t>(bytes)||readback.st_nlink!=1){
+        int e=errno?errno:EINVAL;close(read_fd);close(write_fd);unlink(path);
+        if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=e;}return -1;
+    }
     if(unlink(path)){int e=errno;close(read_fd);close(write_fd);if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=e;}return -1;}
     close(write_fd);
     out->storage_mode=POCKET_PINYIN_STORAGE_UNLINKED_FILE;
@@ -207,13 +214,13 @@ PocketPinyinStatus pocket_pinyin_poll(PocketPinyin *out,uint64_t now,PocketPinyi
     if(result)std::memset(result,0,sizeof(*result));
     if(!w||!result||now<w->now||now>UINT64_MAX-POCKET_PINYIN_TIMEOUT_MS)return POCKET_PINYIN_INVALID;
     w->now=now;if(w->failed)return POCKET_PINYIN_UNAVAILABLE;
-    if((!w->ready||w->flight)&&now>=w->deadline){stop(w);return POCKET_PINYIN_TIMEOUT;}
+    if((!w->ready||w->flight)&&now>=w->deadline){out->diagnostic_stage=w->ready?POCKET_PINYIN_STAGE_SOCKET:POCKET_PINYIN_STAGE_DECODER;out->diagnostic_errno=ETIMEDOUT;stop(w);return POCKET_PINYIN_TIMEOUT;}
     /* Two bounded packets: initial readiness plus one response. */
     for(unsigned i=0;i<2;i++){
         PocketPinyinResult r{};ssize_t n=recv(w->socket,&r,sizeof(r),MSG_DONTWAIT|MSG_TRUNC);
         if(n<0&&(errno==EAGAIN||errno==EWOULDBLOCK||errno==EINTR))break;
-        if(n!=ssize_t(sizeof(r))){stop(w);return POCKET_PINYIN_UNAVAILABLE;}
-        if(!w->ready){if(r.request||r.status!=POCKET_PINYIN_OK){stop(w);return POCKET_PINYIN_UNAVAILABLE;}w->ready=true;}
+        if(n!=ssize_t(sizeof(r))){out->diagnostic_stage=w->ready?POCKET_PINYIN_STAGE_SOCKET:POCKET_PINYIN_STAGE_DECODER;out->diagnostic_errno=n<0?errno:EIO;stop(w);return POCKET_PINYIN_UNAVAILABLE;}
+        if(!w->ready){if(r.request||r.status!=POCKET_PINYIN_OK){out->diagnostic_stage=POCKET_PINYIN_STAGE_DECODER;out->diagnostic_errno=0;stop(w);return POCKET_PINYIN_UNAVAILABLE;}w->ready=true;}
         else {w->flight=false;if(r.request==w->latest){*result=r;erase(&r,sizeof(r));return result->status;}}
         erase(&r,sizeof(r));
     }
