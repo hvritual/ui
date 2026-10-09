@@ -21,6 +21,8 @@ extern "C" {
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <sys/stat.h>
+
 
 
 namespace {
@@ -111,34 +113,78 @@ bool drive(Worker *w,uint64_t now){
 }
 }
 int pocket_pinyin_dictionary_valid(const void *data,size_t bytes){return digest_valid(data,bytes)?1:0;}
+void pocket_pinyin_diagnostics(const PocketPinyin *p,int *stage,int *system_errno,unsigned *storage_mode){
+    if(stage)*stage=p?p->diagnostic_stage:POCKET_PINYIN_STAGE_NONE;
+    if(system_errno)*system_errno=p?p->diagnostic_errno:0;
+    if(storage_mode)*storage_mode=p?p->storage_mode:POCKET_PINYIN_STORAGE_NONE;
+}
+static PocketPinyinStatus open_fail(PocketPinyin *out,int stage,int err){
+    if(out){out->diagnostic_stage=stage;out->diagnostic_errno=err;}
+    return POCKET_PINYIN_UNAVAILABLE;
+}
+static int write_all(int fd,const void *data,size_t bytes){
+    size_t done=0;unsigned interrupts=0;
+    while(done<bytes){
+        ssize_t n=write(fd,static_cast<const char *>(data)+done,bytes-done);
+        if(n<0&&errno==EINTR&&interrupts++<32)continue;
+        if(n<=0)return 0;
+        done+=size_t(n);
+    }
+    return 1;
+}
+static int readonly_fallback(PocketPinyin *out,const void *data,size_t bytes){
+    char path[]="/tmp/pocket-pinyin-XXXXXX";
+    int write_fd=mkstemp(path);
+    if(write_fd<0){if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=errno;}return -1;}
+    (void)fcntl(write_fd,F_SETFD,FD_CLOEXEC);
+    if(fchmod(write_fd,S_IRUSR|S_IWUSR)||!write_all(write_fd,data,bytes)){
+        int e=errno;close(write_fd);unlink(path);if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=e;}return -1;
+    }
+    int read_fd=open(path,O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
+    int e=errno;
+    if(unlink(path)&&!e)e=errno;
+    close(write_fd);
+    if(read_fd<0){if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=e;}return -1;}
+    out->storage_mode=POCKET_PINYIN_STORAGE_UNLINKED_FILE;
+    return read_fd;
+}
 PocketPinyinStatus pocket_pinyin_open(PocketPinyin *out,const void *data,size_t bytes,uint64_t now){
     if(!out||out->impl||now>UINT64_MAX-POCKET_PINYIN_TIMEOUT_MS)return POCKET_PINYIN_INVALID;
-    if(!data||bytes!=dictionary_bytes)return POCKET_PINYIN_UNAVAILABLE;
+    out->diagnostic_stage=POCKET_PINYIN_STAGE_NONE;out->diagnostic_errno=0;out->storage_mode=POCKET_PINYIN_STORAGE_NONE;
+    if(!data||bytes!=dictionary_bytes)return open_fail(out,POCKET_PINYIN_STAGE_DICTIONARY,0);
     int memory=int(syscall(SYS_memfd_create,"pocket-pinyin",MFD_CLOEXEC|MFD_ALLOW_SEALING));
-    if(memory<0)return POCKET_PINYIN_UNAVAILABLE;
-    size_t done=0;unsigned interrupts=0;
-    while(done<bytes){ssize_t n=write(memory,static_cast<const char *>(data)+done,bytes-done);
-        if(n<0&&errno==EINTR&&interrupts++<32)continue;
-        if(n<=0){close(memory);return POCKET_PINYIN_UNAVAILABLE;}done+=size_t(n);}
-    if(fcntl(memory,F_ADD_SEALS,F_SEAL_WRITE|F_SEAL_GROW|F_SEAL_SHRINK|F_SEAL_SEAL)<0){close(memory);return POCKET_PINYIN_UNAVAILABLE;}
+    if(memory>=0){
+        out->storage_mode=POCKET_PINYIN_STORAGE_MEMFD;
+        if(!write_all(memory,data,bytes)){int e=errno;close(memory);return open_fail(out,POCKET_PINYIN_STAGE_MEMFD,e);}
+        if(fcntl(memory,F_ADD_SEALS,F_SEAL_WRITE|F_SEAL_GROW|F_SEAL_SHRINK|F_SEAL_SEAL)<0){
+            int e=errno;close(memory);memory=readonly_fallback(out,data,bytes);
+            if(memory<0)return open_fail(out,out->diagnostic_stage?out->diagnostic_stage:POCKET_PINYIN_STAGE_SEAL,
+                                        out->diagnostic_errno?out->diagnostic_errno:e);
+        }
+    }else{
+        int e=errno;
+        memory=readonly_fallback(out,data,bytes);
+        if(memory<0)return open_fail(out,out->diagnostic_stage?out->diagnostic_stage:POCKET_PINYIN_STAGE_MEMFD,
+                                    out->diagnostic_errno?out->diagnostic_errno:e);
+    }
     void *view=mmap(nullptr,bytes,PROT_READ,MAP_SHARED,memory,0);
-    if(view==MAP_FAILED){close(memory);return POCKET_PINYIN_UNAVAILABLE;}
+    if(view==MAP_FAILED){int e=errno;close(memory);return open_fail(out,POCKET_PINYIN_STAGE_VERIFY,e);}
     bool valid=digest_valid(view,bytes);munmap(view,bytes);
-    if(!valid){close(memory);return POCKET_PINYIN_UNAVAILABLE;}
-    int pair[2];if(socketpair(AF_UNIX,SOCK_SEQPACKET|SOCK_CLOEXEC,0,pair)){close(memory);return POCKET_PINYIN_UNAVAILABLE;}
+    if(!valid){close(memory);return open_fail(out,POCKET_PINYIN_STAGE_VERIFY,0);}
+    int pair[2];if(socketpair(AF_UNIX,SOCK_SEQPACKET|SOCK_CLOEXEC,0,pair)){int e=errno;close(memory);return open_fail(out,POCKET_PINYIN_STAGE_SOCKET,e);}
     /* Enumerate before fork; child closes every inherited device/output fd.
      * Single-owner API is mandatory; this is not a thread-safe fork service. */
     int fds[1024];size_t fd_count=0;bool too_many=false;DIR *dir=opendir("/proc/self/fd");
-    if(!dir){close(pair[0]);close(pair[1]);close(memory);return POCKET_PINYIN_UNAVAILABLE;}
+    if(!dir){int e=errno;close(pair[0]);close(pair[1]);close(memory);return open_fail(out,POCKET_PINYIN_STAGE_FD_ENUM,e);}
     for(dirent *e=readdir(dir);e;e=readdir(dir)){char *end=nullptr;long n=std::strtol(e->d_name,&end,10);if(end&&!*end&&n>=0&&n<=INT_MAX&&n!=dirfd(dir)){if(fd_count==1024){too_many=true;break;}fds[fd_count++]=int(n);}}
-    closedir(dir);if(too_many){close(pair[0]);close(pair[1]);close(memory);return POCKET_PINYIN_EXHAUSTED;}
+    closedir(dir);if(too_many){close(pair[0]);close(pair[1]);close(memory);out->diagnostic_stage=POCKET_PINYIN_STAGE_FD_ENUM;out->diagnostic_errno=EMFILE;return POCKET_PINYIN_EXHAUSTED;}
     Worker *w=new(std::nothrow) Worker;
-    if(!w){close(pair[0]);close(pair[1]);close(memory);return POCKET_PINYIN_EXHAUSTED;}
+    if(!w){close(pair[0]);close(pair[1]);close(memory);out->diagnostic_stage=POCKET_PINYIN_STAGE_FORK;out->diagnostic_errno=ENOMEM;return POCKET_PINYIN_EXHAUSTED;}
     pid_t parent=getpid(),pid=fork();
     if(pid==0)child(pair[1],memory,parent,fds,fd_count);
     close(pair[1]);close(memory);
-    if(pid<0){close(pair[0]);delete w;return POCKET_PINYIN_UNAVAILABLE;}
-    w->pid=pid;w->socket=pair[0];w->now=now;w->deadline=now+POCKET_PINYIN_TIMEOUT_MS;out->impl=w;return POCKET_PINYIN_OK;
+    if(pid<0){int e=errno;close(pair[0]);delete w;return open_fail(out,POCKET_PINYIN_STAGE_FORK,e);}
+    w->pid=pid;w->socket=pair[0];w->now=now;w->deadline=now+POCKET_PINYIN_TIMEOUT_MS;out->impl=w;out->diagnostic_stage=POCKET_PINYIN_STAGE_NONE;out->diagnostic_errno=0;return POCKET_PINYIN_OK;
 }
 PocketPinyinStatus pocket_pinyin_request(PocketPinyin *out,PocketTextToken token,const char *raw,size_t n,uint32_t page,uint64_t now,uint64_t *id){
     Worker *w=out?static_cast<Worker *>(out->impl):nullptr;
