@@ -141,7 +141,10 @@ PocketPinyinStatus pocket_ime_step(PocketImeSession *out,uint64_t now){
 }
 int pocket_ime_snapshot(const PocketImeSession *out,PocketImeSnapshot *snapshot){
     const Session *s=out?out->impl:NULL;PocketTextSnapshot text;if(!s||!snapshot||pocket_text_snapshot(s->text,&text)!=POCKET_TEXT_OK)return 0;
-    *snapshot=(PocketImeSnapshot){s->locale,s->status,s->candidates.count,s->candidates.page,s->candidates.total,s->request,text.composing,(uint8_t)s->pending};return 1;
+    int stage=0,system_errno=0;unsigned storage=0;
+    pocket_pinyin_diagnostics(&s->provider,&stage,&system_errno,&storage);
+    *snapshot=(PocketImeSnapshot){s->locale,s->status,s->candidates.count,s->candidates.page,s->candidates.total,s->request,
+        text.composing,(uint8_t)s->pending,stage,system_errno,storage};return 1;
 }
 int pocket_ime_candidates(const PocketImeSession *out,PocketPinyinResult *result){
     const Session *s=out?out->impl:NULL;PocketTextSnapshot state;
