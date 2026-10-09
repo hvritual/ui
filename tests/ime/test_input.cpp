@@ -53,6 +53,11 @@ static void layout_tests(){
 static void provider_tests(const std::vector<unsigned char> &dict){
     PocketPinyin p{};auto bad=dict;bad[100]^=1;CHECK(pocket_pinyin_open(&p,bad.data(),bad.size(),now())==POCKET_PINYIN_UNAVAILABLE&&!p.impl);
     CHECK(pocket_pinyin_open(&p,dict.data(),dict.size()-1,now())==POCKET_PINYIN_UNAVAILABLE&&!p.impl);
+    CHECK(!setenv("POCKET_PINYIN_FORCE_UNLINKED_FILE","1",1));
+    uint64_t fallback_start=now();CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),fallback_start)==POCKET_PINYIN_OK);
+    int stage=0,system_errno=0;unsigned storage=0;pocket_pinyin_diagnostics(&p,&stage,&system_errno,&storage);
+    CHECK(stage==POCKET_PINYIN_STAGE_NONE&&system_errno==0&&storage==POCKET_PINYIN_STORAGE_UNLINKED_FILE);
+    pocket_pinyin_close(&p);CHECK(!unsetenv("POCKET_PINYIN_FORCE_UNLINKED_FILE"));
     uint64_t start=now();CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),start)==POCKET_PINYIN_OK);
     PocketPinyinResult r{};CHECK(pocket_pinyin_poll(&p,start+POCKET_PINYIN_TIMEOUT_MS,&r)==POCKET_PINYIN_TIMEOUT);CHECK(!r.count);pocket_pinyin_close(&p);
     CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),now())==POCKET_PINYIN_OK);
