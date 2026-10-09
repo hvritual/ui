@@ -122,12 +122,13 @@ static PocketPinyinStatus open_fail(PocketPinyin *out,int stage,int err){
     if(out){out->diagnostic_stage=stage;out->diagnostic_errno=err;}
     return POCKET_PINYIN_UNAVAILABLE;
 }
+static bool legacy_unavailable(int err){return err==ENOSYS||err==EINVAL||err==EOPNOTSUPP;}
 static int write_all(int fd,const void *data,size_t bytes){
     size_t done=0;unsigned interrupts=0;
     while(done<bytes){
         ssize_t n=write(fd,static_cast<const char *>(data)+done,bytes-done);
         if(n<0&&errno==EINTR&&interrupts++<32)continue;
-        if(n<=0)return 0;
+        if(n<=0){if(n==0)errno=EIO;return 0;}
         done+=size_t(n);
     }
     return 1;
@@ -144,10 +145,11 @@ static int readonly_fallback(PocketPinyin *out,const void *data,size_t bytes){
     int open_errno=read_fd<0?errno:0;
     if(read_fd<0){close(write_fd);unlink(path);if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=open_errno;}return -1;}
     struct stat wrote{},readback{};
-    if(fstat(write_fd,&wrote)||fstat(read_fd,&readback)||!S_ISREG(readback.st_mode)||
+    int stat_error=(fstat(write_fd,&wrote)||fstat(read_fd,&readback))?errno:0;
+    if(stat_error||!S_ISREG(readback.st_mode)||
        wrote.st_dev!=readback.st_dev||wrote.st_ino!=readback.st_ino||
        readback.st_size!=static_cast<off_t>(bytes)||readback.st_nlink!=1){
-        int e=errno?errno:EINVAL;close(read_fd);close(write_fd);unlink(path);
+        int e=stat_error?stat_error:EINVAL;close(read_fd);close(write_fd);unlink(path);
         if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=e;}return -1;
     }
     if(unlink(path)){int e=errno;close(read_fd);close(write_fd);if(out){out->diagnostic_stage=POCKET_PINYIN_STAGE_TEMPFILE;out->diagnostic_errno=e;}return -1;}
@@ -162,7 +164,9 @@ PocketPinyinStatus pocket_pinyin_open(PocketPinyin *out,const void *data,size_t 
     int memory=-1;
 #ifdef POCKET_PINYIN_TEST_HOOKS
     const char *forced=getenv("POCKET_PINYIN_FORCE_UNLINKED_FILE");
-    if(forced&&forced[0]=='1'&&!forced[1])errno=ENOSYS;
+    const char *denied=getenv("POCKET_PINYIN_TEST_MEMFD_DENIED");
+    if(denied&&denied[0]=='1'&&!denied[1])errno=EPERM;
+    else if(forced&&forced[0]=='1'&&!forced[1])errno=ENOSYS;
     else
 #endif
     memory=int(syscall(SYS_memfd_create,"pocket-pinyin",MFD_CLOEXEC|MFD_ALLOW_SEALING));
@@ -170,12 +174,15 @@ PocketPinyinStatus pocket_pinyin_open(PocketPinyin *out,const void *data,size_t 
         out->storage_mode=POCKET_PINYIN_STORAGE_MEMFD;
         if(!write_all(memory,data,bytes)){int e=errno;close(memory);return open_fail(out,POCKET_PINYIN_STAGE_MEMFD,e);}
         if(fcntl(memory,F_ADD_SEALS,F_SEAL_WRITE|F_SEAL_GROW|F_SEAL_SHRINK|F_SEAL_SEAL)<0){
-            int e=errno;close(memory);memory=readonly_fallback(out,data,bytes);
+            int e=errno;close(memory);
+            if(!legacy_unavailable(e))return open_fail(out,POCKET_PINYIN_STAGE_SEAL,e);
+            memory=readonly_fallback(out,data,bytes);
             if(memory<0)return open_fail(out,out->diagnostic_stage?out->diagnostic_stage:POCKET_PINYIN_STAGE_SEAL,
                                         out->diagnostic_errno?out->diagnostic_errno:e);
         }
     }else{
         int e=errno;
+        if(!legacy_unavailable(e))return open_fail(out,POCKET_PINYIN_STAGE_MEMFD,e);
         memory=readonly_fallback(out,data,bytes);
         if(memory<0)return open_fail(out,out->diagnostic_stage?out->diagnostic_stage:POCKET_PINYIN_STAGE_MEMFD,
                                     out->diagnostic_errno?out->diagnostic_errno:e);
