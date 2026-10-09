@@ -53,6 +53,12 @@ static void layout_tests(){
 static void provider_tests(const std::vector<unsigned char> &dict){
     PocketPinyin p{};auto bad=dict;bad[100]^=1;CHECK(pocket_pinyin_open(&p,bad.data(),bad.size(),now())==POCKET_PINYIN_UNAVAILABLE&&!p.impl);
     CHECK(pocket_pinyin_open(&p,dict.data(),dict.size()-1,now())==POCKET_PINYIN_UNAVAILABLE&&!p.impl);
+    CHECK(!setenv("POCKET_PINYIN_TEST_MEMFD_DENIED","1",1));
+    CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),now())==POCKET_PINYIN_UNAVAILABLE&&!p.impl);
+    int denied_stage=0,denied_errno=0;unsigned denied_storage=0;
+    pocket_pinyin_diagnostics(&p,&denied_stage,&denied_errno,&denied_storage);
+    CHECK(denied_stage==POCKET_PINYIN_STAGE_MEMFD&&denied_errno==EPERM&&denied_storage==POCKET_PINYIN_STORAGE_NONE);
+    CHECK(!unsetenv("POCKET_PINYIN_TEST_MEMFD_DENIED"));
     CHECK(!setenv("POCKET_PINYIN_FORCE_UNLINKED_FILE","1",1));
     uint64_t fallback_start=now();CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),fallback_start)==POCKET_PINYIN_OK);
     int stage=0,system_errno=0;unsigned storage=0;pocket_pinyin_diagnostics(&p,&stage,&system_errno,&storage);
