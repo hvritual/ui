@@ -13,7 +13,7 @@ typedef struct {
     uint64_t request;
     uint8_t composing,pending;
     int provider_stage,provider_errno;
-    unsigned provider_storage;
+    unsigned provider_storage,provider_verify_mode;
 } PocketImeSnapshot;
 /* Borrows an existing TextSession and immutable dictionary until close. Never
  * owns focus, navigates, or submits a form. F6 remains the only focus owner. */
