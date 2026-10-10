@@ -113,10 +113,11 @@ bool drive(Worker *w,uint64_t now){
 }
 }
 int pocket_pinyin_dictionary_valid(const void *data,size_t bytes){return digest_valid(data,bytes)?1:0;}
-void pocket_pinyin_diagnostics(const PocketPinyin *p,int *stage,int *system_errno,unsigned *storage_mode){
+void pocket_pinyin_diagnostics(const PocketPinyin *p,int *stage,int *system_errno,unsigned *storage_mode,unsigned *verification_mode){
     if(stage)*stage=p?p->diagnostic_stage:POCKET_PINYIN_STAGE_NONE;
     if(system_errno)*system_errno=p?p->diagnostic_errno:0;
     if(storage_mode)*storage_mode=p?p->storage_mode:unsigned(POCKET_PINYIN_STORAGE_NONE);
+    if(verification_mode)*verification_mode=p?p->verification_mode:unsigned(POCKET_PINYIN_VERIFY_NONE);
 }
 static PocketPinyinStatus open_fail(PocketPinyin *out,int stage,int err){
     if(out){out->diagnostic_stage=stage;out->diagnostic_errno=err;}
@@ -157,10 +158,45 @@ static int readonly_fallback(PocketPinyin *out,const void *data,size_t bytes){
     out->storage_mode=POCKET_PINYIN_STORAGE_UNLINKED_FILE;
     return read_fd;
 }
+/* On some older BSPs sealed memfds cannot be mapped even PROT_READ|MAP_SHARED.
+ * The AOSP decoder already uses fdopen/fread, not mmap. If a read-only mmap is
+ * denied, verify the identical, pinned dictionary through pread, which cannot
+ * change the FD offset or grant write access. Any read failure stays fatal. */
+static bool verify_fd_readback(int fd,const void *trusted,size_t bytes,int *error){
+    if(error)*error=0;
+    struct stat st{};
+    if(fstat(fd,&st)<0){if(error)*error=errno;return false;}
+    if(!S_ISREG(st.st_mode)||st.st_size!=static_cast<off_t>(bytes)){
+        if(error)*error=EIO;return false;
+    }
+    unsigned char buffer[8192];
+    const unsigned char *source=static_cast<const unsigned char *>(trusted);
+    size_t offset=0;unsigned interrupts=0;
+    while(offset<bytes){
+        size_t want=sizeof(buffer);if(want>bytes-offset)want=bytes-offset;
+        ssize_t n;
+#ifdef POCKET_PINYIN_TEST_HOOKS
+        const char *denied=getenv("POCKET_PINYIN_TEST_PREAD_EPERM");
+        if(denied&&denied[0]=='1'&&!denied[1]){errno=EPERM;n=-1;}
+        else
+#endif
+        n=pread(fd,buffer,want,static_cast<off_t>(offset));
+        if(n<0&&errno==EINTR&&interrupts++<32)continue;
+        if(n<=0){if(error)*error=n<0?errno:EIO;erase(buffer,sizeof(buffer));return false;}
+        interrupts=0;
+        if(std::memcmp(buffer,source+offset,static_cast<size_t>(n))){
+            if(error)*error=EIO;erase(buffer,sizeof(buffer));return false;
+        }
+        offset+=static_cast<size_t>(n);
+    }
+    erase(buffer,sizeof(buffer));
+    return true;
+}
 PocketPinyinStatus pocket_pinyin_open(PocketPinyin *out,const void *data,size_t bytes,uint64_t now){
     if(!out||out->impl||now>UINT64_MAX-POCKET_PINYIN_TIMEOUT_MS)return POCKET_PINYIN_INVALID;
     out->diagnostic_stage=POCKET_PINYIN_STAGE_NONE;out->diagnostic_errno=0;out->storage_mode=POCKET_PINYIN_STORAGE_NONE;
-    if(!data||bytes!=dictionary_bytes)return open_fail(out,POCKET_PINYIN_STAGE_DICTIONARY,0);
+    out->verification_mode=POCKET_PINYIN_VERIFY_NONE;
+    if(!data||bytes!=dictionary_bytes||!digest_valid(data,bytes))return open_fail(out,POCKET_PINYIN_STAGE_DICTIONARY,0);
     int memory=-1;
 #ifdef POCKET_PINYIN_TEST_HOOKS
     const char *forced=getenv("POCKET_PINYIN_FORCE_UNLINKED_FILE");
@@ -194,10 +230,29 @@ PocketPinyinStatus pocket_pinyin_open(PocketPinyin *out,const void *data,size_t 
         if(memory<0)return open_fail(out,out->diagnostic_stage?out->diagnostic_stage:POCKET_PINYIN_STAGE_MEMFD,
                                     out->diagnostic_errno?out->diagnostic_errno:e);
     }
-    void *view=mmap(nullptr,bytes,PROT_READ,MAP_SHARED,memory,0);
-    if(view==MAP_FAILED){int e=errno;close(memory);return open_fail(out,POCKET_PINYIN_STAGE_VERIFY,e);}
-    bool valid=digest_valid(view,bytes);munmap(view,bytes);
-    if(!valid){close(memory);return open_fail(out,POCKET_PINYIN_STAGE_VERIFY,0);}
+    void *view=MAP_FAILED;
+#ifdef POCKET_PINYIN_TEST_HOOKS
+    const char *map_denied=getenv("POCKET_PINYIN_TEST_MMAP_EPERM");
+    if(map_denied&&map_denied[0]=='1'&&!map_denied[1])errno=EPERM;
+    else
+#endif
+    view=mmap(nullptr,bytes,PROT_READ,MAP_SHARED,memory,0);
+    if(view==MAP_FAILED){
+        int mapping_error=errno;
+        /* Never reinterpret memfd-create/seal EPERM as an unsupported feature.
+         * Here the FD was already admitted, sealed (or unlinked read-only);
+         * only the optional mapping failed, so prove bytes by authorized read. */
+        if(mapping_error!=EPERM){close(memory);return open_fail(out,POCKET_PINYIN_STAGE_VERIFY,mapping_error);}
+        int read_error=0;
+        if(!verify_fd_readback(memory,data,bytes,&read_error)){
+            close(memory);return open_fail(out,POCKET_PINYIN_STAGE_VERIFY,read_error?read_error:mapping_error);
+        }
+        out->verification_mode=POCKET_PINYIN_VERIFY_PREAD;
+    }else{
+        bool valid=digest_valid(view,bytes);munmap(view,bytes);
+        if(!valid){close(memory);return open_fail(out,POCKET_PINYIN_STAGE_VERIFY,0);}
+        out->verification_mode=POCKET_PINYIN_VERIFY_MMAP;
+    }
     int pair[2];if(socketpair(AF_UNIX,SOCK_SEQPACKET|SOCK_CLOEXEC,0,pair)){int e=errno;close(memory);return open_fail(out,POCKET_PINYIN_STAGE_SOCKET,e);}
     /* Enumerate before fork; child closes every inherited device/output fd.
      * Single-owner API is mandatory; this is not a thread-safe fork service. */
