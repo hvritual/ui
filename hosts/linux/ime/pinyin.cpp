@@ -167,7 +167,8 @@ static bool verify_fd_readback(int fd,const void *trusted,size_t bytes,int *erro
     struct stat st{};
     if(fstat(fd,&st)<0){if(error)*error=errno;return false;}
     if(!S_ISREG(st.st_mode)||st.st_size!=static_cast<off_t>(bytes)){
-        if(error)*error=EIO;return false;
+        if(error)*error=EIO;
+        return false;
     }
     unsigned char buffer[8192];
     const unsigned char *source=static_cast<const unsigned char *>(trusted);
@@ -185,7 +186,9 @@ static bool verify_fd_readback(int fd,const void *trusted,size_t bytes,int *erro
         if(n<=0){if(error)*error=n<0?errno:EIO;erase(buffer,sizeof(buffer));return false;}
         interrupts=0;
         if(std::memcmp(buffer,source+offset,static_cast<size_t>(n))){
-            if(error)*error=EIO;erase(buffer,sizeof(buffer));return false;
+            if(error)*error=EIO;
+            erase(buffer,sizeof(buffer));
+            return false;
         }
         offset+=static_cast<size_t>(n);
     }
