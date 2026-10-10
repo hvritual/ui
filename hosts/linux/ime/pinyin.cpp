@@ -209,6 +209,17 @@ PocketPinyinStatus pocket_pinyin_open(PocketPinyin *out,const void *data,size_t 
     if(memory>=0){
         out->storage_mode=POCKET_PINYIN_STORAGE_MEMFD;
         if(!write_all(memory,data,bytes)){int e=errno;close(memory);return open_fail(out,POCKET_PINYIN_STAGE_MEMFD,e);}
+#ifdef POCKET_PINYIN_TEST_HOOKS
+        /* Deliberately corrupt the actual FD before sealing to prove that the
+         * mmap-denied readback checks FD bytes, not only the source buffer. */
+        const char *corrupt=getenv("POCKET_PINYIN_TEST_CORRUPT_MEMFD");
+        if(corrupt&&corrupt[0]=='1'&&!corrupt[1]){
+            unsigned char b=0;
+            if(pread(memory,&b,1,0)!=1){int e=errno;close(memory);return open_fail(out,POCKET_PINYIN_STAGE_MEMFD,e?e:EIO);}
+            b^=1;
+            if(pwrite(memory,&b,1,0)!=1){int e=errno;close(memory);return open_fail(out,POCKET_PINYIN_STAGE_MEMFD,e?e:EIO);}
+        }
+#endif
         int seal_result;
 #ifdef POCKET_PINYIN_TEST_HOOKS
         const char *unsupported=getenv("POCKET_PINYIN_TEST_SEAL_UNSUPPORTED");
@@ -244,10 +255,10 @@ PocketPinyinStatus pocket_pinyin_open(PocketPinyin *out,const void *data,size_t 
          * only the optional mapping failed, so prove bytes by authorized read. */
         if(mapping_error!=EPERM){close(memory);return open_fail(out,POCKET_PINYIN_STAGE_VERIFY,mapping_error);}
         int read_error=0;
+        out->verification_mode=POCKET_PINYIN_VERIFY_PREAD;
         if(!verify_fd_readback(memory,data,bytes,&read_error)){
             close(memory);return open_fail(out,POCKET_PINYIN_STAGE_VERIFY,read_error?read_error:mapping_error);
         }
-        out->verification_mode=POCKET_PINYIN_VERIFY_PREAD;
     }else{
         bool valid=digest_valid(view,bytes);munmap(view,bytes);
         if(!valid){close(memory);return open_fail(out,POCKET_PINYIN_STAGE_VERIFY,0);}
