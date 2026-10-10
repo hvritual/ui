@@ -69,7 +69,7 @@ typedef struct {
     uint64_t request,layout_generation,commits,candidate_batches;
     uint8_t composing,pending,language_popup;
     int provider_status,provider_stage,provider_errno;
-    unsigned provider_storage;
+    unsigned provider_storage,provider_verify_mode;
 } PocketKeyboardInputSnapshot;
 int pocket_keyboard_input_snapshot(const PocketKeyboard *,PocketKeyboardInputSnapshot *);
 void pocket_keyboard_dispose(PocketKeyboard *keyboard);
