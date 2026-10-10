@@ -109,8 +109,14 @@ static void provider_tests(const std::vector<unsigned char> &dict){
     int map_stage=0,map_errno=0;unsigned map_storage=0,map_verify=0;
     pocket_pinyin_diagnostics(&p,&map_stage,&map_errno,&map_storage,&map_verify);
     CHECK(map_stage==POCKET_PINYIN_STAGE_VERIFY&&map_errno==EPERM&&
-          map_storage==POCKET_PINYIN_STORAGE_MEMFD&&map_verify==POCKET_PINYIN_VERIFY_NONE);
+          map_storage==POCKET_PINYIN_STORAGE_MEMFD&&map_verify==POCKET_PINYIN_VERIFY_PREAD);
     CHECK(!unsetenv("POCKET_PINYIN_TEST_PREAD_EPERM"));
+    CHECK(!setenv("POCKET_PINYIN_TEST_CORRUPT_MEMFD","1",1));
+    CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),now())==POCKET_PINYIN_UNAVAILABLE&&!p.impl);
+    pocket_pinyin_diagnostics(&p,&map_stage,&map_errno,&map_storage,&map_verify);
+    CHECK(map_stage==POCKET_PINYIN_STAGE_VERIFY&&map_errno==EIO&&
+          map_storage==POCKET_PINYIN_STORAGE_MEMFD&&map_verify==POCKET_PINYIN_VERIFY_PREAD);
+    CHECK(!unsetenv("POCKET_PINYIN_TEST_CORRUPT_MEMFD"));
     CHECK(!unsetenv("POCKET_PINYIN_TEST_MMAP_EPERM"));
     uint64_t start=now();CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),start)==POCKET_PINYIN_OK);
     PocketPinyinResult r{};CHECK(pocket_pinyin_poll(&p,start+POCKET_PINYIN_TIMEOUT_MS,&r)==POCKET_PINYIN_TIMEOUT);CHECK(!r.count);pocket_pinyin_close(&p);
