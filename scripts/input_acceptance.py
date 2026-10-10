@@ -82,11 +82,11 @@ def prove_input_binary(binary: Path, mode: str, directory: Path, *, static: bool
             if any(report[k]!=v for k,v in expected.items()) or report['ime_candidate_batches']<1:
                 raise RuntimeError('real candidate/commit path missing '+name+' '+json.dumps(report))
             # R6 board failures need structured metadata; never typed-text diagnostics.
-            metadata=('ime_provider_status','ime_provider_stage','ime_provider_errno','ime_provider_storage','ime_input_locale')
+            metadata=('ime_provider_status','ime_provider_stage','ime_provider_errno','ime_provider_storage','ime_provider_verify_mode','ime_input_locale')
             if any(type(report.get(key)) is not int for key in metadata):
                 raise RuntimeError('missing typed IME provider diagnostic '+name)
             if report['ime_provider_stage']!=0 or report['ime_provider_errno']!=0 or \
-               report['ime_provider_storage'] not in (1,2) or report['ime_input_locale']!=2:
+               report['ime_provider_storage'] not in (1,2) or report['ime_provider_verify_mode'] not in (1,2) or report['ime_input_locale']!=2:
                 raise RuntimeError('successful Chinese path has inconsistent IME diagnostic '+name)
             if (directory/name/'last.ppm').exists()!=close:
                 raise RuntimeError('input screenshot suppression broken '+name)
