@@ -1,0 +1,53 @@
+name: R6 Partial Evidence Intake
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/r6_intake.py'
+      - 'scripts/r6_hil.py'
+      - 'tests/r6/**'
+      - 'docs/r6-next-field-run.md'
+      - '.github/workflows/r6-intake.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/r6_intake.py'
+      - 'scripts/r6_hil.py'
+      - 'tests/r6/**'
+      - 'docs/r6-next-field-run.md'
+      - '.github/workflows/r6-intake.yml'
+permissions:
+  contents: read
+jobs:
+  intake:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Test intake and unchanged final gate with synthetic fixtures only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/r6-intake
+          git rev-parse HEAD > out/r6-intake/source-commit.txt
+          git rev-parse HEAD^{tree} > out/r6-intake/source-tree.txt
+          python3 -m unittest discover -s tests/r6 -p 'test_*.py' -v 2>&1 | tee out/r6-intake/intake-tests.log
+          make -f scripts/r6.mk test-r6-board-verifier 2>&1 | tee out/r6-intake/final-gate-tests.log
+          git diff --exit-code
+          cp scripts/r6_intake.py scripts/r6_hil.py docs/r6-next-field-run.md out/r6-intake/
+          cp tests/r6/test_intake.py out/r6-intake/
+          printf 'tool_tests_only=true\nphysical=false\nproduct=false\n' > out/r6-intake/scope.txt
+          (cd out/r6-intake && sha256sum *.py *.md *.log *.txt > SHA256SUMS)
+      - name: Preserve tool evidence, not a device acceptance report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: r6-intake-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/r6-intake/
+          if-no-files-found: error
+          retention-days: 30
