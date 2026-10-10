@@ -417,7 +417,7 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
         a->previous_ime_commits=input.commits;a->previous_ime_batches=input.candidate_batches;
         a->stats.ime_provider_status=input.provider_status;a->stats.ime_provider_stage=input.provider_stage;
         a->stats.ime_provider_errno=input.provider_errno;a->stats.ime_provider_storage=input.provider_storage;
-        a->stats.ime_input_locale=input.locale;
+        a->stats.ime_input_locale=input.locale;a->stats.ime_provider_verify_mode=input.provider_verify_mode;
         reply->integer=s.result; return 1;
     }
     if (!strcmp(op, "keyboard.result")) {

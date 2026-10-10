@@ -56,12 +56,12 @@ static void provider_tests(const std::vector<unsigned char> &dict){
     CHECK(!setenv("POCKET_PINYIN_TEST_MEMFD_DENIED","1",1));
     CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),now())==POCKET_PINYIN_UNAVAILABLE&&!p.impl);
     int denied_stage=0,denied_errno=0;unsigned denied_storage=0;
-    pocket_pinyin_diagnostics(&p,&denied_stage,&denied_errno,&denied_storage);
+    pocket_pinyin_diagnostics(&p,&denied_stage,&denied_errno,&denied_storage,nullptr);
     CHECK(denied_stage==POCKET_PINYIN_STAGE_MEMFD&&denied_errno==EPERM&&denied_storage==POCKET_PINYIN_STORAGE_NONE);
     CHECK(!unsetenv("POCKET_PINYIN_TEST_MEMFD_DENIED"));
     CHECK(!setenv("POCKET_PINYIN_FORCE_UNLINKED_FILE","1",1));
     uint64_t fallback_start=now();CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),fallback_start)==POCKET_PINYIN_OK);
-    int stage=0,system_errno=0;unsigned storage=0;pocket_pinyin_diagnostics(&p,&stage,&system_errno,&storage);
+    int stage=0,system_errno=0;unsigned storage=0;pocket_pinyin_diagnostics(&p,&stage,&system_errno,&storage,nullptr);
     CHECK(stage==POCKET_PINYIN_STAGE_NONE&&system_errno==0&&storage==POCKET_PINYIN_STORAGE_UNLINKED_FILE);
     pocket_pinyin_close(&p);
     {
@@ -87,6 +87,37 @@ static void provider_tests(const std::vector<unsigned char> &dict){
         value(&e.text,"你好");
     }
     CHECK(!unsetenv("POCKET_PINYIN_TEST_SEAL_UNSUPPORTED"));
+    /* Exact old-BSP failure: sealed memfd exists, MAP_SHARED PROT_READ is EPERM.
+     * A fixed dictionary is still readable through authorized pread. */
+    CHECK(!setenv("POCKET_PINYIN_TEST_MMAP_EPERM","1",1));
+    {
+        Editing e(dict);
+        type(&e.ime,&e.text,"nihao");
+        auto candidates=wait(&e.ime);
+        CHECK(candidates.count&&std::strcmp(candidates.candidates[0].text,"你好")==0);
+        PocketImeSnapshot snap{};
+        CHECK(pocket_ime_snapshot(&e.ime,&snap)&&snap.provider_storage==POCKET_PINYIN_STORAGE_MEMFD&&
+              snap.provider_verify_mode==POCKET_PINYIN_VERIFY_PREAD&&
+              snap.provider_stage==POCKET_PINYIN_STAGE_NONE&&snap.provider_errno==0);
+        CHECK(pocket_ime_choose(&e.ime,token(&e.text),candidates.request,0,now())==POCKET_TEXT_OK);
+        value(&e.text,"你好");
+    }
+    /* An unreadable FD must fail closed with its original errno, not bypass
+     * via an unlinked copy, network fetch or fabricated candidate response. */
+    CHECK(!setenv("POCKET_PINYIN_TEST_PREAD_EPERM","1",1));
+    CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),now())==POCKET_PINYIN_UNAVAILABLE&&!p.impl);
+    int map_stage=0,map_errno=0;unsigned map_storage=0,map_verify=0;
+    pocket_pinyin_diagnostics(&p,&map_stage,&map_errno,&map_storage,&map_verify);
+    CHECK(map_stage==POCKET_PINYIN_STAGE_VERIFY&&map_errno==EPERM&&
+          map_storage==POCKET_PINYIN_STORAGE_MEMFD&&map_verify==POCKET_PINYIN_VERIFY_PREAD);
+    CHECK(!unsetenv("POCKET_PINYIN_TEST_PREAD_EPERM"));
+    CHECK(!setenv("POCKET_PINYIN_TEST_CORRUPT_MEMFD","1",1));
+    CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),now())==POCKET_PINYIN_UNAVAILABLE&&!p.impl);
+    pocket_pinyin_diagnostics(&p,&map_stage,&map_errno,&map_storage,&map_verify);
+    CHECK(map_stage==POCKET_PINYIN_STAGE_VERIFY&&map_errno==EIO&&
+          map_storage==POCKET_PINYIN_STORAGE_MEMFD&&map_verify==POCKET_PINYIN_VERIFY_PREAD);
+    CHECK(!unsetenv("POCKET_PINYIN_TEST_CORRUPT_MEMFD"));
+    CHECK(!unsetenv("POCKET_PINYIN_TEST_MMAP_EPERM"));
     uint64_t start=now();CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),start)==POCKET_PINYIN_OK);
     PocketPinyinResult r{};CHECK(pocket_pinyin_poll(&p,start+POCKET_PINYIN_TIMEOUT_MS,&r)==POCKET_PINYIN_TIMEOUT);CHECK(!r.count);pocket_pinyin_close(&p);
     CHECK(pocket_pinyin_open(&p,dict.data(),dict.size(),now())==POCKET_PINYIN_OK);
