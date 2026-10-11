@@ -98,7 +98,7 @@ def prove_input_binary(binary: Path, mode: str, directory: Path, *, static: bool
     trace=directory/'input-600-closed.trace'
     execute('physical-replay',['--physical','--profile','imx6ul-1024x600','--package',package,'--allow-unsigned-package',
         '--replay-input',trace,'--replay-realtime'],2,no_output=True)
-    for name,offset,value in [('unknown-capability',32,31),('missing-keyboard-capability',32,13),('resource-without-capability',32,7)]:
+    for name,offset,value in [('unknown-capability',32,511),('missing-keyboard-capability',32,13),('resource-without-capability',32,7)]:
         data=bytearray(package.read_bytes());struct.pack_into('<I',data,offset,value);data[160:192]=pui.container_digest(data)
         invalid=directory/(name+'.pui');invalid.write_bytes(data)
         execute(name,[*base,'--package',invalid,'--allow-unsigned-package'],1,'PUI_CAPABILITY',True)

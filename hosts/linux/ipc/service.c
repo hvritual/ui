@@ -179,9 +179,17 @@ int pocket_service_error(PocketServiceReply *reply, PocketIpcStatus status,
     if (!reply || status < POCKET_IPC_OK || status > POCKET_IPC_REJECTED ||
         status == POCKET_IPC_AGAIN || !valid_payload(payload, length)) return 0;
     reply->status = status;
+    reply->flags = 0;
     if (length) memcpy(reply->payload, payload, length);
     reply->payload[length] = 0;
     reply->payload_length = length;
+    return 1;
+}
+
+int pocket_service_error_uncertain(PocketServiceReply *reply, PocketIpcStatus status,
+                                   const char *payload, size_t length) {
+    if (status == POCKET_IPC_OK || !pocket_service_error(reply, status, payload, length)) return 0;
+    reply->flags = POCKET_IPC_OUTCOME_UNKNOWN;
     return 1;
 }
 
@@ -232,16 +240,23 @@ static PocketIpcStatus dispatch_request(Service *s, const PocketIpcMessage *mess
                                     message->payload_length, message->idempotency_key, message->request_id};
     PocketServiceReply reply;
     memset(&reply, 0, sizeof(reply));
-    pocket_service_error(&reply, POCKET_IPC_INTERNAL, "null", 4);
+    if (kind == POCKET_SERVICE_COMMAND)
+        pocket_service_error_uncertain(&reply, POCKET_IPC_INTERNAL, "null", 4);
+    else pocket_service_error(&reply, POCKET_IPC_INTERNAL, "null", 4);
     s->reply_reserved = 1;
     ++s->requests;
     s->members[member].handler(s->members[member].context, &request, &reply);
     s->reply_reserved = 0;
     if (s->close_requested) return POCKET_IPC_DISCONNECTED;
     if (reply.status < POCKET_IPC_OK || reply.status > POCKET_IPC_REJECTED ||
-        reply.status == POCKET_IPC_AGAIN || !valid_payload(reply.payload, reply.payload_length))
-        pocket_service_error(&reply, POCKET_IPC_INTERNAL, "null", 4);
+        reply.status == POCKET_IPC_AGAIN || (reply.flags & ~(uint32_t)POCKET_IPC_OUTCOME_UNKNOWN) ||
+        (reply.flags && reply.status == POCKET_IPC_OK) || !valid_payload(reply.payload, reply.payload_length)) {
+        if (kind == POCKET_SERVICE_COMMAND)
+            pocket_service_error_uncertain(&reply, POCKET_IPC_INTERNAL, "null", 4);
+        else pocket_service_error(&reply, POCKET_IPC_INTERNAL, "null", 4);
+    }
     response.status = reply.status;
+    response.flags = kind == POCKET_SERVICE_COMMAND ? reply.flags : 0;
     response.revision = s->revision;
     payload_copy(&response, reply.payload, reply.payload_length);
     return enqueue(s, &response, 1);

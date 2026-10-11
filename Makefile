@@ -244,7 +244,7 @@ test-framework test-framework-arm test-framework-sanitize build-board-framework:
 
 # Four-channel IPC has its own transport/provider tests. The Application VM
 # proof below uses the already-built, guarded production Framework executable.
-.PHONY: build-ipc test-ipc test-ipc-arm test-ipc-sanitize verify-ipc test-ipc-framework test-ipc-framework-arm verify-ipc-framework
+.PHONY: build-ipc test-ipc test-ipc-arm test-ipc-sanitize test-ipc-verifier verify-ipc test-ipc-framework test-ipc-framework-arm verify-ipc-framework
 build-ipc: check-runtime-boundary
 	python3 scripts/ipc.py build --mode native
 test-ipc: check-runtime-boundary
@@ -253,6 +253,8 @@ test-ipc-arm: check-runtime-boundary
 	python3 scripts/ipc.py test --mode arm
 test-ipc-sanitize: check-runtime-boundary
 	ASAN_OPTIONS=detect_leaks=1 python3 scripts/ipc.py test --mode native --sanitize
+test-ipc-verifier:
+	python3 -m unittest discover -s tests/ipc -v
 verify-ipc:
 	python3 scripts/ipc.py verify
 test-ipc-framework:

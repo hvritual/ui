@@ -15,7 +15,7 @@
 typedef struct {
     PocketService *service;
     const char *event;
-    unsigned calls, burst;
+    unsigned calls, burst, effects;
     PocketIpcStatus burst_status, reentry_status;
     char key[POCKET_IPC_NAME_MAX + 1U];
 } Handler;
@@ -33,6 +33,24 @@ static void echo(void *opaque, const PocketServiceRequest *request, PocketServic
     ++handler->calls;
     handler->reentry_status = pocket_service_pump(handler->service, 1);
     memcpy(handler->key, request->idempotency_key, strlen(request->idempotency_key) + 1U);
+    if (!strcmp(request->payload, "no-reply") || !strcmp(request->payload, "invalid-reply") ||
+        !strcmp(request->payload, "uncertain")) {
+        if (request->kind == POCKET_SERVICE_COMMAND) {
+            char changed[64];
+            int n = snprintf(changed, sizeof(changed), "{\"effects\":%u}", ++handler->effects);
+            if (n <= 0 || (size_t)n >= sizeof(changed) ||
+                pocket_service_state_put(handler->service, "objects", 42, NULL, changed, (size_t)n) != POCKET_IPC_OK) abort();
+        }
+        if (!strcmp(request->payload, "invalid-reply")) {
+            reply->status = POCKET_IPC_OK;
+            reply->flags = 0;
+            reply->payload_length = POCKET_SERVICE_PAYLOAD_LIMIT + 1U;
+        } else if (!strcmp(request->payload, "uncertain")) {
+            static const char partial[] = "{\"code\":\"PARTIAL_EXECUTION\"}";
+            if (!pocket_service_error_uncertain(reply, POCKET_IPC_INTERNAL, partial, sizeof(partial) - 1U)) abort();
+        }
+        return;
+    }
     if (!strcmp(request->payload, "burst")) {
         for (unsigned i = 0; i < POCKET_IPC_TX_CAPACITY + 1U; ++i) {
             handler->burst_status = pocket_service_publish(handler->service, handler->event, NULL, "event", 5);
@@ -393,13 +411,58 @@ fail:
     return ok;
 }
 
+static int command_outcome_uncertainty(void) {
+    Harness h;
+    int ok = 0;
+    CHECK(begin(&h));
+    CHECK(open_service(&h, 0, "effects.v1", 0));
+    CHECK(wait_ready(&h, 0));
+    const char *payloads[] = {"no-reply", "invalid-reply", "uncertain"};
+    for (unsigned i = 0; i < sizeof(payloads) / sizeof(payloads[0]); ++i) {
+        char key[32];
+        int n = snprintf(key, sizeof(key), "operation-%u", i);
+        CHECK(n > 0 && (size_t)n < sizeof(key));
+        uint64_t request = 0;
+        CHECK(pocket_ipc_client_request_keyed(&h.client, POCKET_IPC_COMMAND, "effects.v1", "add", key,
+                                              payloads[i], strlen(payloads[i]), WAIT_MS,
+                                              pocket_ipc_monotonic_ms(), &request) == POCKET_IPC_OK);
+        PocketIpcMessage result;
+        CHECK(message(&h, POCKET_IPC_REPLY, request, &result) && result.status == POCKET_IPC_INTERNAL &&
+              result.flags == POCKET_IPC_OUTCOME_UNKNOWN && h.handlers[0].effects == i + 1U);
+        PocketServiceSnapshot state;
+        CHECK(pocket_service_snapshot(&h.services[0], &state) && state.state_count == 1 && state.revision == i + 1U);
+        if (i == 2) CHECK(!strcmp(result.payload, "{\"code\":\"PARTIAL_EXECUTION\"}"));
+        else CHECK(!strcmp(result.payload, "null"));
+    }
+    uint64_t request = 0;
+    CHECK(pocket_ipc_client_request_keyed(&h.client, POCKET_IPC_COMMAND, "effects.v1", "add", "known-rejection",
+                                          "reject", 6, WAIT_MS, pocket_ipc_monotonic_ms(), &request) == POCKET_IPC_OK);
+    PocketIpcMessage result;
+    CHECK(message(&h, POCKET_IPC_REPLY, request, &result) && result.status == POCKET_IPC_REJECTED &&
+          !result.flags && h.handlers[0].effects == 3);
+    CHECK(pocket_ipc_client_request(&h.client, POCKET_IPC_QUERY, "effects.v1", "get", "no-reply", 8,
+                                    WAIT_MS, pocket_ipc_monotonic_ms(), &request) == POCKET_IPC_OK);
+    CHECK(message(&h, POCKET_IPC_REPLY, request, &result) && result.status == POCKET_IPC_INTERNAL &&
+          !result.flags && h.handlers[0].effects == 3);
+    PocketServiceReply reply;
+    CHECK(!pocket_service_error_uncertain(&reply, POCKET_IPC_OK, "null", 4));
+    CHECK(pocket_service_error_uncertain(&reply, POCKET_IPC_REJECTED, "partial", 7) &&
+          reply.flags == POCKET_IPC_OUTCOME_UNKNOWN);
+    CHECK(pocket_service_reply(&reply, "null", 4) && !reply.flags);
+    ok = 1;
+fail:
+    finish(&h);
+    return ok;
+}
+
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "--intentional-failure")) return 1;
     if (argc > 2) return 2;
     int (*cases[])(void) = {basic_and_membership, capacity_and_reply_reservation,
-                           dynamic_registration_and_recovery, validation_and_budgets};
+                           dynamic_registration_and_recovery, validation_and_budgets, command_outcome_uncertainty};
     const char *names[] = {"opaque-request-business-key-filter-membership", "atomic-snapshot-backpressure-reply-reservation",
-                           "dynamic-registration-conflict-restart-recovery", "validation-owner-pump-budget"};
+                           "dynamic-registration-conflict-restart-recovery", "validation-owner-pump-budget",
+                           "command-missing-invalid-partial-reply-outcome-unknown"};
     for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
         if (!cases[i]()) return 1;
         printf("IPC_SERVICE_CASE_PASS %s\n", names[i]);

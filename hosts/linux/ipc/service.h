@@ -42,6 +42,7 @@ typedef struct {
 
 typedef struct {
     PocketIpcStatus status;
+    uint32_t flags;
     char payload[POCKET_SERVICE_PAYLOAD_LIMIT + 1U];
     size_t payload_length;
 } PocketServiceReply;
@@ -94,6 +95,11 @@ void pocket_service_close(PocketService *);
 int pocket_service_reply(PocketServiceReply *, const char *payload, size_t length);
 int pocket_service_error(PocketServiceReply *, PocketIpcStatus status,
                          const char *payload, size_t length);
+/* Use after a Command may have changed its authority but cannot establish a
+ * definitive result. Ordinary error() asserts a known business rejection;
+ * missing or malformed handler replies conservatively become uncertain. */
+int pocket_service_error_uncertain(PocketServiceReply *, PocketIpcStatus status,
+                                   const char *payload, size_t length);
 
 PocketIpcStatus pocket_service_publish(PocketService *, const char *event,
                                        const PocketIpcFilter *metadata,

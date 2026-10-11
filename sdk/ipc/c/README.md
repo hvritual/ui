@@ -48,8 +48,15 @@ Handlers receive borrowed payload bytes and an optional business idempotency
 key. They must copy data needed after returning. Payloads are bounded UTF-8;
 the transport and provider SDK do not parse JSON or validate a business schema.
 Use `pocket_service_reply()` to return an ordinary result and
-`pocket_service_error()` to return a typed expected failure. More specific
-domain error codes belong in the payload.
+`pocket_service_error()` to return a typed, definitive business rejection. For
+a Command this asserts that the rejected operation has no unaccounted effect;
+use it for schema/precondition rejection or a known completed rollback.
+Use `pocket_service_error_uncertain()` when an action may have partially changed
+its authority and a definitive result is unavailable. That helper sets the
+wire `OUTCOME_UNKNOWN` flag. Missing or malformed Command replies also produce
+an uncertain `INTERNAL` result, because the SDK cannot assume that a handler
+failed before making a change. A normal Query failure carries no Command
+outcome assertion. More specific domain error codes belong in the payload.
 
 A Command requires a nonempty wire idempotency key. The provider owns the
 relationship between that key, the operation and its result. The SDK forwards

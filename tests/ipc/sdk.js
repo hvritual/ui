@@ -16,7 +16,8 @@ function harness() {
         h.calls.push({op, args});
         if (op === "ipc.take") return {ok: true, ready: h.ready, code: "OK", messages: h.messages.splice(0, 16)};
         if (op === "ipc.reconnect") { h.epoch = String(Number(h.epoch) + 1); h.next = 0; return accepted(0); }
-        if (op === "ipc.cancel" || op === "ipc.unsubscribe") return accepted(args[0]);
+        if (op === "ipc.cancel" || op === "ipc.unsubscribe")
+            return h.controlStatus ? {ok: false, code: h.controlStatus} : accepted(args[0]);
         if (h.deny) return {ok: false, code: h.deny};
         if (!h.ready) return {ok: false, code: "AGAIN"};
         return accepted(++h.next);
@@ -173,13 +174,49 @@ async function run(name, fn) { await fn(); ++cases; process.stdout.write("SDK_CA
     await run("bounded-admission-and-query-subscription-fairness", async () => {
         const h = harness(), comm = new h.Comm();
         for (let i = 0; i < 32; ++i) comm.query.call("demo", "get");
-        assert.equal((await comm.query.call("demo", "get")).error.code, "BUSY");
+        const excess = comm.query.call("demo", "get");
+        assert.equal(excess.cancel(), false); assert.equal((await excess).error.code, "BUSY");
         comm.events.subscribe("demo", "changed", null, () => {});
         await h.tick(0); assert.equal(h.sent("events").length, 0);
         await h.tick(1); assert.equal(h.sent("events").length, 1);
         new h.Comm(); new h.Comm(); new h.Comm();
         const overflow = new h.Comm();
         assert.equal((await overflow.query.call("demo", "get")).error.code, "BUSY");
+    });
+    await run("terminal-subscription-errors-do-not-overflow-cleanup", async () => {
+        const h = harness(), comm = new h.Comm(), pending = [];
+        for (let i = 0; i < 32; ++i) pending.push(comm.query.call("demo", "get", null, {timeoutMs: 10}));
+        for (let i = 0; i < 16; ++i) comm.events.subscribe("demo", "changed", null, result => {
+            if (!result.ok) comm.events.subscribe("demo", "changed", null, () => {}, {timeoutMs: 7});
+        }, {timeoutMs: 10});
+        await h.tick(0); await h.tick(1); await h.tick(2);
+        for (let id = 17; id <= 32; ++id) h.push(id, 18, "", {code: "UNAVAILABLE"});
+        await h.tick(3); await h.tick(10);
+        assert.equal(h.sent("reconnect").length, 0);
+        assert.equal(h.sent("unsubscribe").length, 16); // only the new subscriptions expire
+        for (const promise of pending) assert.equal((await promise).error.code, "TIMEOUT");
+    });
+    await run("cleanup-pressure-retires-session-without-throwing", async () => {
+        const h = harness(), comm = new h.Comm(); h.controlStatus = "BUSY";
+        const old = comm.command.execute("demo", "add", null, {idempotencyKey: "old", timeoutMs: 1});
+        await h.tick(0); await h.tick(1); assert.equal((await old).error.effect, "unknown");
+        const pending = [];
+        for (let i = 0; i < 32; ++i) pending.push(comm.query.call("demo", "get", null, {timeoutMs: 10}));
+        for (let i = 0; i < 16; ++i) comm.events.subscribe("demo", "changed", null, () => {}, {timeoutMs: 10});
+        await h.tick(2); await h.tick(3); await h.tick(4); await h.tick(12);
+        assert.equal(h.sent("reconnect").length, 1);
+        assert.equal(h.sent("command").length, 1);
+        for (const promise of pending) assert.equal((await promise).error.code, "TIMEOUT");
+    });
+    await run("closed-instance-suppresses-late-async-diagnostics", async () => {
+        const h = harness(); let reject, forwarded = 0;
+        const comm = new h.Comm({onError() { ++forwarded; }});
+        comm.events.subscribe("demo", "changed", null, () => new Promise((resolve, fail) => { reject = fail; }));
+        await h.tick(0); h.push(1, 17); h.push(1, 9, "1", {cursor: "1"}); await h.tick(1);
+        assert.equal(typeof reject, "function");
+        comm.close(); reject(new Error("late callback rejection"));
+        await Promise.resolve(); await Promise.resolve(); await h.tick(2);
+        assert.equal(forwarded, 0); assert.equal(comm.lastError, null); assert.equal(comm.callbackErrors, 0);
     });
     process.stdout.write("IPC_JS_SDK_OK cases=" + cases + " runtime_integration=false\n");
 })().catch(error => { console.error(error); process.exitCode = 1; });

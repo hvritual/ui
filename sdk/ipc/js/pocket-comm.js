@@ -12,10 +12,15 @@
     const requests = [], subscriptions = [], instances = [], controls = [];
     const REQUESTS = 32, SUBSCRIPTIONS = 16, INSTANCES = 4, ITEMS = 32;
     const BEGIN = 256, END = 512, UNKNOWN = 1024;
-    let installed = null, pumping = false, recovery = null, subscriptionFirst = false;
+    let installed = null, pumping = false, recovery = null, subscriptionFirst = false, controlOverflow = false;
 
     function success(value) { return {ok: true, value: value}; }
     function failure(code, effect) { return {ok: false, error: {code: code, effect: effect || "none"}}; }
+    function completedRequest(result) {
+        const promise = Promise.resolve(result);
+        promise.cancel = function () { return false; };
+        return promise;
+    }
     function name(value, maximum) {
         return typeof value === "string" && value.length > 0 && value.length <= maximum && /^[A-Za-z0-9_.-]+$/.test(value);
     }
@@ -60,14 +65,15 @@
         return result && typeof result === "object" ? result : {ok: false, code: "PROTOCOL"};
     }
     function diagnostic(owner, code) {
+        if (owner._closed) return;
         owner._lastError = failure(code).error;
         ++owner._callbackErrors;
         if (owner._onError) {
             try {
                 const returned = owner._onError(owner._lastError);
                 if (returned && typeof returned.then === "function")
-                    Promise.resolve(returned).catch(() => { owner._lastError = failure("ERROR_HANDLER_ERROR").error; });
-            } catch (_) { owner._lastError = failure("ERROR_HANDLER_ERROR").error; }
+                    Promise.resolve(returned).catch(() => { if (!owner._closed) owner._lastError = failure("ERROR_HANDLER_ERROR").error; });
+            } catch (_) { if (!owner._closed) owner._lastError = failure("ERROR_HANDLER_ERROR").error; }
         }
     }
     function callback(entry, result) {
@@ -75,13 +81,15 @@
         try {
             const returned = entry.callback(result);
             if (returned && typeof returned.then === "function")
-                Promise.resolve(returned).catch(() => diagnostic(entry.owner, "CALLBACK_ERROR"));
+                Promise.resolve(returned).catch(() => { if (!entry.closed) diagnostic(entry.owner, "CALLBACK_ERROR"); });
         } catch (_) { diagnostic(entry.owner, "CALLBACK_ERROR"); }
     }
     function control(op, id) {
         if (!id || controls.some(c => c.op === op && c.id === id)) return;
-        /* These IDs still occupy the native 32 request / 16 subscription slots. */
-        if (controls.length >= REQUESTS + SUBSCRIPTIONS) throw new Error("IPC_CONTROL_LIMIT");
+        /* Native may already have timed out a request while its cleanup is
+         * queued here. If pressure exceeds the fixed bound, retire the session
+         * at this tick's safe point instead of poisoning the Application VM. */
+        if (controls.length >= REQUESTS + SUBSCRIPTIONS) { controlOverflow = true; return; }
         controls.push({op: op, id: id});
     }
     function finishRequest(entry, result, cancel) {
@@ -103,7 +111,7 @@
     function commandEffect(entry) { return entry.kind === "command" && entry.id ? "unknown" : "none"; }
     function unavailable(owner) { return owner._limit ? "BUSY" : owner._closed ? "CANCELLED" : null; }
     function request(owner, kind, service, member, payload, opts) {
-        if (requests.length >= REQUESTS) return Promise.resolve(failure("BUSY"));
+        if (requests.length >= REQUESTS) return completedRequest(failure("BUSY"));
         const entry = {owner: owner, kind: kind, service: service, member: member, id: null, deadline: null, done: false};
         let promise = new Promise(resolve => { entry.resolve = resolve; });
         promise.cancel = function () {
@@ -226,7 +234,8 @@
         const sub = subscriptions.find(sameRoute);
         if (!sub || sub.stop || sub.closed) return;
         if (message.code !== "OK" || message.kind === 18 || message.kind === 19) {
-            finishSubscription(sub, failure(message.code === "OK" ? "UNAVAILABLE" : message.code), true, true);
+            const nativeTerminal = message.kind === 18 || message.kind === 19 || message.kind === 15;
+            finishSubscription(sub, failure(message.code === "OK" ? "UNAVAILABLE" : message.code), true, !nativeTerminal);
         } else if (message.kind === 17) {
             sub.epoch = message.serviceEpoch;
             if (sub.kind === "events") { sub.live = true; sub.deadline = 0; ready(sub, success({subscriptionId: sub.id})); }
@@ -253,6 +262,15 @@
                 finishSubscription(entry, failure(entry.stop || "TIMEOUT"), !entry.closed, true);
         }
     }
+    function recoverControlPressure() {
+        if (!controlOverflow) return;
+        for (const entry of requests.slice()) finishRequest(entry, failure("BUSY", commandEffect(entry)), false);
+        for (const entry of subscriptions.slice()) finishSubscription(entry, failure("BUSY"), !entry.closed, false);
+        controls.length = 0; controlOverflow = false;
+        /* This aborts cleanup pressure. It does not replay accepted commands
+         * or restore subscriptions. Any newly queued intention still handshakes. */
+        native("ipc.reconnect");
+    }
     function pump(now) {
         if (pumping) throw new Error("IPC_REENTRANT_TICK");
         pumping = true;
@@ -260,12 +278,13 @@
             if (recovery) {
                 for (const entry of requests.slice()) finishRequest(entry, failure("DISCONNECTED", commandEffect(entry)), false);
                 for (const entry of subscriptions.slice()) finishSubscription(entry, failure("DISCONNECTED"), !entry.closed, false);
-                controls.length = 0;
+                controls.length = 0; controlOverflow = false;
                 const pending = recovery; recovery = null;
                 const result = native("ipc.reconnect");
                 pending.resolve(result.ok || result.code === "AGAIN" ? success({ready: false}) : failure(result.code));
             }
             expire(now);
+            recoverControlPressure();
             for (const entry of controls.slice()) {
                 const result = native(entry.op, [entry.id]);
                 if (result.code !== "BUSY" && result.code !== "AGAIN") remove(controls, entry);
@@ -274,6 +293,7 @@
             if (batch.ok && Array.isArray(batch.messages)) {
                 for (const message of batch.messages) messageReceived(message, now);
             }
+            recoverControlPressure();
             let budget = 16;
             const outgoing = subscriptionFirst ? subscriptions.concat(requests) : requests.concat(subscriptions);
             subscriptionFirst = !subscriptionFirst;
@@ -296,6 +316,7 @@
                 }
             }
             expire(now);
+            recoverControlPressure();
         } finally { pumping = false; }
     }
     class PocketComm {

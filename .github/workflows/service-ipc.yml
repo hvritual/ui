@@ -21,7 +21,7 @@ jobs:
           test "$(gcc -dumpversion)" = 11
           test "$(arm-linux-gnueabihf-gcc -dumpversion)" = 11
       - name: Real socket core and provider tests on native and ARM
-        run: make test-runtime-boundary test-ipc test-ipc-arm test-ipc-sanitize verify-ipc
+        run: make test-runtime-boundary test-ipc-verifier test-ipc test-ipc-arm test-ipc-sanitize verify-ipc
       - name: Preserve exact source
         if: always()
         run: |

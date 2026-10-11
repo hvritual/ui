@@ -81,7 +81,7 @@ const state = comm.states.watch(
   {eq: {key: 'parity', value: 'odd'}},
   result => {
     if (result.ok) model.items = result.value.items;
-    else model.stateError = result.error;
+    else { model.items = []; model.stateError = result.error; }
   }
 );
 ```
@@ -162,6 +162,9 @@ SDK 复制服务名、成员表和 socket 路径；handler 的 context 仍由进
 payload 和请求中的借用指针只在 handler 返回前有效。后续工作需要显式复制数据。
 业务 JSON 的 schema、鉴权后的业务规则、命令结果、幂等日志均属于 provider。
 SDK 和 broker 不理解 `delta`、设备编号或设备控制指令。
+Command handler 已产生部分效果但不能确定最终结果时，应调用
+`pocket_service_error_uncertain()`；默认或非法 Command reply 也会标记未知效果。
+普通 `pocket_service_error()` 适用于已知无效果的前置拒绝或已知完成回滚的情况。
 
 第一版 provider 是单 owner、有限成员、短同步 handler 模型。`pump` 限制处理
 消息数量，无法抢占一个阻塞的 C handler。长任务应返回 Accepted receipt，
@@ -267,6 +270,8 @@ JS model → renderer 路径验收，不能由 Node mock 或 C socket 单测替�
 证据位于 `out/ipc/` 和 `out/framework/`，绑定源码 commit/tree、源码哈希、
 实际二进制哈希、编译输入归属、进程运行日志、包哈希、报告与前后帧。
 Native/ARM 像素和业务断言结果交叉比较。QEMU 只提供软件功能证据。
+当前 IPC ARM 可执行文件使用锁定的 GNU 动态 ABI，作为 QEMU 软件测试产物，
+没有加入现有静态设备板包；板上 libc、启动服务和进程身份配置需要独立适配。
 
 `--development` 和已有 `FRAMEWORK_DEVELOPMENT=1` 只用于本地诊断，产物明确
 标记 development，不能通过 canonical verify。工具缺失、AF_UNIX 被环境禁用、
