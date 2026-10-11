@@ -56,7 +56,10 @@ its authority and a definitive result is unavailable. That helper sets the
 wire `OUTCOME_UNKNOWN` flag. Missing or malformed Command replies also produce
 an uncertain `INTERNAL` result, because the SDK cannot assume that a handler
 failed before making a change. A normal Query failure carries no Command
-outcome assertion. More specific domain error codes belong in the payload.
+outcome assertion. More specific domain error codes can be carried in the
+payload and read by the raw C client. The current `PocketComm` JS facade exposes
+only `code` and `effect` on a failed Result; it does not forward that error
+payload to the application.
 
 A Command requires a nonempty wire idempotency key. The provider owns the
 relationship between that key, the operation and its result. The SDK forwards

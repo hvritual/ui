@@ -62,6 +62,9 @@ Requests resolve these shapes for ordinary outcomes:
 {ok: false, error: {code: 'TIMEOUT', effect: 'unknown'}}
 ```
 
+Failed Results expose the wire status `code` and `effect` only. Provider error
+payloads are available to the raw C client but are not forwarded by this facade.
+
 `effect: 'unknown'` means an accepted Command may already have affected the
 business. Cancellation, timeout or disconnect cannot roll it back. Preserve the
 same business operation key when resolving its outcome with the authority. The
