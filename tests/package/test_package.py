@@ -74,7 +74,7 @@ def main() -> None:
         python_ok = True
         try:
             pui.verify(data, 'imx6ul-1024x800' if mode=='800-unsigned' else 'imx6ul-1024x600',
-                       allow_unsigned=mode!='strict', capabilities=1 if mode=='core-only' else 7,
+                       allow_unsigned=mode!='strict', capabilities=1 if mode=='core-only' else 15 if mode=='legacy-only' else pui.ALL_CAPABILITIES,
                        max_heap_bytes=1024*1024 if mode=='small-heap' else pui.MAX_HEAP)
         except pui.PackageError:
             python_ok = False
@@ -84,6 +84,14 @@ def main() -> None:
     case('unsigned-default', valid, 'PUI_UNSIGNED', 'strict')
     case('capability-policy', valid, 'PUI_CAPABILITY', 'core-only')
     case('heap-policy', valid, 'PUI_BUDGET', 'small-heap')
+    # Additive opt-in communication does not change existing v1 package grants.
+    assert pui.verify(valid, 'imx6ul-1024x600', allow_unsigned=True)['capabilities'] == 7
+    for capability in ('ipc.query', 'ipc.command', 'ipc.events', 'ipc.state'):
+        ipc_manifest = copy.deepcopy(manifest)
+        ipc_manifest['capabilities'].append(capability)
+        ipc_package = pui.build(ipc_manifest, assets)
+        case(capability+'-admitted', ipc_package)
+        case(capability+'-legacy-denied', ipc_package, 'PUI_CAPABILITY', 'legacy-only')
     def changed(offset: int, value: int, width: int = 4) -> bytes:
         b = bytearray(valid);struct.pack_into('<Q' if width==8 else '<I', b, offset, value)
         b[160:192] = pui.container_digest(b);return bytes(b)
@@ -91,7 +99,7 @@ def main() -> None:
         ('format',8,2,'PUI_VERSION'),('header-size',12,191,'PUI_FORMAT'),
         ('runtime-min',16,2,'PUI_VERSION'),('runtime-max',20,0,'PUI_VERSION'),
         ('sdk',24,2,'PUI_VERSION'),('unknown-target',28,4,'PUI_TARGET'),
-        ('wrong-target',28,2,'PUI_TARGET'),('unknown-cap',32,17,'PUI_CAPABILITY'),
+        ('wrong-target',28,2,'PUI_TARGET'),('unknown-cap',32,257,'PUI_CAPABILITY'),
         ('no-core',32,6,'PUI_CAPABILITY'),('file-count-zero',36,0,'PUI_FILE_TABLE'),
         ('file-count-max',36,17,'PUI_FILE_TABLE'),('heap-small',48,1,'PUI_BUDGET'),
         ('heap-large',48,pui.MAX_HEAP+1,'PUI_BUDGET'),('assets-too-small',52,1,'PUI_BUDGET'),
@@ -151,7 +159,7 @@ def main() -> None:
     # Sanitized and ARM jobs exercise the deterministic process-level corpus above.
     differential = 0
     if not args.runner and not args.sanitize:
-        wrapper=out/'wrapper.c';wrapper.write_text('#include "hosts/linux/package/package.h"\nint check(const void *b,size_t n){PuiPackage o;PuiPolicy p={1,1,1,7,PUI_MAX_HEAP,PUI_MAX_BYTES,1};return pui_validate(b,n,&p,&o);}\n')
+        wrapper=out/'wrapper.c';wrapper.write_text('#include "hosts/linux/package/package.h"\nint check(const void *b,size_t n){PuiPackage o;PuiPolicy p={1,1,1,PUI_CAP_ALL,PUI_MAX_HEAP,PUI_MAX_BYTES,1};return pui_validate(b,n,&p,&o);}\n')
         library=out/'package.so'
         run([args.cc,*flags,'-shared','-fPIC',str(ROOT/'hosts/linux/package/package.c'),str(wrapper),'-o',str(library)])
         native=ctypes.CDLL(str(library)).check;native.argtypes=[ctypes.c_void_p,ctypes.c_size_t];native.restype=ctypes.c_int

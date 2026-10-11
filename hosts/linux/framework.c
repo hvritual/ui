@@ -7,10 +7,13 @@
 
 static int fail(PocketFramework *r,const char *why){if(r&&!r->error)r->error=why;return 0;}
 _Static_assert(PUI_CAP_CORE==POCKET_APP_CAP_CORE && PUI_CAP_ASCII_KEYBOARD==POCKET_APP_CAP_ASCII_KEYBOARD &&
-               PUI_CAP_IMAGES==POCKET_APP_CAP_IMAGES && PUI_CAP_PINYIN==POCKET_APP_CAP_PINYIN && PUI_MAX_HEAP==POCKET_APP_MAX_HEAP,"application policy mapping");
+               PUI_CAP_IMAGES==POCKET_APP_CAP_IMAGES && PUI_CAP_PINYIN==POCKET_APP_CAP_PINYIN &&
+               PUI_CAP_IPC_QUERY==POCKET_APP_CAP_IPC_QUERY && PUI_CAP_IPC_COMMAND==POCKET_APP_CAP_IPC_COMMAND &&
+               PUI_CAP_IPC_EVENTS==POCKET_APP_CAP_IPC_EVENTS && PUI_CAP_IPC_STATE==POCKET_APP_CAP_IPC_STATE &&
+               PUI_MAX_HEAP==POCKET_APP_MAX_HEAP,"application policy mapping");
 static int open_framework(PocketFramework *r,unsigned h,unsigned items,const char *assets,
                           const PuiLoadedPackage *package,const char *media_root,
-                          const PocketDisplayBackend *display){
+                          const PocketDisplayBackend *display,const char *development_socket){
     if(!r||r->opened||r->package.impl||(!assets&&!package)||(assets&&package)||(h!=600&&h!=800))return 0;
     memset(r,0,sizeof(*r));
     const PuiPackage *manifest=package?pui_loaded_manifest(package):NULL;
@@ -39,8 +42,10 @@ static int open_framework(PocketFramework *r,unsigned h,unsigned items,const cha
         const PocketApplicationPolicy policy={manifest->heap_bytes,manifest->capabilities};
         const PuiFile *dictionary=(manifest->capabilities&PUI_CAP_PINYIN)?pui_loaded_file(&r->package,"pinyin.dat"):NULL;
         const PuiFile *font=(manifest->capabilities&PUI_CAP_PINYIN)?pui_loaded_file(&r->package,"input.atlas"):NULL;
-        opened=file&&pocket_application_open_input(&r->app,h,items,(const char *)file->data,file->length,&policy,
-                 dictionary?dictionary->data:NULL,dictionary?dictionary->length:0,font?font->data:NULL,font?font->length:0);
+        const PocketApplicationIpcConfig ipc={development_socket,manifest->app_id};
+        opened=file&&pocket_application_open_services(&r->app,h,items,(const char *)file->data,file->length,&policy,
+                 dictionary?dictionary->data:NULL,dictionary?dictionary->length:0,font?font->data:NULL,font?font->length:0,
+                 development_socket?&ipc:NULL);
     }else{
         loaded=host_asset_read(assets,"application.js",POCKET_PROGRAM_SOURCE_LIMIT,&source);
         opened=loaded&&pocket_application_open(&r->app,h,items,(const char *)source.data,source.length);
@@ -57,11 +62,16 @@ static int open_framework(PocketFramework *r,unsigned h,unsigned items,const cha
 }
 int pocket_framework_open(PocketFramework *r,unsigned h,unsigned items,const char *assets,
                           const char *media_root,const PocketDisplayBackend *display){
-    return open_framework(r,h,items,assets,NULL,media_root,display);
+    return open_framework(r,h,items,assets,NULL,media_root,display,NULL);
 }
 int pocket_framework_open_package(PocketFramework *r,unsigned h,unsigned items,const PuiLoadedPackage *package,
                                   const char *media_root,const PocketDisplayBackend *display){
-    return open_framework(r,h,items,NULL,package,media_root,display);
+    return open_framework(r,h,items,NULL,package,media_root,display,NULL);
+}
+int pocket_framework_open_package_ipc(PocketFramework *r,unsigned h,unsigned items,const PuiLoadedPackage *package,
+                                     const char *media_root,const char *development_socket){
+    if(!development_socket)return 0;
+    return open_framework(r,h,items,NULL,package,media_root,NULL,development_socket);
 }
 int pocket_framework_input(void *p,const InputFrame *frame,uint64_t ns){
     PocketFramework *r=p;if(!r||!r->opened||r->error)return 0;

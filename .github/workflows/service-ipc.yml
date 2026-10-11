@@ -1,0 +1,37 @@
+name: Service IPC core
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  ipc:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install the repository compiler and emulator family
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc gcc-arm-linux-gnueabihf qemu-user nodejs
+          test "$(gcc -dumpversion)" = 11
+          test "$(arm-linux-gnueabihf-gcc -dumpversion)" = 11
+      - name: Real socket core and provider tests on native and ARM
+        run: make test-runtime-boundary test-ipc test-ipc-arm test-ipc-sanitize verify-ipc
+      - name: Preserve exact source
+        if: always()
+        run: |
+          mkdir -p out/ipc/review
+          git archive --format=tar HEAD > out/ipc/review/source.tar
+      - name: Upload IPC software evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: service-ipc-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/ipc/
+          if-no-files-found: error
+          retention-days: 30

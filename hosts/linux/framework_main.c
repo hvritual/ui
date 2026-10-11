@@ -74,6 +74,7 @@ static int discover_input(InputLive *input, const char *directory,
 
 int main(int argc,char **argv){
     const char *profile=NULL,*assets=NULL,*output=NULL,*fbpath="/dev/fb0",*inputdir="/dev/input",*media=NULL,*touch_name=NULL,*replay=NULL,*package_path=NULL;
+    const char *ipc_development_socket=NULL;
     int headless=0,physical=0,seconds=60,items=0,rawmin=0,rawmax=0,slots=0,swap=0,ix=0,iy=0;
     unsigned touch_fields=0, discovery_attempts=0,replay_samples=0;
     int input_wait_ms=3000,allow_unsigned=0,replay_realtime=0;
@@ -84,6 +85,7 @@ int main(int argc,char **argv){
         if(i+1>=argc){fprintf(stderr,"missing value: %s\n",key);return 2;}const char *v=argv[++i];
         if(!strcmp(key,"--profile"))profile=v;else if(!strcmp(key,"--asset-root"))assets=v;
         else if(!strcmp(key,"--package")){if(package_path)return 2;package_path=v;}
+        else if(!strcmp(key,"--ipc-development-socket")){if(ipc_development_socket)return 2;ipc_development_socket=v;}
         else if(!strcmp(key,"--replay-input"))replay=v;
         else if(!strcmp(key,"--output"))output=v;else if(!strcmp(key,"--fbdev"))fbpath=v;
         else if(!strcmp(key,"--input-dir"))inputdir=v;else if(!strcmp(key,"--media-store"))media=v;
@@ -107,6 +109,9 @@ int main(int argc,char **argv){
     if(replay_realtime&&(!replay||!headless)){fprintf(stderr,"paced replay requires explicit headless replay input\n");return 2;}
     if(replay&&!headless){fprintf(stderr,"replay input is headless only\n");return 2;}
     if(headless==physical){fprintf(stderr,"exactly one of --headless or --physical is required\n");return 2;}
+    if(ipc_development_socket && (!package_path || !headless || ipc_development_socket[0]!='/')){
+        fprintf(stderr,"development IPC requires --headless, an admitted --package and an absolute socket path\n");return 2;
+    }
     if(!headless&&h==800&&((touch_fields&113U)!=113U||!touch_name||!strcmp(touch_name,"auto"))){fprintf(stderr,"800 target requires its own explicit verified touch configuration\n");return 2;}
     if((touch_fields&6U) && ((touch_fields&6U)!=6U || rawmin>=rawmax))return 2;
     if(!touch_name)touch_name="auto";
@@ -139,8 +144,9 @@ int main(int argc,char **argv){
         int wrote=fbdev_report(probe,fbpath,&fb);if(fclose(probe)||!wrote){failure="PROBE_WRITE";goto done;}
     }
     PocketDisplayBackend backend={1,sizeof(PocketDisplayBackend),&fb,present};
-    int framework_opened=package_path?
-        pocket_framework_open_package(r,h,items,&package,media,headless?NULL:&backend):
+    int framework_opened=package_path?(ipc_development_socket?
+        pocket_framework_open_package_ipc(r,h,items,&package,media,ipc_development_socket):
+        pocket_framework_open_package(r,h,items,&package,media,headless?NULL:&backend)):
         pocket_framework_open(r,h,items,assets,media,headless?NULL:&backend);
     if(!framework_opened){failure=r->error;goto done;}
     if(!pocket_application_policy_snapshot(&r->app,&applied_policy)){failure="APPLICATION_POLICY";goto done;}
@@ -246,6 +252,10 @@ done:
         if(package_path)fprintf(report,"\"%s\"",package_info.sha256);else fputs("null",report);
         fprintf(report,",\"application_heap_limit\":%zu,\"application_capabilities\":%u,\"package_bytes\":%zu",
                 applied_policy.heap_bytes,applied_policy.capabilities,package_info.container_bytes);
+        fprintf(report,",\"ipc_development\":%s,\"ipc_command_capable\":%s,\"ipc_ready\":%s,\"ipc_status\":%d,\"ipc_requests\":%llu,\"ipc_messages\":%llu,\"ipc_failures\":%llu,\"ipc_pending\":%u,\"ipc_subscriptions\":%u",
+                stats.ipc_configured?"true":"false",stats.ipc_command_capable?"true":"false",stats.ipc_ready?"true":"false",
+                stats.ipc_status,(unsigned long long)stats.ipc_requests,(unsigned long long)stats.ipc_messages,
+                (unsigned long long)stats.ipc_failures,stats.ipc_pending,stats.ipc_subscriptions);
         fprintf(report,",\"synthetic_input\":%s,\"replay_samples\":%u,\"application_page\":%u,\"application_selection\":%u",
                 replay?"true":"false",replay_samples,stats.page,stats.selected);
         fprintf(report,",\"text_input_open\":%s,\"text_input_opens\":%u,\"text_input_confirms\":%u,\"text_input_cancels\":%u",

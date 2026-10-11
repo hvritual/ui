@@ -36,6 +36,11 @@ int pocket_framework_open(PocketFramework *runtime,unsigned height,unsigned item
 int pocket_framework_open_package(PocketFramework *runtime,unsigned height,unsigned items,
                                   const PuiLoadedPackage *package,const char *media_root,
                                   const PocketDisplayBackend *display);
+/* Trusted local development only. The package declares IPC capabilities; this
+ * path does not establish per-package authenticated installation authority. */
+int pocket_framework_open_package_ipc(PocketFramework *runtime,unsigned height,unsigned items,
+                                     const PuiLoadedPackage *package,const char *media_root,
+                                     const char *development_socket);
 int pocket_framework_input(void *runtime,const InputFrame *frame,uint64_t event_ns);
 void pocket_framework_disconnect(PocketFramework *runtime,uint64_t now_ns);
 int pocket_framework_tick(PocketFramework *runtime,uint64_t now_ns,int force_present);
