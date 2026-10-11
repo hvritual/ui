@@ -32,7 +32,8 @@ sh /tmp/r6-lab-tools/r6-media-fault-lab.sh prepare \
 命令输出唯一的 `R6_SESSION_DIR` 和 `R6_MEDIA_STORE`。例如用实际输出设置：
 
 ```sh
-SESSION=/tmp/r6-field-sessions/r6-mf-<本次输出的目录名>
+SESSION=/tmp/r6-field-sessions/r6-mf-20261011-123456-1234
+# 上面的 SESSION 是格式示例，必须替换为 prepare 命令打印的实际路径
 
 # 终端 A：运行原始物理 Coffee，既有界面进程需先按现场批准方法正常退出
 FRAMEWORK_APPLICATION=coffee FRAMEWORK_ITEMS=100 \
@@ -62,9 +63,11 @@ sh /tmp/r6-lab-tools/r6-media-fault-lab.sh media "$BUNDLE" "$SESSION"
 在同一段真实 Coffee 物理运行期间，从第二终端执行：
 
 ```sh
-R6_APPROVED_FAULT_SOP=现场已批准的SOP编号 \
+R6_APPROVED_FAULT_SOP=LAB-APPROVED-001 \
 sh /tmp/r6-lab-tools/r6-media-fault-lab.sh fault "$BUNDLE" "$SESSION"
 ```
+
+其中 LAB-APPROVED-001 只是命令格式示例，操作时必须填入现场真实批准的 ASCII SOP 编号。
 
 按批准的**外部隔离实验方法**分别进行触摸设备断开→重新出现→重新准入，以及令当前真实 evdev reader 产生 `SYN_DROPPED` 的实验。辅助脚本仅记录操作员确认的时间窗口，不能操作驱动。每次恢复后复测正确导航、弹窗背景无穿透、无幽灵点击、无老焦点/捕获事件，拍摄 LCD／手指与真实原始内核/应用日志。
 
