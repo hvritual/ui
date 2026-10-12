@@ -64,20 +64,33 @@ def run(command: list, log: Path, timeout: int = 120) -> str:
     return result.stdout
 
 
-def runner(mode: str) -> list[str]:
-    return [] if mode == 'native' else ['qemu-arm', '-cpu', 'cortex-a7', '-L', '/usr/arm-linux-gnueabihf']
+def runner(mode: str, static: bool = False) -> list[str]:
+    return [] if mode == 'native' else ['qemu-arm', '-cpu', 'cortex-a7',
+                                      *([] if static else ['-L', '/usr/arm-linux-gnueabihf'])]
 
 
-def build(mode: str, sanitize: bool = False, development: bool = False) -> dict[str, Path]:
+def check_static_arm_abi(text: str, label: str) -> None:
+    required = (r'^\s*Class:\s+ELF32\s*$', r'^\s*Machine:\s+ARM\s*$',
+                r'^\s*Data:.*little endian\s*$', r'^\s*Flags:.*Version5 EABI.*hard-float ABI\s*$',
+                r'^\s*Tag_CPU_arch:\s+v7\s*$', r'^\s*Tag_ABI_VFP_args:\s+VFP registers\s*$')
+    if any(re.search(pattern, text, re.MULTILINE) is None for pattern in required) or \
+            re.search(r'\b(?:INTERP|NEEDED)\b', text):
+        raise RuntimeError('ARMv7 static hard-float ABI not demonstrated: ' + label)
+
+
+def build(mode: str, sanitize: bool = False, development: bool = False,
+          static: bool = False) -> dict[str, Path]:
     if sanitize and mode != 'native':
         raise RuntimeError('sanitizer is a native software gate')
+    if static and (mode != 'arm' or sanitize):
+        raise RuntimeError('static IPC builds require unsanitized ARM mode')
     before = source(development)
     cc = 'gcc' if mode == 'native' else 'arm-linux-gnueabihf-gcc'
     version = subprocess.check_output([cc, '-dumpfullversion'], text=True).strip()
     locked = json.loads((ROOT / 'toolchains/sources.lock.json').read_text())['toolchain']['gcc_major']
     if not development and int(version.split('.')[0]) != locked:
         raise RuntimeError('IPC acceptance requires locked GCC major ' + str(locked))
-    directory = OUT / ('sanitize' if sanitize else mode)
+    directory = OUT / ('arm-static' if static else 'sanitize' if sanitize else mode)
     directory.mkdir(parents=True, exist_ok=True)
     binaries = {}
     for name, (sources, consumer) in TARGETS.items():
@@ -86,14 +99,26 @@ def build(mode: str, sanitize: bool = False, development: bool = False) -> dict[
         if sanitize:
             options += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer', '-g']
         command = [cc, '-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-Wpedantic',
-                   *options, '-I.', *sources, '-o', str(binary)]
+                   *options, *(['-static'] if static else []), '-I.', *sources, '-o', str(binary)]
         ownership = validate_command(command, ROOT, consumer)
         run(command, directory / (name + '-build.log'))
         ownership.update(source_commit=before['commit'], source_tree=before['tree'],
                          development=development, binary_sha256=sha(binary))
         write(binary.with_suffix('.ownership.json'), ownership)
         binaries[name] = binary
-    abi = run(['readelf', '-h', '-A', '-d', binaries['pocket-ipcd']], directory / 'elf.log')
+    static_abis = {}
+    if static:
+        for name, binary in binaries.items():
+            log = directory / (name + '-elf.log')
+            abi = run(['arm-linux-gnueabihf-readelf', '-h', '-A', '-l', '-d', binary], log)
+            check_static_arm_abi(abi, name)
+            static_abis[log.name] = sha(log)
+        # Retain the ordinary broker ABI field for consumers of build.json;
+        # the static record additionally binds every executable's own ABI log.
+        (directory / 'elf.log').write_bytes((directory / 'pocket-ipcd-elf.log').read_bytes())
+        abi = (directory / 'elf.log').read_text()
+    else:
+        abi = run(['readelf', '-h', '-A', '-d', binaries['pocket-ipcd']], directory / 'elf.log')
     if mode == 'arm' and ('Machine:                           ARM' not in abi or
                           'Tag_ABI_VFP_args: VFP registers' not in abi):
         raise RuntimeError('IPC broker ARM hard-float ABI not demonstrated')
@@ -102,7 +127,8 @@ def build(mode: str, sanitize: bool = False, development: bool = False) -> dict[
     write(directory / 'build.json', {**before, 'mode': mode, 'sanitizer': sanitize, 'gcc': version,
           'binaries': {n: sha(p) for n, p in binaries.items()}, 'abi_sha256': sha(directory / 'elf.log'),
           'ownership': {n: sha(p.with_suffix('.ownership.json')) for n, p in binaries.items()},
-          'logs': {n + '-build.log': sha(directory / (n + '-build.log')) for n in binaries}})
+          'logs': {n + '-build.log': sha(directory / (n + '-build.log')) for n in binaries},
+          **({'static': True, 'abi_logs': static_abis} if static else {})})
     return binaries
 
 
@@ -224,15 +250,19 @@ def main() -> None:
     parser.add_argument('action', choices=('build', 'test', 'verify'))
     parser.add_argument('--mode', choices=('native', 'arm'), default='native')
     parser.add_argument('--sanitize', action='store_true')
+    parser.add_argument('--static', action='store_true',
+                        help='ARM build only, in a separate arm-static directory; no device admission')
     parser.add_argument('--development', action='store_true',
                         help='diagnostic build only; cannot satisfy verify or CI acceptance')
     args = parser.parse_args()
+    if args.static and args.action != 'build':
+        raise RuntimeError('--static is a build option; board package tests have a separate gate')
     if args.action == 'verify':
         if args.development:
             raise RuntimeError('development evidence cannot be verified as acceptance')
         verify()
     elif args.action == 'build':
-        build(args.mode, args.sanitize, args.development)
+        build(args.mode, args.sanitize, args.development, static=args.static)
     else:
         test(args.mode, args.sanitize, args.development)
 

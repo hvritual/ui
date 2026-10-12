@@ -270,8 +270,11 @@ JS model → renderer 路径验收，不能由 Node mock 或 C socket 单测替�
 证据位于 `out/ipc/` 和 `out/framework/`，绑定源码 commit/tree、源码哈希、
 实际二进制哈希、编译输入归属、进程运行日志、包哈希、报告与前后帧。
 Native/ARM 像素和业务断言结果交叉比较。QEMU 只提供软件功能证据。
-当前 IPC ARM 可执行文件使用锁定的 GNU 动态 ABI，作为 QEMU 软件测试产物，
-没有加入现有静态设备板包；板上 libc、启动服务和进程身份配置需要独立适配。
+默认 IPC ARM 可执行文件使用锁定的 GNU 动态 ABI，作为 QEMU 软件测试产物。
+另有独立的[静态 IPC 上板诊断包](ipc-board.md)：同一提交的静态 UI、broker
+和合成 provider 在板上以 headless 模式运行，不依赖板端 GNU 动态 loader。
+它保留现有开发入口约束，与 LCD／触摸板包分开；实际 BSP 兼容、物理性能、
+生产服务身份和设备业务仍需要独立验证。
 
 `--development` 和已有 `FRAMEWORK_DEVELOPMENT=1` 只用于本地诊断，产物明确
 标记 development，不能通过 canonical verify。工具缺失、AF_UNIX 被环境禁用、

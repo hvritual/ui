@@ -264,6 +264,12 @@ test-ipc-framework-arm:
 verify-ipc-framework:
 	python3 scripts/ipc_acceptance.py verify
 
+.PHONY: build-board-ipc test-board-ipc-package
+build-board-ipc: check-runtime-boundary
+	python3 scripts/ipc_board.py package
+test-board-ipc-package:
+	python3 scripts/ipc_board.py verify
+
 # Actual production package integration; the canonical framework gates also run these.
 .PHONY: test-package-runtime test-package-runtime-arm test-package-runtime-sanitize
 test-package-runtime:
