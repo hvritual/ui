@@ -59,7 +59,8 @@ def compile_binary(mode,test=False,sanitize=False,static=False,loop=False,applic
                     ROOT/'tests/application/reference/hosts/linux/framework.c']
     else:
         sources += [ROOT/'hosts/linux/framework.c',ROOT/'hosts/linux/application/program.c',
-                    ROOT/'hosts/linux/application/application.c',ROOT/'hosts/linux/application/replay.c']
+                    ROOT/'hosts/linux/application/application.c',ROOT/'hosts/linux/application/replay.c',
+                    ROOT/'hosts/linux/ipc/wire.c',ROOT/'hosts/linux/ipc/client.c']
     sources += [ROOT/'hosts/linux/text-input/session.c',ROOT/'hosts/linux/text-input/keyboard.c',unicode_dep/'utf8proc.c',
                 ROOT/'hosts/linux/text-input/layout.c',ROOT/'hosts/linux/text-input/input_font.c',ROOT/'hosts/linux/ime/session.c']
     if package_test=='input':entry='tests/ime/test_keyboard_view.c';name='input-view-test'

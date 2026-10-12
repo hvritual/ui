@@ -21,6 +21,7 @@ int main(int argc,char **argv) {
     if(!strcmp(argv[1],"600-unsigned"))policy.allow_unsigned=1;
     else if(!strcmp(argv[1],"800-unsigned")){policy.allow_unsigned=1;policy.target=PUI_TARGET_800;}
     else if(!strcmp(argv[1],"core-only")){policy.allow_unsigned=1;policy.capabilities=PUI_CAP_CORE;}
+    else if(!strcmp(argv[1],"legacy-only")){policy.allow_unsigned=1;policy.capabilities=15u;}
     else if(!strcmp(argv[1],"small-heap")){policy.allow_unsigned=1;policy.max_heap_bytes=1024*1024;}
     else if(strcmp(argv[1],"strict")){free(b);return 2;}
     PuiPackage package;memset(&package,0x7f,sizeof(package));

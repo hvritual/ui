@@ -13,6 +13,12 @@
 /* Engine-neutral, experimental application host. Payloads are trusted local
  * development inputs here; package authentication/admission is separate work. */
 typedef struct { void *impl; } PocketApplication;
+/* Explicit native development configuration. No application-supplied path or
+ * claimed identity grants authority; policy capability bits remain required. */
+typedef struct {
+    const char *socket_path;
+    const char *application_id;
+} PocketApplicationIpcConfig;
 typedef struct {
     unsigned page, selected, first, item_count, locale, theme, progress;
     unsigned completed, modal, nodes, pool, peak_pool, actions;
@@ -24,6 +30,9 @@ typedef struct {
     uint64_t ime_commits,ime_candidate_batches;
     int ime_provider_status,ime_provider_stage,ime_provider_errno;
     unsigned ime_provider_storage,ime_input_locale,ime_provider_verify_mode;
+    unsigned ipc_configured,ipc_ready,ipc_command_capable,ipc_pending,ipc_subscriptions;
+    uint64_t ipc_requests,ipc_messages,ipc_failures;
+    int ipc_status;
 } PocketApplicationStats;
 int pocket_application_open(PocketApplication *application, unsigned height,
                             unsigned item_count, const char *source, size_t length);
@@ -32,6 +41,9 @@ int pocket_application_open_policy(PocketApplication *application, unsigned heig
                                    const PocketApplicationPolicy *policy);
 int pocket_application_open_input(PocketApplication *,unsigned,unsigned,const char *,size_t,
                                    const PocketApplicationPolicy *,const void *,size_t,const void *,size_t);
+int pocket_application_open_services(PocketApplication *,unsigned,unsigned,const char *,size_t,
+                                   const PocketApplicationPolicy *,const void *,size_t,const void *,size_t,
+                                   const PocketApplicationIpcConfig *);
 int pocket_application_policy_snapshot(const PocketApplication *application, PocketApplicationPolicy *out);
 void pocket_application_close(PocketApplication *application);
 PocketInteractionRuntime *pocket_application_interaction(PocketApplication *application);

@@ -4,7 +4,9 @@
     "apps/coffee-demo/app.js",
     "apps/coffee-framework/application.js",
     "apps/control-panel/application.js",
-    "apps/control-panel/labels.json"
+    "apps/control-panel/labels.json",
+    "apps/ipc-demo/application.js",
+    "sdk/ipc/js/pocket-comm.js"
   ],
   "link_inputs": {
     "apps/coffee-framework/app.c": {
@@ -81,6 +83,31 @@
       "origin": "repository",
       "reference_only": false,
       "role": "target"
+    },
+    "hosts/linux/ipc/broker.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ipc/broker_main.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ipc/client.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ipc/service.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
+    "hosts/linux/ipc/wire.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
     },
     "hosts/linux/package/loaded.c": {
       "origin": "repository",
@@ -303,6 +330,21 @@
       "role": "test-only"
     },
     "tests/ime/test_keyboard_view.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
+    "tests/ipc/service_fixture.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
+    "tests/ipc/test_core.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "test-only"
+    },
+    "tests/ipc/test_service.c": {
       "origin": "repository",
       "reference_only": false,
       "role": "test-only"

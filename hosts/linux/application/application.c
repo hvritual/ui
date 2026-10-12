@@ -1,6 +1,7 @@
 #include "application.h"
 #include "../ime/pinyin.h"
 #include "../text-input/input_font.h"
+#include "../ipc/client.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +31,12 @@ typedef struct { uint64_t id; PocketComponentHandle root; int keyboard; } Overla
 struct Application {
     PocketProgram program;
     PocketApplicationPolicy policy;
+    PocketIpcClient ipc;
+    PocketIpcMessage ipc_held;
+    PocketIpcStatus ipc_status;
+    unsigned ipc_has_held,ipc_tick;
+    char ipc_socket[POCKET_IPC_SOCKET_PATH_MAX+1u];
+    char ipc_application[POCKET_IPC_NAME_MAX+1u];
     const void *dictionary,*input_font;
     size_t dictionary_bytes,input_font_bytes;
     PocketUiTree tree;
@@ -212,11 +219,143 @@ static int reply_json(Application *a, PocketProgramValue *reply, int length) {
     *reply = (PocketProgramValue){.kind=POCKET_PROGRAM_JSON, .text=a->reply, .length=(size_t)length};
     return 1;
 }
+static uint32_t ipc_allow(const Application *a) {
+    return (a->policy.capabilities & POCKET_APP_CAP_IPC_ALL) >> 4;
+}
+static PocketIpcStatus ipc_open(Application *a) {
+    const PocketIpcClientConfig config={a->ipc_socket,a->ipc_application,ipc_allow(a)};
+    if (!config.allow) return POCKET_IPC_UNAUTHORIZED;
+    if (!a->ipc_socket[0]) return POCKET_IPC_UNAVAILABLE;
+    return pocket_ipc_client_open(&a->ipc,&config);
+}
+static int ipc_reply(Application *a,PocketProgramValue *reply,PocketIpcStatus status,uint64_t id) {
+    if(status!=POCKET_IPC_OK && status!=POCKET_IPC_AGAIN) ++a->stats.ipc_failures;
+    PocketIpcClientStats stats={0};
+    if(a->ipc.impl)(void)pocket_ipc_client_stats(&a->ipc,&stats);
+    int n=snprintf(a->reply,sizeof(a->reply),"{\"ok\":%s,\"code\":\"%s\",\"id\":\"%" PRIu64 "\",\"brokerEpoch\":\"%" PRIu64 "\",\"connectionEpoch\":\"%" PRIu64 "\"}",
+                   status==POCKET_IPC_OK?"true":"false",pocket_ipc_status_name(status),id,stats.broker_epoch,stats.connection_epoch);
+    return reply_json(a,reply,n);
+}
+static int ipc_text(const PocketProgramValue *arg,size_t maximum) {
+    return arg->kind==POCKET_PROGRAM_TEXT && arg->text && arg->length<=maximum &&
+           !memchr(arg->text,0,arg->length) && pocket_ipc_utf8_valid(arg->text,arg->length);
+}
+static int ipc_id(const PocketProgramValue *arg,uint64_t *out) {
+    if(!ipc_text(arg,20) || !arg->length || (arg->length>1 && arg->text[0]=='0')) return 0;
+    uint64_t n=0;
+    for(size_t i=0;i<arg->length;++i){
+        unsigned digit=(unsigned char)arg->text[i]-'0';
+        if(digit>9 || n>(UINT64_MAX-digit)/10u) return 0;
+        n=n*10u+digit;
+    }
+    if(!n)return 0;
+    *out=n;return 1;
+}
+/* Opaque wire payload is quoted, never interpolated as JSON. The VM therefore
+ * parses only trusted envelopes; malformed provider JSON becomes an SDK Result. */
+static size_t ipc_quote(char *dst,size_t capacity,const char *source,size_t length) {
+    static const char hex[]="0123456789abcdef";
+    size_t n=0;
+    if(capacity<2)return 0;
+    dst[n++]='"';
+    for(size_t i=0;i<length;++i){
+        unsigned char c=(unsigned char)source[i];
+        size_t need=c<32?6u:(c=='"'||c=='\\'?2u:1u);
+        if(need>capacity-n-1u)return 0;
+        if(c<32){dst[n++]='\\';dst[n++]='u';dst[n++]='0';dst[n++]='0';dst[n++]=hex[c>>4];dst[n++]=hex[c&15u];}
+        else {if(c=='"'||c=='\\')dst[n++]='\\';dst[n++]=(char)c;}
+    }
+    dst[n++]='"';return n;
+}
+static int ipc_take(Application *a,PocketProgramValue *reply) {
+    PocketIpcClientStats stats={0};
+    if(a->ipc.impl && pocket_ipc_client_stats(&a->ipc,&stats)==POCKET_IPC_OK) a->ipc_status=stats.status;
+    int written=snprintf(a->reply,sizeof(a->reply),"{\"ok\":true,\"ready\":%s,\"code\":\"%s\",\"messages\":[",
+                         stats.ready?"true":"false",pocket_ipc_status_name(a->ipc_status));
+    if(written<0 || (size_t)written>=sizeof(a->reply))return 0;
+    size_t used=(size_t)written;unsigned count=0;
+    while(count<16u){
+        if(used+3u>=POCKET_PROGRAM_TEXT_LIMIT)break;
+        if(!a->ipc_has_held){
+            if(!a->ipc.impl || pocket_ipc_client_next(&a->ipc,&a->ipc_held)!=POCKET_IPC_OK)break;
+            a->ipc_has_held=1;
+        }
+        const PocketIpcMessage *m=&a->ipc_held;
+        char prefix[512];
+        int n=snprintf(prefix,sizeof(prefix),"%s{\"kind\":%u,\"flags\":%u,\"code\":\"%s\",\"id\":\"%" PRIu64 "\",\"brokerEpoch\":\"%" PRIu64 "\",\"connectionEpoch\":\"%" PRIu64 "\",\"serviceEpoch\":\"%" PRIu64 "\",\"revision\":\"%" PRIu64 "\",\"cursor\":\"%" PRIu64 "\",\"payload\":",
+                       count?",":"",(unsigned)m->kind,m->flags,pocket_ipc_status_name(m->status),m->request_id,
+                       m->broker_epoch,m->connection_epoch,m->service_epoch,m->revision,m->cursor);
+        if(n<0 || (size_t)n>=sizeof(prefix))return 0;
+        size_t before=used;
+        if((size_t)n>POCKET_PROGRAM_TEXT_LIMIT-used-3u)break;
+        memcpy(a->reply+used,prefix,(size_t)n);used+=(size_t)n;
+        size_t quoted=ipc_quote(a->reply+used,POCKET_PROGRAM_TEXT_LIMIT-used-3u,m->payload,m->payload_length);
+        if(!quoted){used=before;break;}
+        used+=quoted;a->reply[used++]='}';
+        erase(&a->ipc_held,sizeof(a->ipc_held));a->ipc_has_held=0;
+        ++count;++a->stats.ipc_messages;
+    }
+    a->reply[used++]=']';a->reply[used++]='}';a->reply[used]=0;
+    return reply_json(a,reply,(int)used);
+}
+static int ipc_command(Application *a,const char *op,size_t n,const PocketProgramValue *args,PocketProgramValue *reply) {
+    /* All traffic is pumped only inside the synchronous owner tick. A direct
+     * F6/start invocation is an ordinary BUSY result, never a VM failure. */
+    if(!ipc_allow(a))return ipc_reply(a,reply,POCKET_IPC_UNAUTHORIZED,0);
+    if(!a->ipc_tick || a->phase==2)return ipc_reply(a,reply,POCKET_IPC_BUSY,0);
+    if(!strcmp(op,"ipc.take"))return n?ipc_reply(a,reply,POCKET_IPC_INVALID,0):ipc_take(a,reply);
+    if(!strcmp(op,"ipc.reconnect")){
+        if(n)return ipc_reply(a,reply,POCKET_IPC_INVALID,0);
+        a->ipc_status=a->ipc.impl?pocket_ipc_client_reconnect(&a->ipc):ipc_open(a);
+        return ipc_reply(a,reply,a->ipc_status,0);
+    }
+    PocketIpcKind kind=!strcmp(op,"ipc.query")?POCKET_IPC_QUERY:!strcmp(op,"ipc.command")?POCKET_IPC_COMMAND:
+                       !strcmp(op,"ipc.events")?POCKET_IPC_SUBSCRIBE:!strcmp(op,"ipc.state")?POCKET_IPC_WATCH:0;
+    if(kind){
+        uint32_t required=kind==POCKET_IPC_QUERY?POCKET_IPC_ALLOW_QUERY:kind==POCKET_IPC_COMMAND?POCKET_IPC_ALLOW_COMMAND:
+                          kind==POCKET_IPC_SUBSCRIBE?POCKET_IPC_ALLOW_EVENT:POCKET_IPC_ALLOW_STATE;
+        if(!(ipc_allow(a)&required))return ipc_reply(a,reply,POCKET_IPC_UNAUTHORIZED,0);
+        size_t expected=kind==POCKET_IPC_QUERY?4u:5u;
+        if(n!=expected || !ipc_text(&args[0],POCKET_IPC_NAME_MAX) || !ipc_text(&args[1],POCKET_IPC_NAME_MAX))
+            return ipc_reply(a,reply,POCKET_IPC_INVALID,0);
+        if(!a->ipc.impl)return ipc_reply(a,reply,a->ipc_status,0);
+        char service[POCKET_IPC_NAME_MAX+1u]={0},member[POCKET_IPC_NAME_MAX+1u]={0};
+        memcpy(service,args[0].text,args[0].length);memcpy(member,args[1].text,args[1].length);
+        uint64_t id=0;PocketIpcStatus status;
+        if(kind==POCKET_IPC_QUERY || kind==POCKET_IPC_COMMAND){
+            if(!ipc_text(&args[2],POCKET_IPC_PAYLOAD_MAX) || args[3].kind!=POCKET_PROGRAM_INTEGER ||
+               !between(args[3].integer,1,POCKET_IPC_TIMEOUT_MAX_MS) ||
+               (kind==POCKET_IPC_COMMAND && !ipc_text(&args[4],POCKET_IPC_NAME_MAX)))return ipc_reply(a,reply,POCKET_IPC_INVALID,0);
+            char key[POCKET_IPC_NAME_MAX+1u]={0};
+            if(kind==POCKET_IPC_COMMAND)memcpy(key,args[4].text,args[4].length);
+            status=pocket_ipc_client_request_keyed(&a->ipc,kind,service,member,key,args[2].text,args[2].length,
+                                                  (uint32_t)args[3].integer,a->now,&id);
+        }else{
+            if(!ipc_text(&args[2],POCKET_IPC_FILTER_KEY_MAX) || !ipc_text(&args[3],POCKET_IPC_FILTER_VALUE_MAX) ||
+               args[4].kind!=POCKET_PROGRAM_INTEGER || !between(args[4].integer,1,POCKET_IPC_TIMEOUT_MAX_MS))
+                return ipc_reply(a,reply,POCKET_IPC_INVALID,0);
+            PocketIpcFilter filter={0};memcpy(filter.key,args[2].text,args[2].length);memcpy(filter.value,args[3].text,args[3].length);
+            status=pocket_ipc_client_subscribe(&a->ipc,kind,service,member,&filter,(uint32_t)args[4].integer,a->now,&id);
+        }
+        if(status==POCKET_IPC_OK)++a->stats.ipc_requests;
+        return ipc_reply(a,reply,status,id);
+    }
+    if(!strcmp(op,"ipc.cancel") || !strcmp(op,"ipc.unsubscribe")){
+        uint64_t id=0;
+        if(n!=1 || !ipc_id(&args[0],&id))return ipc_reply(a,reply,POCKET_IPC_INVALID,0);
+        if(!a->ipc.impl)return ipc_reply(a,reply,a->ipc_status,0);
+        PocketIpcStatus status=!strcmp(op,"ipc.cancel")?pocket_ipc_client_cancel(&a->ipc,id):pocket_ipc_client_unsubscribe(&a->ipc,id);
+        return ipc_reply(a,reply,status,id);
+    }
+    return ipc_reply(a,reply,POCKET_IPC_INVALID,0);
+}
 static int command(void *context, const char *op, size_t n, const PocketProgramValue *args, PocketProgramValue *reply) {
     Application *a = context;
     int64_t v[POCKET_PROGRAM_ARGUMENT_LIMIT] = {0};
     PocketComponentHandle c = {0};
-    if (!a || a->disposing || a->error || a->phase == 2) return 0;
+    if (!a || a->disposing || a->error) return 0;
+    if (!strncmp(op,"ipc.",4)) return ipc_command(a,op,n,args,reply);
+    if (a->phase == 2) return 0;
     *reply = (PocketProgramValue){.kind=POCKET_PROGRAM_INTEGER, .integer=1};
     if (!(a->policy.capabilities & POCKET_APP_CAP_CORE)) return fail(a,"APPLICATION_CAPABILITY_CORE");
     if (!strncmp(op,"keyboard.",9) && !(a->policy.capabilities & POCKET_APP_CAP_ASCII_KEYBOARD))
@@ -457,6 +596,12 @@ int pocket_application_open_policy(PocketApplication *out, unsigned height, unsi
 int pocket_application_open_input(PocketApplication *out,unsigned height,unsigned items,
                                  const char *source,size_t length,const PocketApplicationPolicy *policy,
                                  const void *dictionary,size_t dictionary_bytes,const void *font,size_t font_bytes){
+    return pocket_application_open_services(out,height,items,source,length,policy,dictionary,dictionary_bytes,font,font_bytes,NULL);
+}
+int pocket_application_open_services(PocketApplication *out,unsigned height,unsigned items,
+                                 const char *source,size_t length,const PocketApplicationPolicy *policy,
+                                 const void *dictionary,size_t dictionary_bytes,const void *font,size_t font_bytes,
+                                 const PocketApplicationIpcConfig *ipc){
     if(policy&&((policy->capabilities&POCKET_APP_CAP_PINYIN)?(!dictionary||!dictionary_bytes||!font||!font_bytes):(dictionary||font)))return 0;
     if (!out || out->impl || (height!=600 && height!=800) || items>4096 || !source || !length ||
         !policy || policy->heap_bytes<1024u*1024u || policy->heap_bytes>POCKET_APP_MAX_HEAP ||
@@ -464,9 +609,20 @@ int pocket_application_open_input(PocketApplication *out,unsigned height,unsigne
     if((policy->capabilities&POCKET_APP_CAP_PINYIN)&&
        (!(policy->capabilities&POCKET_APP_CAP_ASCII_KEYBOARD)||!pocket_pinyin_dictionary_valid(dictionary,dictionary_bytes)||
         !pocket_input_font_valid(font,font_bytes)))return 0;
+    if(ipc && (!ipc->socket_path || ipc->socket_path[0]!='/' || strlen(ipc->socket_path)>POCKET_IPC_SOCKET_PATH_MAX ||
+               !pocket_ipc_name_valid(ipc->application_id,POCKET_IPC_NAME_MAX)))return 0;
     Application *a=calloc(1,sizeof(*a));
     if (!a) return 0;
     out->impl=a; a->height=height; a->dirty=1; a->policy=*policy;
+    a->ipc_status=POCKET_IPC_UNAVAILABLE;
+    if(ipc && ipc_allow(a)){
+        memcpy(a->ipc_socket,ipc->socket_path,strlen(ipc->socket_path)+1u);
+        memcpy(a->ipc_application,ipc->application_id,strlen(ipc->application_id)+1u);
+        a->stats.ipc_configured=1;
+        a->stats.ipc_command_capable=(ipc_allow(a)&POCKET_IPC_ALLOW_COMMAND)!=0;
+        /* A missing service/broker is recoverable; it cannot prevent UI start. */
+        a->ipc_status=ipc_open(a);
+    }
     a->dictionary=dictionary;a->dictionary_bytes=dictionary_bytes;a->input_font=font;a->input_font_bytes=font_bytes;
     PocketUiTreeConfig tc={.initial_capacity=128,.update_queue_capacity=64,.update_budget=64};
     PocketLayoutConfig lc={.tree=&a->tree,.record_capacity=256};
@@ -502,8 +658,11 @@ int pocket_application_step(PocketApplication *out, uint64_t ms) {
     if (!drain_events(a) || pocket_interaction_tick(&a->interaction,ms)!=POCKET_INTERACTION_OK) return fail(a,"APPLICATION_INPUT_TICK");
     char input[80], result[16]; size_t length=0;
     snprintf(input,sizeof(input),"{\"time\":%" PRIu64 "}",ms);
+    if(a->ipc.impl)a->ipc_status=pocket_ipc_client_step(&a->ipc,ms,16u);
     a->phase=1;
+    a->ipc_tick=1;
     int ok=invoke(a,"tick",input,result,sizeof(result),&length);
+    a->ipc_tick=0;
     a->phase=0;
     if (!ok || length!=4 || memcmp(result,"true",4)) return fail(a,"APPLICATION_TICK_RESULT");
     PocketReactiveFlushStats flush;
@@ -543,6 +702,12 @@ int pocket_application_stats(const PocketApplication *out, PocketApplicationStat
     const Application *a=out?out->impl:NULL; PocketNavigationPage page;
     if (!a || a->error || !stats || pocket_navigation_top(&a->navigation,&page)!=POCKET_NAV_OK) return 0;
     *stats=a->stats; stats->page=(unsigned)page.route_id;
+    PocketIpcClientStats ipc={0};
+    stats->ipc_status=(int)a->ipc_status;
+    if(a->ipc.impl && pocket_ipc_client_stats(&a->ipc,&ipc)==POCKET_IPC_OK){
+        stats->ipc_ready=(unsigned)ipc.ready;stats->ipc_pending=ipc.pending;
+        stats->ipc_subscriptions=ipc.subscriptions;stats->ipc_status=(int)ipc.status;
+    }
     stats->modal=(unsigned)pocket_overlay_count(&a->overlays); stats->nodes=(unsigned)pocket_ui_live_count(&a->tree);
     stats->pool=stats->peak_pool=0; stats->recycled=0;
     for (unsigned i=0;i<LISTS;++i) if (a->lists[i].collection.impl) {
@@ -570,6 +735,8 @@ void pocket_application_close(PocketApplication *out) {
     Application *a=out?out->impl:NULL;
     if (!a) return;
     a->disposing=1;
+    /* Invalidate transport and queued payloads before the application VM dies. */
+    pocket_ipc_client_close(&a->ipc);erase(&a->ipc_held,sizeof(a->ipc_held));a->ipc_has_held=0;
     pocket_keyboard_dispose(&a->keyboard); pocket_interaction_dispose(&a->interaction);
     pocket_program_close(&a->program); pocket_reactive_dispose(&a->reactive);
     for (unsigned i=0;i<LISTS;++i) pocket_virtual_collection_dispose(&a->lists[i].collection);

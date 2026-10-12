@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "wire_version": 1,
+  "status": "development-integration",
+  "transport": "AF_UNIX SOCK_STREAM, nonblocking, bounded length-prefixed frames",
+  "byte_order": "big-endian",
+  "business_payload": "opaque UTF-8; JS SDK uses JSON; provider validates its own schema",
+  "service_api_version": "developer-selected namespace convention, e.g. vendor.counter.v1; no separate API negotiation",
+  "channels": {
+    "query": {"pattern": "request-reply", "javascript": "Promise<Result>", "idempotency_key": "forbidden"},
+    "command": {"pattern": "request-reply", "javascript": "Promise<Result>", "idempotency_key": "required; provider owns deduplication", "automatic_replay": false},
+    "event": {"pattern": "filtered publication-subscription", "history_replay": false},
+    "state": {"pattern": "atomic snapshot then membership-aware deltas", "authority": "provider", "recovery": "invalidate then explicitly watch a fresh snapshot"}
+  },
+  "selector": {"all": null, "equality_example": {"eq": {"key": "parity", "value": "odd"}}, "clauses": 1, "comparisons": ["exact UTF-8 string equality"]},
+  "limits": {
+    "header_bytes": 82,
+    "frame_bytes_including_length": 1169,
+    "payload_bytes": 768,
+    "service_name_bytes": 63,
+    "member_name_bytes": 63,
+    "command_key_bytes": 63,
+    "filter_key_bytes": 31,
+    "filter_value_bytes": 95,
+    "timeout_ms": 120000,
+    "channel_tx_frames": 32,
+    "client_pending": 32,
+    "client_subscriptions": 16,
+    "client_inbox_frames": 64,
+    "broker_peers": 8,
+    "broker_members": 64,
+    "broker_routes": 64,
+    "broker_subscriptions": 64,
+    "provider_members": 16,
+    "provider_state_items": 16,
+    "provider_watches": 16,
+    "javascript_instances": 4,
+    "javascript_items_per_watch": 32
+  },
+  "package_capabilities": {"ipc.query": 16, "ipc.command": 32, "ipc.events": 64, "ipc.state": 128},
+  "legacy_package_capabilities": 7,
+  "legacy_ime_package_capabilities": 15,
+  "trust": {
+    "broker_policy": "explicit client and provider UIDs checked using SO_PEERCRED",
+    "package_grants": "trusted native policy; never a client-supplied wire grant",
+    "application_id": "diagnostics only",
+    "same_uid_tenant_isolation": false,
+    "production_authentication": false,
+    "unsigned_package_default": "deny",
+    "host_cli": "explicit --ipc-development-socket, admitted package, headless only"
+  },
+  "scope": {
+    "real_socket_tests": true,
+    "real_Application_VM_and_renderer_gate": "scripts/ipc_acceptance.py",
+    "physical_device_acceptance": false,
+    "public_Go_SDK": false,
+    "durable_command_journal": false,
+    "parent_issue": 8,
+    "delivery_issue": 82
+  }
+}

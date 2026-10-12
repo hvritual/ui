@@ -21,7 +21,8 @@ def build_assets(root: Path, out: Path) -> None:
     if json.loads(manifest.read_text())['font_source']['debug_only']:
         raise RuntimeError('debug font rejected')
     resources = ('labels.atlas', 'builtin.rgba', 'alternate.rgba', 'Noto-LICENSE.txt', 'IMAGE-LICENSE.txt')
-    applications = {'coffee': out / 'assets', 'control-panel': out / 'applications/control-panel'}
+    applications = {'coffee': out / 'assets', 'control-panel': out / 'applications/control-panel',
+                    'ipc-demo': out / 'applications/ipc-demo'}
     for directory in applications.values():
         directory.mkdir(parents=True, exist_ok=True)
         for name in resources:
@@ -49,6 +50,16 @@ def build_assets(root: Path, out: Path) -> None:
     panel.update({str(5200 + i): str(i) for i in range(100)})
     write_json(applications['control-panel'] / 'catalog.json', [panel for _ in range(6)])
     shutil.copy2(root / 'apps/control-panel/application.js', applications['control-panel'] / 'application.js')
+    # The developer SDK is application data, never a native runtime input. Only
+    # this opt-in example receives the bundle; existing applications are copied
+    # byte-for-byte as before. A .pui still contains one application.js entry.
+    write_json(applications['ipc-demo'] / 'catalog.json', [panel for _ in range(6)])
+    sdk = (root / 'sdk/ipc/js/pocket-comm.js').read_text()
+    example = (root / 'apps/ipc-demo/application.js').read_text()
+    bundle = sdk + '\n' + example + '\nPocketComm.install(PocketApplication);\n'
+    if '\x00' in bundle or len(bundle.encode('utf-8')) > 256 * 1024:
+        raise RuntimeError('IPC application bundle exceeds package source limit')
+    (applications['ipc-demo'] / 'application.js').write_text(bundle)
     adapter = (root / 'hosts/linux/engine/scene_guest.js').read_bytes()
     if not adapter or b'\x00' in adapter or len(adapter) > 256 * 1024:
         raise RuntimeError('private adapter source rejected')
