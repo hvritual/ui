@@ -1,0 +1,57 @@
+name: R6 Signed Media and Physical Fault Evidence Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/device/r6-media-fault-lab.sh'
+      - 'scripts/r6_media_fault_review.py'
+      - 'tests/r6/test_media_fault_review.py'
+      - 'docs/r6-media-fault-lab.md'
+      - '.github/workflows/r6-media-fault.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/device/r6-media-fault-lab.sh'
+      - 'scripts/r6_media_fault_review.py'
+      - 'tests/r6/test_media_fault_review.py'
+      - 'docs/r6-media-fault-lab.md'
+      - '.github/workflows/r6-media-fault.yml'
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Strict media/fault reviewer and unchanged R6 gates (synthetic only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/r6-media-fault
+          git rev-parse HEAD > out/r6-media-fault/source-commit.txt
+          git rev-parse HEAD^{tree} > out/r6-media-fault/source-tree.txt
+          sh -n scripts/device/r6-media-fault-lab.sh
+          python3 -m py_compile scripts/r6_media_fault_review.py
+          python3 -m unittest discover -s tests/r6 -p test_media_fault_review.py -v 2>&1 | tee out/r6-media-fault/review-tests.log
+          python3 -m unittest discover -s tests/r6 -p test_intake.py -v 2>&1 | tee out/r6-media-fault/intake-tests.log
+          make -f scripts/r6.mk test-r6-board-verifier 2>&1 | tee out/r6-media-fault/original-final-gate-tests.log
+          git diff --exit-code
+          cp scripts/device/r6-media-fault-lab.sh scripts/r6_media_fault_review.py out/r6-media-fault/
+          cp tests/r6/test_media_fault_review.py docs/r6-media-fault-lab.md out/r6-media-fault/
+          printf 'tool_tests_only=true\nphysical=false\nproduct=false\n' > out/r6-media-fault/scope.txt
+          (cd out/r6-media-fault && sha256sum *.sh *.py *.md *.log *.txt > SHA256SUMS)
+      - name: Preserve tool evidence, not fabricated physical evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: r6-media-fault-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/r6-media-fault/
+          if-no-files-found: error
+          retention-days: 30
