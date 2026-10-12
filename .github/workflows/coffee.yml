@@ -96,6 +96,8 @@ jobs:
         run: make test-ipc-framework test-ipc-framework-arm verify-ipc-framework
       - name: Framework static board package and fail-closed HIL checker
         run: make build-board-framework test-board-framework-package test-board-framework-verifier
+      - name: Static IPC board diagnostic package with the shipped launcher
+        run: make build-board-ipc test-board-ipc-package
       - name: Verify per-language software evidence and generate support report
         run: |
           python3 -m unittest discover -s tests/language -v
@@ -106,6 +108,8 @@ jobs:
           mkdir -p out/coffee/review
           git archive --format=tar HEAD > out/coffee/review/source.tar
           if [ -d out/runtime/native ]; then tar czf out/coffee/review/native.tar.gz out/runtime/native out/runtime/include out/runtime/source-native/engine/quickjs-c/pocket_runtime.h out/runtime/cargo/x86_64-unknown-linux-gnu/release/libpocketjs_symbian_core.a; fi
+          mkdir -p out/ipc-board/review
+          git archive --format=tar HEAD > out/ipc-board/review/source.tar
       - name: Upload P4 evidence and device assets (no source font or private key)
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -131,5 +135,14 @@ jobs:
         with:
           name: framework-board-${{ github.event.pull_request.head.sha || github.sha }}
           path: out/framework/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload the static IPC board diagnostic package and raw evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ipc-board-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/ipc-board/
           if-no-files-found: error
           retention-days: 30
