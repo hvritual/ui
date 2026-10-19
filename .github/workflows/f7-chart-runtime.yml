@@ -1,0 +1,62 @@
+name: F7 Real Chart Surface 1000 Points
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'hosts/linux/chart/**'
+      - 'sdk/ui/js/pocket-charts.js'
+      - 'sdk/ui/js/pocket-ui.js'
+      - 'apps/chart-1000/**'
+      - 'contracts/chart-surface-v1.json'
+      - 'scripts/chart.mk'
+      - 'scripts/chart_sdk.py'
+      - 'tests/chart/**'
+      - '.github/workflows/f7-chart-runtime.yml'
+      - '.github/workflows/coffee.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'hosts/linux/chart/**'
+      - 'sdk/ui/js/pocket-charts.js'
+      - 'sdk/ui/js/pocket-ui.js'
+      - 'apps/chart-1000/**'
+      - 'contracts/chart-surface-v1.json'
+      - 'scripts/chart.mk'
+      - 'scripts/chart_sdk.py'
+      - 'tests/chart/**'
+      - '.github/workflows/f7-chart-runtime.yml'
+      - '.github/workflows/coffee.yml'
+permissions:
+  contents: read
+jobs:
+  chart:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install checked ARM/QEMU toolchain and Node
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc gcc-arm-linux-gnueabihf qemu-user nodejs
+      - name: Native + static ARM + sanitizers and SDK schema/data checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -f scripts/chart.mk test-chart-core test-chart-sdk
+          mkdir -p out/chart/review
+          git rev-parse HEAD > out/chart/review/source-commit.txt
+          git rev-parse HEAD^{tree} > out/chart/review/source-tree.txt
+          printf 'software_only=true\nphysical=false\nproduction_signature=false\n' > out/chart/review/scope.txt
+          (cd out/chart && find native arm sanitize review -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          git diff --exit-code
+      - name: Upload byte-bound pure-chart proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: chart-1000-core-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/chart/
+          if-no-files-found: warn
+          retention-days: 30
