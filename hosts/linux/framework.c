@@ -10,6 +10,7 @@ _Static_assert(PUI_CAP_CORE==POCKET_APP_CAP_CORE && PUI_CAP_ASCII_KEYBOARD==POCK
                PUI_CAP_IMAGES==POCKET_APP_CAP_IMAGES && PUI_CAP_PINYIN==POCKET_APP_CAP_PINYIN &&
                PUI_CAP_IPC_QUERY==POCKET_APP_CAP_IPC_QUERY && PUI_CAP_IPC_COMMAND==POCKET_APP_CAP_IPC_COMMAND &&
                PUI_CAP_IPC_EVENTS==POCKET_APP_CAP_IPC_EVENTS && PUI_CAP_IPC_STATE==POCKET_APP_CAP_IPC_STATE &&
+               PUI_CAP_CHART==POCKET_APP_CAP_CHART &&
                PUI_MAX_HEAP==POCKET_APP_MAX_HEAP,"application policy mapping");
 static int open_framework(PocketFramework *r,unsigned h,unsigned items,const char *assets,
                           const PuiLoadedPackage *package,const char *media_root,
