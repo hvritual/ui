@@ -30,6 +30,7 @@ typedef struct {
     uint64_t ime_commits,ime_candidate_batches;
     int ime_provider_status,ime_provider_stage,ime_provider_errno;
     unsigned ime_provider_storage,ime_input_locale,ime_provider_verify_mode;
+    unsigned chart_series,chart_points;
     unsigned ipc_configured,ipc_ready,ipc_command_capable,ipc_pending,ipc_subscriptions;
     uint64_t ipc_requests,ipc_messages,ipc_failures;
     int ipc_status;
