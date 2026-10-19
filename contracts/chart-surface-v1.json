@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "name": "pocket.chart.data",
+  "version": 1,
+  "status": "experimental-functional-software",
+  "application": "public-PocketUI-PocketCharts",
+  "supported": [
+    "line",
+    "bar",
+    "scatter",
+    "bubble"
+  ],
+  "extension": "developer-registerSeries-to-existing-bounded-renderer-kind",
+  "point_limit_per_series": 1000,
+  "max_charts": 2,
+  "max_canvas": {
+    "width": 768,
+    "height": 320,
+    "bytes": 983040
+  },
+  "resource_packet": {
+    "magic": "PCH1",
+    "header_bytes": 32,
+    "point_bytes": 5,
+    "wire": "ascii-base64 packed u16 x,u16 y,u8 size",
+    "coordinate_range": [
+      0,
+      10000
+    ],
+    "native_data_length_max": 5000
+  },
+  "capability": "ui.draw.chart",
+  "capability_bit": 512,
+  "pui_v1_compatible": true,
+  "physical_hardware": false,
+  "production_admission": false,
+  "limits": [
+    "no-full-echarts-parser",
+    "no arbitrary JS/shader/code in resource pack",
+    "no transparent series compositing",
+    "fixed opaque plot background",
+    "no GPU/3D",
+    "1000-point per series, not 1000 DOM nodes",
+    "no real FPS guarantee before P5"
+  ],
+  "safety": {
+    "fail_closed_on": [
+      "over-budget",
+      "malformed-base64",
+      "noncanonical-padding",
+      "coordinate-out-of-range",
+      "unsupported-series",
+      "unknown-capability",
+      "stale-node",
+      "texture-budget"
+    ],
+    "separate_development_package": true
+  }
+}
