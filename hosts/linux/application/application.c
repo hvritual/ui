@@ -816,6 +816,15 @@ int pocket_application_stats(const PocketApplication *out, PocketApplicationStat
         if (pocket_virtual_collection_stats(&a->lists[i].collection,&s)!=POCKET_MODEL_OK) return 0;
         stats->pool+=s.pool_size; stats->peak_pool+=s.peak_pool_size; stats->recycled+=s.recycle_count;
     }
+    stats->chart_series=stats->chart_points=0;
+    for(unsigned i=0;i<CHART_SLOTS;i++){
+        PocketComponentSnapshot node;
+        if(a->charts[i].stable_id&&
+           pocket_component_snapshot(&a->components,a->charts[i].component,&node)==POCKET_COMPONENT_OK&&
+           a->charts[i].model.count){
+            ++stats->chart_series;stats->chart_points+=a->charts[i].model.count;
+        }
+    }
     stats->editor_active=a->keyboard.impl!=NULL; return 1;
 }
 int pocket_application_keyboard_snapshot(const PocketApplication *out, PocketKeyboardSnapshot *snapshot) {
