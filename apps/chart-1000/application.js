@@ -9,7 +9,8 @@
  const bubblePoints=[];
  for(let i=0;i<1000;i++){
    const x=Math.round(i*10000/999);
-   const y=5000+Math.round(2600*Math.sin(i/36)+700*Math.cos(i/13));
+   const phase=i%128,tri=phase<64?phase:127-phase;
+   const y=1800+tri*95+(i*37)%470;
    trendPoints.push({x,y:Math.max(0,Math.min(10000,y))});
    const by=1000+((i*1733)%8000);
    bubblePoints.push({x,y:by,size:2+(i*17)%220});
@@ -42,7 +43,7 @@
      if(id!==1&&id!==2)return;
      updates++;
      if(id===1){
-       const change=trendPoints.map((p,i)=>({x:p.x,y:Math.max(0,Math.min(10000,p.y+Math.round(500*Math.sin((i+updates)/19))))}));
+       const change=trendPoints.map((p,i)=>({x:p.x,y:Math.max(0,Math.min(10000,p.y+(((i+updates*17)%67)-33)*14))}));
        trend.setOption({type:updates%2?"scatter":"line",data:change,color:0xff6b8b41});
      }else{
        const change=bubblePoints.map((p,i)=>({x:p.x,y:p.y,size:2+(i*17+updates*23)%220}));
