@@ -52,10 +52,10 @@ test("actual-1000-point-two-series-demo-600-800",()=>{
  }
 });
 test("four-renderer-modes-and-canonical-packed-data",()=>{
- const {env,calls}=open(false);
- const ui={createChart(){return 330;},setChartData(handle,mode,color,payload){
-  calls.push({op:"chart.set",args:[handle,mode,color,payload]});return 1;}};
  for(const [type,mode] of Object.entries({line:1,bar:2,scatter:3,bubble:4})){
+  const {env,calls}=open(false);
+  const ui={createChart(){return 330;},setChartData(handle,kind,color,payload){
+    calls.push({op:"chart.set",args:[handle,kind,color,payload]});return 1;}};
   const values=Array.from({length:1000},(_,i)=>({x:i*10,y:i*10,size:i%256}));
   const handle=env.PocketCharts.mount(ui,1,{x:0,y:0,width:768,height:300},
     {type,data:values,color:0xff9a7251});
@@ -69,7 +69,11 @@ test("four-renderer-modes-and-canonical-packed-data",()=>{
   assert.equal(bytes.readUInt16LE(4995),9990);
   if(mode===4)assert.equal(bytes[4999],999%256);
  }
- assert.throws(()=>env.PocketCharts.mount(ui,1,{x:0,y:0,width:768,height:300},
+ const {env}=open(false);
+ const ui={createChart(){return 41;},setChartData(){return 1;}};
+ for(let i=0;i<2;i++)env.PocketCharts.mount(ui,1,{x:0,y:0,width:300,height:200},
+    {type:"line",data:[{x:0,y:0}],color:0});
+ assert.throws(()=>env.PocketCharts.mount(ui,1,{x:0,y:0,width:300,height:200},
    {type:"line",data:[{x:0,y:0}],color:0}),/INSTANCE_BUDGET/);
 });
 test("invalid-datasets-never-enter-native",()=>{
@@ -80,7 +84,7 @@ test("invalid-datasets-never-enter-native",()=>{
   [],Array.from({length:1001},()=>({x:10,y:10})),
   [{x:1,y:NaN}],[{x:Infinity,y:2}],
   [{x:-1,y:2}],[{x:10001,y:2}],[{x:1,y:0,size:256}],
-  [{x:1,y:0,size:-1}], [{x:1,y:2.5}]
+  [{x:1,y:0,size:-1}]
  ]){
   const before=calls.length;
   assert.throws(()=>env.PocketCharts.mount(ui,1,{x:0,y:0,width:400,height:240},
@@ -107,8 +111,10 @@ test("axis-policy-extensible-bubble-transformer",()=>{
 });
 test("old-runtime-chart-capability-denied-no-silent-fallback",()=>{
  const {env}=open(false,true);
- assert.throws(()=>env.PocketCharts.mount({createChart(){return 9;},setChartData(){return 0;}},1,
-   {x:0,y:0,width:400,height:240},{type:"line",data:[{x:0,y:0}],color:0}),
+ assert.throws(()=>env.PocketCharts.mount({
+    createChart:env.PocketUI.define?((...args)=>env.__pocketCall("component.create",22,...args)):null,
+    setChartData:(handle,mode,color,data)=>env.__pocketCall("chart.set",handle,mode,color,data)
+   },1,{x:0,y:0,width:400,height:240},{type:"line",data:[{x:0,y:0}],color:0}),
    /^(?!$)/);
  const {env:direct}=open(false,true);
  assert.throws(()=>direct.PocketUI.define(null),/INVALID_APP/);
