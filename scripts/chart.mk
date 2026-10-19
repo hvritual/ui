@@ -21,6 +21,7 @@ test-chart-core:
 
 test-chart-sdk:
 	python3 scripts/chart_sdk.py check
+	python3 -m unittest discover -s tests/chart -p 'test_chart_sdk.py' -v
 	node tests/chart/test_charts.cjs
 
 test-chart-runtime:
