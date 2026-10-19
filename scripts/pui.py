@@ -18,7 +18,8 @@ MAX_HEAP = 8 * 1024 * 1024
 SOURCE_LIMIT = 256 * 1024
 TARGETS = {'imx6ul-1024x600': 1, 'imx6ul-1024x800': 2}
 CAPABILITIES = {'ui.core': 1, 'ui.keyboard.ascii': 2, 'ui.images': 4, 'ui.ime.pinyin': 8,
-                'ipc.query': 16, 'ipc.command': 32, 'ipc.events': 64, 'ipc.state': 128}
+                'ipc.query': 16, 'ipc.command': 32, 'ipc.events': 64, 'ipc.state': 128,
+                'ui.draw.chart': 512}
 ALL_CAPABILITIES = sum(CAPABILITIES.values())
 FILES = {'application.js', 'catalog.json', 'labels.atlas', 'builtin.rgba',
          'alternate.rgba', 'Noto-LICENSE.txt', 'IMAGE-LICENSE.txt',
