@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "name": "pocket.ui",
+  "status": "experimental-software-only",
+  "sdk_facade_version": "0.1-experimental",
+  "loader": {
+    "format_version": 1,
+    "runtime_api": 1,
+    "sdk_api": 1,
+    "format": "pui-v1-development"
+  },
+  "targets": [
+    "imx6ul-1024x600",
+    "imx6ul-1024x800"
+  ],
+  "supported": {
+    "components": [
+      "View",
+      "Text",
+      "Button"
+    ],
+    "layout": "bounded-absolute-rect",
+    "styles": [
+      "theme-token",
+      "style-rule"
+    ],
+    "navigation": [
+      "push",
+      "replace",
+      "pop"
+    ],
+    "events": [
+      "tap-next-owner-tick"
+    ],
+    "bindings": [
+      "catalog-textref"
+    ]
+  },
+  "runtime_grants": [
+    "ui.core"
+  ],
+  "field_policy": {
+    "catalog_text_refs": "0..65535",
+    "action_id": "1..4095",
+    "max_pending_actions": 32
+  },
+  "unsupported": [
+    "direct-native-call",
+    "custom-draw",
+    "compiler",
+    "TS-execution",
+    "arbitrary-dynamic-text",
+    "standalone-IME-UI",
+    "publisher-authentication",
+    "untrusted-code-sandbox",
+    "physical-acceptance"
+  ],
+  "authentication": "none",
+  "production_admission": false,
+  "physical_hardware": false
+}
