@@ -31,7 +31,7 @@ test("public-only-bars-600-800-real-lifecycle",()=>{
   assert.equal(app.start({height}),true);
   assert.equal(app.inspect().drawPrimitives,10); // baseline + 8 bars + vertical axis
   const components=s.operations.filter(x=>x.op==="component.create");
-  assert.equal(components.length,16); // root,2 text,panel,custom root,10 rects,2 buttons =17? counted below
+  assert.equal(components.length,17); // root, 2 text, panel, custom root, 10 rects, 2 buttons
   assert.ok(components.some(x=>x.args[5]===height));
   const before=s.operations.length;
   assert.equal(app.event({type:1101,phase:2,token:1}),1);
