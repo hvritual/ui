@@ -94,6 +94,8 @@ jobs:
         run: make test-keyboard-layouts test-framework test-framework-arm test-framework-sanitize verify-framework
       - name: Real public SDK example on production Native and ARM UI Runtime
         run: make -f scripts/public-sdk.mk test-public-sdk-runtime
+      - name: Real F7-02A public custom chart on production Native and ARM runtime
+        run: make -f scripts/custom-sdk.mk test-custom-surface-runtime
       - name: Independent Service IPC processes with the same production UI ELF
         run: make test-ipc-framework test-ipc-framework-arm verify-ipc-framework
       - name: Framework static board package and fail-closed HIL checker
@@ -146,6 +148,15 @@ jobs:
         with:
           name: f7-public-real-app-${{ github.event.pull_request.head.sha || github.sha }}
           path: out/public-sdk/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload F7-02A original Native ARM chart application evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: f7-custom-real-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/public-custom/
           if-no-files-found: warn
           retention-days: 30
 
