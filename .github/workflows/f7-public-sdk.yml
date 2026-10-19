@@ -1,0 +1,60 @@
+name: F7 Public UI SDK Contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sdk/ui/**'
+      - 'apps/sdk-demo/**'
+      - 'scripts/public_sdk.py'
+      - 'scripts/public-sdk.mk'
+      - 'docs/public-sdk.md'
+      - 'tests/sdk/**'
+      - '.github/workflows/f7-public-sdk.yml'
+      - '.github/workflows/coffee.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/ui/**'
+      - 'apps/sdk-demo/**'
+      - 'scripts/public_sdk.py'
+      - 'scripts/public-sdk.mk'
+      - 'docs/public-sdk.md'
+      - 'tests/sdk/**'
+      - '.github/workflows/f7-public-sdk.yml'
+      - '.github/workflows/coffee.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  public-sdk:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Validate exact public SDK and R3 manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/public-sdk-contract
+          git rev-parse HEAD > out/public-sdk-contract/source-commit.txt
+          git rev-parse HEAD^{tree} > out/public-sdk-contract/source-tree.txt
+          make -f scripts/public-sdk.mk test-public-sdk 2>&1 | tee out/public-sdk-contract/tests.log
+          git diff --exit-code
+          cp sdk/ui/js/pocket-ui.js sdk/ui/types/index.d.ts sdk/ui/public-contract.json out/public-sdk-contract/
+          cp apps/sdk-demo/application.js apps/sdk-demo/manifest.json out/public-sdk-contract/
+          cp scripts/public_sdk.py docs/public-sdk.md out/public-sdk-contract/
+          printf 'real_renderer_test=separate-canonical-coffee-workflow\nphysical=false\nproduction_authentication=false\n' > out/public-sdk-contract/scope.txt
+          (cd out/public-sdk-contract && sha256sum *.js *.ts *.json *.py *.md *.txt *.log > SHA256SUMS)
+      - name: Preserve bounded contract and source evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: f7-public-sdk-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/public-sdk-contract/
+          if-no-files-found: warn
+          retention-days: 30
