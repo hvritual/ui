@@ -28,6 +28,10 @@ declare global {
     createView(parent: PocketHandle | 0, rect: PocketRect, styleRef?: number): PocketHandle;
     createText(parent: PocketHandle, rect: PocketRect, textRef: number, styleRef?: number): PocketHandle;
     createButton(parent: PocketHandle, rect: PocketRect, textRef: number, styleRef: number, actionId: number): PocketHandle;
+    /** New 1000-point bounded native chart Surface, requires ui.draw.chart capability. */
+    createChart(parent: PocketHandle, rect: PocketRect, styleRef?: number): PocketHandle;
+    /** Internal compact 5-byte-point base64; use PocketCharts instead of encoding this directly. */
+    setChartData(handle: PocketHandle, mode: 1 | 2 | 3 | 4, color: number, encoded: string): number;
     setText(handle: PocketHandle, textRef: number): number;
     setLayout(handle: PocketHandle, rect: PocketRect): number;
     defineTheme(theme: PocketTheme): number;

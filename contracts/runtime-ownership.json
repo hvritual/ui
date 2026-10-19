@@ -1,12 +1,14 @@
 {
   "application_data": [
-    "apps/coffee-demo/locales.json",
+    "apps/chart-1000/application.js",
     "apps/coffee-demo/app.js",
+    "apps/coffee-demo/locales.json",
     "apps/coffee-framework/application.js",
     "apps/control-panel/application.js",
     "apps/control-panel/labels.json",
     "apps/ipc-demo/application.js",
-    "sdk/ipc/js/pocket-comm.js"
+    "sdk/ipc/js/pocket-comm.js",
+    "sdk/ui/js/pocket-chart.js"
   ],
   "link_inputs": {
     "apps/coffee-framework/app.c": {
@@ -34,6 +36,11 @@
       "reference_only": false,
       "role": "runtime"
     },
+    "hosts/linux/chart/draw.c": {
+      "origin": "repository",
+      "reference_only": false,
+      "role": "runtime"
+    },
     "hosts/linux/display/fbdev.c": {
       "origin": "repository",
       "reference_only": false,
@@ -49,12 +56,12 @@
       "reference_only": false,
       "role": "adapter"
     },
-    "hosts/linux/framework.c": {
+    "hosts/linux/framework_main.c": {
       "origin": "repository",
       "reference_only": false,
       "role": "runtime"
     },
-    "hosts/linux/framework_main.c": {
+    "hosts/linux/framework.c": {
       "origin": "repository",
       "reference_only": false,
       "role": "runtime"
@@ -84,12 +91,12 @@
       "reference_only": false,
       "role": "target"
     },
-    "hosts/linux/ipc/broker.c": {
+    "hosts/linux/ipc/broker_main.c": {
       "origin": "repository",
       "reference_only": false,
       "role": "runtime"
     },
-    "hosts/linux/ipc/broker_main.c": {
+    "hosts/linux/ipc/broker.c": {
       "origin": "repository",
       "reference_only": false,
       "role": "runtime"
@@ -274,12 +281,12 @@
       "reference_only": false,
       "role": "runtime"
     },
-    "out/text-input/deps/utf8proc.c": {
+    "out/text-input/deps/utf8proc_data.c": {
       "origin": "locked:toolchains/text-input.lock.json",
       "reference_only": false,
       "role": "runtime"
     },
-    "out/text-input/deps/utf8proc_data.c": {
+    "out/text-input/deps/utf8proc.c": {
       "origin": "locked:toolchains/text-input.lock.json",
       "reference_only": false,
       "role": "runtime"

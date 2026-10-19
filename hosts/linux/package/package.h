@@ -23,7 +23,8 @@
 #define PUI_CAP_IPC_EVENTS 64u
 #define PUI_CAP_IPC_STATE 128u
 #define PUI_CAP_IPC_ALL 240u
-#define PUI_CAP_ALL 255u
+#define PUI_CAP_CHART 512u
+#define PUI_CAP_ALL 767u
 #define PUI_CAP_LEGACY 7u
 
 typedef enum {

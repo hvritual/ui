@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "name": "pocket.custom.surface",
+  "status": "experimental-developer-only",
+  "base_sdk": "0.1-experimental",
+  "protocol_version": 0,
+  "architecture": "developer-module-composition-over-existing-native-View",
+  "primitive_types": [
+    "rectangle",
+    "horizontal-line",
+    "vertical-line"
+  ],
+  "supported_lifecycle": [
+    "register",
+    "mount",
+    "update"
+  ],
+  "limits": {
+    "max_factories": 8,
+    "max_instances_per_app": 4,
+    "max_primitives_per_instance": 24,
+    "max_component_size": 65536,
+    "max_style_ref": 65535
+  },
+  "admission": {
+    "requires": "ui.core",
+    "signed": false,
+    "existing_pui_loader": true,
+    "backend_changes": false,
+    "renderer_changes": false,
+    "hardware_execution": false
+  },
+  "not_supported": [
+    "polyline",
+    "diagonal-line",
+    "path",
+    "arc",
+    "shader",
+    "custom-native-component",
+    "direct-framebuffer",
+    "untrusted-js-isolation",
+    "independent-component-destruction",
+    "production-admission"
+  ],
+  "status_reason": "No new scene-wire kind is admitted. Current renderer only exposes frame/damage/timer."
+}

@@ -7,7 +7,7 @@
   if (typeof global.__pocketCall !== "function") throw Error("POCKET_UI_HOST_REQUIRED");
   if (global.PocketUI !== undefined) throw Error("POCKET_UI_DUPLICATE_SDK");
   const bridge = global.__pocketCall;
-  const TYPES = Object.freeze({View:1, Text:2, Image:3, Button:5});
+  const TYPES = Object.freeze({View:1, Text:2, Image:3, Button:5, Chart:22});
   const ACTION_QUEUE_LIMIT = 32;
   let defined = false;
   function integer(n, low, high, where) {
@@ -46,6 +46,18 @@
       const component = create("Button", parent, box, styleRef, textRef, 0);
       send("event.bind", [component, integer(actionId, 1, 4095, "ACTION"), 1]);
       return component;
+    },
+    createChart(parent, box, styleRef) {
+      return create("Chart", parent, box, styleRef, 0, 0);
+    },
+    setChartData(handle, type, color, encoded) {
+      integer(handle, 1, Number.MAX_SAFE_INTEGER, "HANDLE");
+      integer(type, 1, 4, "CHART_TYPE");
+      integer(color, 0, 0xffffffff, "CHART_COLOR");
+      if(typeof encoded !== "string" || encoded.length<4 || encoded.length>6668 ||
+         encoded.length%4!==0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded))
+        throw Error("POCKET_UI_CHART_PAYLOAD");
+      return send("chart.set", [handle, type, color, encoded]);
     },
     setText(component, textRef) {
       return send("component.text", [integer(component, 1, Number.MAX_SAFE_INTEGER, "HANDLE"),

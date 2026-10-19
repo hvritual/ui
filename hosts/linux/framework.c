@@ -2,6 +2,7 @@
 #include "framework.h"
 #include <string.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -10,6 +11,7 @@ _Static_assert(PUI_CAP_CORE==POCKET_APP_CAP_CORE && PUI_CAP_ASCII_KEYBOARD==POCK
                PUI_CAP_IMAGES==POCKET_APP_CAP_IMAGES && PUI_CAP_PINYIN==POCKET_APP_CAP_PINYIN &&
                PUI_CAP_IPC_QUERY==POCKET_APP_CAP_IPC_QUERY && PUI_CAP_IPC_COMMAND==POCKET_APP_CAP_IPC_COMMAND &&
                PUI_CAP_IPC_EVENTS==POCKET_APP_CAP_IPC_EVENTS && PUI_CAP_IPC_STATE==POCKET_APP_CAP_IPC_STATE &&
+               PUI_CAP_CHART==POCKET_APP_CAP_CHART &&
                PUI_MAX_HEAP==POCKET_APP_MAX_HEAP,"application policy mapping");
 static int open_framework(PocketFramework *r,unsigned h,unsigned items,const char *assets,
                           const PuiLoadedPackage *package,const char *media_root,
@@ -101,6 +103,22 @@ int pocket_framework_tick(PocketFramework *r,uint64_t ns,int force){
     const int paint_due=force||!r->valid_frame||((r->ticks+1U)%2U==0);
     if(paint_due){
     if(!pocket_application_scene(&r->app,&r->scene))return fail(r,"SCENE_PROJECT");
+    if(!pocket_application_chart_observe(&r->app,&r->scene))return fail(r,"CHART_OBSERVE");
+    /* Render fixed-budget chart data into one private image per Chart node.
+     * Unlike one View per data point, a full 1000-point series remains one
+     * scene record with a single bounded resource event (<2 MiB). */
+    for(uint32_t i=0;i<r->scene.count;i++)if(r->scene.records[i].kind==POCKET_COMPONENT_CHART){
+        uint8_t *pixels=NULL;size_t size=0;
+        uint64_t id=r->scene.records[i].id;
+        int next=pocket_application_chart_frame(&r->app,id,&pixels,&size);
+        if(next<0)return fail(r,"CHART_RESOURCE");
+        if(next){
+            int uploaded=pocket_runtime_resource_pack(pixels,size);
+            free(pixels);
+            if(uploaded!=1)return fail(r,"CHART_UPLOAD");
+            pocket_application_chart_accepted(&r->app,id);
+        }
+    }
     PocketEngineResource resource;
     if(pocket_scene_engine_api.resource_create(&r->engine,POCKET_SCENE_RESOURCE,&r->scene,sizeof(r->scene),&resource)!=POCKET_ENGINE_OK||
        pocket_scene_engine_api.resource_release(&r->engine,resource)!=POCKET_ENGINE_OK)return fail(r,"SCENE_UPLOAD");

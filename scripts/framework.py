@@ -52,7 +52,7 @@ def compile_binary(mode,test=False,sanitize=False,static=False,loop=False,applic
     target='x86_64-unknown-linux-gnu' if mode=='native' else 'armv7-unknown-linux-gnueabihf'
     rt=ROOT/'out/runtime'/mode;core=ROOT/'out/runtime/cargo'/target/'release/libpocketjs_symbian_core.a'
     sources=[ROOT/'hosts/linux/ui'/f'{n}.c' for n in UI]
-    sources += [ROOT/'hosts/linux/package/package.c',ROOT/'hosts/linux/package/loaded.c']
+    sources += [ROOT/'hosts/linux/package/package.c',ROOT/'hosts/linux/package/loaded.c',ROOT/'hosts/linux/chart/draw.c']
     sources += [ROOT/'hosts/linux/engine/scene_runtime.c',ROOT/'hosts/linux/input/interaction_bridge.c',ROOT/'hosts/linux/input/state.c']
     if reference:
         sources += [ROOT/'apps/coffee-framework/app.c',ROOT/'apps/coffee-framework/pager.c',

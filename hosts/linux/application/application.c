@@ -2,6 +2,7 @@
 #include "../ime/pinyin.h"
 #include "../text-input/input_font.h"
 #include "../ipc/client.h"
+#include "../chart/draw.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +29,15 @@ typedef struct {
     uint32_t count;
 } Collection;
 typedef struct { uint64_t id; PocketComponentHandle root; int keyboard; } Overlay;
+/* Canvas source lives in the generic application host, not in a Coffee app.
+ * A chart replaces 1000+ renderer nodes with one bounded chart component. */
+#define CHART_SLOTS 2u
+typedef struct {
+    PocketComponentHandle component;
+    uint64_t stable_id;
+    PocketChartModel model;
+    int dirty;
+} ChartSlot;
 struct Application {
     PocketProgram program;
     PocketApplicationPolicy policy;
@@ -56,6 +66,7 @@ struct Application {
     unsigned queue_count, phase, disposing, dirty;
     Collection lists[LISTS];
     Overlay layers[OVERLAYS];
+    ChartSlot charts[CHART_SLOTS];
     uint64_t next_list, next_binding, now;
     uint64_t previous_ime_commits,previous_ime_batches;
     unsigned height, media_ready;
@@ -92,6 +103,20 @@ static int component(Application *a, int64_t token, PocketComponentHandle *out) 
     *out = (PocketComponentHandle){(uint32_t)token, (uint32_t)((uint64_t)token >> 32)};
     PocketComponentSnapshot s;
     return pocket_component_snapshot(&a->components, *out, &s) == POCKET_COMPONENT_OK;
+}
+static ChartSlot *find_chart(Application *a,PocketComponentHandle handle,int allocate) {
+    if(!a||!pocket_component_handle_valid(handle))return NULL;
+    for(unsigned i=0;i<CHART_SLOTS;i++)
+        if(a->charts[i].stable_id&&same(a->charts[i].component,handle))return &a->charts[i];
+    if(!allocate)return NULL;
+    for(unsigned i=0;i<CHART_SLOTS;i++){
+        ChartSlot *slot=&a->charts[i];
+        PocketComponentSnapshot live;
+        if(!slot->stable_id||pocket_component_snapshot(&a->components,slot->component,&live)!=POCKET_COMPONENT_OK){
+            memset(slot,0,sizeof(*slot));slot->component=handle;return slot;
+        }
+    }
+    return NULL;
 }
 static PocketUiHandle root(Application *a, PocketComponentHandle c) {
     PocketComponentSnapshot s;
@@ -362,6 +387,23 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
         return fail(a,"APPLICATION_CAPABILITY_KEYBOARD");
     if (!strcmp(op,"component.image") && !(a->policy.capabilities & POCKET_APP_CAP_IMAGES))
         return fail(a,"APPLICATION_CAPABILITY_IMAGES");
+    if (!strcmp(op,"chart.set")) {
+        if(!(a->policy.capabilities&POCKET_APP_CAP_CHART))return fail(a,"APPLICATION_CAPABILITY_CHART");
+        if(n!=4||!numbers(3,args,v)||args[3].kind!=POCKET_PROGRAM_TEXT||
+           !args[3].text||args[3].length>(((POCKET_CHART_POINTS*5u+2u)/3u)*4u)||
+           !between(v[1],POCKET_CHART_LINE,POCKET_CHART_BUBBLE)||
+           !between(v[2],0,UINT32_MAX)||!component(a,v[0],&c))return 0;
+        PocketComponentSnapshot cs;
+        if(pocket_component_snapshot(&a->components,c,&cs)!=POCKET_COMPONENT_OK||
+           cs.kind!=POCKET_COMPONENT_CHART)return 0;
+        ChartSlot *slot=find_chart(a,c,0);
+        if(!slot||!slot->stable_id)return 0;
+        PocketChartModel staged=slot->model;
+        if(!pocket_chart_decode(&staged,(unsigned)v[1],(uint32_t)v[2],
+                                args[3].text,args[3].length))return 0;
+        slot->model=staged;slot->dirty=1;
+        return 1;
+    }
     if (!strcmp(op, "keyboard.field")) {
         if (n != 8 || !numbers(7, args, v) || args[7].kind != POCKET_PROGRAM_TEXT || !a->keyboard_staged ||
             !between(v[0], 0, (int64_t)a->keyboard_config.field_count-1) || !between(v[1], 1, UINT32_MAX) ||
@@ -383,17 +425,42 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
         if (n != 9 || !between(v[0], 1, POCKET_COMPONENT_KIND_COUNT-1) || (v[1] && !component(a, v[1], &parent)) ||
             !between(v[2], -65536, 65536) || !between(v[3], -65536, 65536) || !between(v[4], 0, 65536) || !between(v[5], 0, 65536) ||
             !between(v[6], 0, 65535) || !between(v[7], 0, 65535) || !between(v[8], 0, 8)) return 0;
+        if(v[0]==POCKET_COMPONENT_CHART) {
+            if(!(a->policy.capabilities&POCKET_APP_CAP_CHART))return fail(a,"APPLICATION_CAPABILITY_CHART");
+            if(v[7]||v[8]||!between(v[4],64,POCKET_CHART_WIDTH)||
+               !between(v[5],64,POCKET_CHART_HEIGHT))return 0;
+        }
         if ((v[0]==POCKET_COMPONENT_IMAGE || v[8]) && !(a->policy.capabilities & POCKET_APP_CAP_IMAGES))
             return fail(a,"APPLICATION_CAPABILITY_IMAGES");
         PocketComponentProps p = pocket_component_props_default((PocketComponentKind)v[0]);
         p.style_ref = (uint64_t)v[6]; p.text_ref = (uint64_t)v[7]; p.resource_ref = (uint64_t)v[8];
         if (pocket_component_create(&a->components, (PocketComponentKind)v[0], parent, &p, &c) != POCKET_COMPONENT_OK ||
             !set_layout(a, c, (int)v[2], (int)v[3], (int)v[4], (int)v[5])) return 0;
+        if(v[0]==POCKET_COMPONENT_CHART){
+            ChartSlot *slot=find_chart(a,c,1);
+            PocketUiSnapshot node;
+            if(!slot||pocket_ui_snapshot(&a->tree,root(a,c),&node)!=POCKET_UI_OK)return 0;
+            slot->stable_id=node.stable_id;
+            slot->model.width=(uint16_t)v[4];slot->model.height=(uint16_t)v[5];
+        }
         reply->integer = (int64_t)encoded(c.slot, c.generation); return reply->integer != 0;
     }
     if (!strcmp(op, "component.layout")) {
-        return n == 5 && component(a, v[0], &c) && between(v[1], -65536, 65536) && between(v[2], -65536, 65536) &&
-            between(v[3], 0, 65536) && between(v[4], 0, 65536) && set_layout(a, c, (int)v[1], (int)v[2], (int)v[3], (int)v[4]);
+        if(n!=5||!component(a,v[0],&c)||!between(v[1],-65536,65536)||
+           !between(v[2],-65536,65536)||!between(v[3],0,65536)||
+           !between(v[4],0,65536))return 0;
+        PocketComponentSnapshot snap;
+        if(pocket_component_snapshot(&a->components,c,&snap)!=POCKET_COMPONENT_OK)return 0;
+        if(snap.kind==POCKET_COMPONENT_CHART){
+            if(!between(v[3],64,POCKET_CHART_WIDTH)||!between(v[4],64,POCKET_CHART_HEIGHT))return 0;
+            ChartSlot *slot=find_chart(a,c,0);
+            if(!slot)return 0;
+            if(slot->model.width!=(uint16_t)v[3]||slot->model.height!=(uint16_t)v[4]){
+                slot->model.width=(uint16_t)v[3];slot->model.height=(uint16_t)v[4];
+                slot->dirty=1;
+            }
+        }
+        return set_layout(a,c,(int)v[1],(int)v[2],(int)v[3],(int)v[4]);
     }
     if (!strcmp(op, "component.text") || !strcmp(op, "component.image") || !strcmp(op, "component.style") || !strcmp(op, "component.value")) {
         if (n != 2 || !component(a, v[0], &c)) return 0;
@@ -698,6 +765,40 @@ int pocket_application_scene(PocketApplication *out, PocketScene *scene) {
     }
     return 1;
 }
+int pocket_application_chart_observe(PocketApplication *out,const PocketScene *scene){
+    Application *a=out?out->impl:NULL;
+    if(!a||!scene)return 0;
+    for(unsigned i=0;i<CHART_SLOTS;i++){
+        ChartSlot *slot=&a->charts[i];
+        if(!slot->stable_id)continue;
+        unsigned visible=0;
+        for(unsigned j=0;j<scene->count;j++)if(scene->records[j].kind==POCKET_COMPONENT_CHART&&
+           scene->records[j].id==slot->stable_id){visible=1;break;}
+        if(!visible)slot->dirty=1;
+    }
+    return 1;
+}
+int pocket_application_chart_frame(PocketApplication *out,uint64_t id,uint8_t **packet,size_t *length) {
+    Application *a=out?out->impl:NULL;
+    if(packet)*packet=NULL;if(length)*length=0;
+    if(!a||!packet||!length||!id)return -1;
+    for(unsigned i=0;i<CHART_SLOTS;i++){
+        ChartSlot *slot=&a->charts[i];
+        if(slot->stable_id!=id)continue;
+        PocketComponentSnapshot snap;
+        if(pocket_component_snapshot(&a->components,slot->component,&snap)!=POCKET_COMPONENT_OK||
+           snap.kind!=POCKET_COMPONENT_CHART)return -1;
+        if(!slot->model.count)return -1;
+        if(!slot->dirty)return 0;
+        return pocket_chart_packet(&slot->model,id,packet,length)?1:-1;
+    }
+    return -1;
+}
+void pocket_application_chart_accepted(PocketApplication *out,uint64_t id) {
+    Application *a=out?out->impl:NULL;if(!a||!id)return;
+    for(unsigned i=0;i<CHART_SLOTS;i++)
+        if(a->charts[i].stable_id==id)a->charts[i].dirty=0;
+}
 int pocket_application_stats(const PocketApplication *out, PocketApplicationStats *stats) {
     const Application *a=out?out->impl:NULL; PocketNavigationPage page;
     if (!a || a->error || !stats || pocket_navigation_top(&a->navigation,&page)!=POCKET_NAV_OK) return 0;
@@ -714,6 +815,15 @@ int pocket_application_stats(const PocketApplication *out, PocketApplicationStat
         PocketVirtualCollectionStats s;
         if (pocket_virtual_collection_stats(&a->lists[i].collection,&s)!=POCKET_MODEL_OK) return 0;
         stats->pool+=s.pool_size; stats->peak_pool+=s.peak_pool_size; stats->recycled+=s.recycle_count;
+    }
+    stats->chart_series=stats->chart_points=0;
+    for(unsigned i=0;i<CHART_SLOTS;i++){
+        PocketComponentSnapshot node;
+        if(a->charts[i].stable_id&&
+           pocket_component_snapshot(&a->components,a->charts[i].component,&node)==POCKET_COMPONENT_OK&&
+           a->charts[i].model.count){
+            ++stats->chart_series;stats->chart_points+=a->charts[i].model.count;
+        }
     }
     stats->editor_active=a->keyboard.impl!=NULL; return 1;
 }

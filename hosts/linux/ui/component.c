@@ -72,7 +72,8 @@ static PocketUiNodeType ui_kind(PocketComponentKind kind) {
     switch(kind) {
         case POCKET_COMPONENT_TEXT: return POCKET_UI_TEXT;
         case POCKET_COMPONENT_IMAGE:
-        case POCKET_COMPONENT_ICON: return POCKET_UI_IMAGE;
+        case POCKET_COMPONENT_ICON:
+        case POCKET_COMPONENT_CHART: return POCKET_UI_IMAGE;
         case POCKET_COMPONENT_TEXT_FIELD: return POCKET_UI_INPUT;
         case POCKET_COMPONENT_SCROLL:
         case POCKET_COMPONENT_LIST: return POCKET_UI_SCROLL;

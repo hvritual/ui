@@ -1,0 +1,59 @@
+name: F7 Custom Component Surface v0
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'sdk/ui/**'
+      - 'apps/custom-chart/**'
+      - 'contracts/custom-surface-v0.json'
+      - 'scripts/custom_sdk.py'
+      - 'scripts/custom-sdk.mk'
+      - 'docs/custom-components.md'
+      - 'tests/sdk/test_custom*'
+      - '.github/workflows/f7-custom-surface.yml'
+      - '.github/workflows/coffee.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/ui/**'
+      - 'apps/custom-chart/**'
+      - 'contracts/custom-surface-v0.json'
+      - 'scripts/custom_sdk.py'
+      - 'scripts/custom-sdk.mk'
+      - 'docs/custom-components.md'
+      - 'tests/sdk/test_custom*'
+      - '.github/workflows/f7-custom-surface.yml'
+      - '.github/workflows/coffee.yml'
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Execute bounded Surface v0 SDK/codec/geometry tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out/custom-surface-contract
+          git rev-parse HEAD > out/custom-surface-contract/source-commit.txt
+          git rev-parse HEAD^{tree} > out/custom-surface-contract/source-tree.txt
+          make -f scripts/custom-sdk.mk test-custom-surface 2>&1 | tee out/custom-surface-contract/tests.log
+          git diff --exit-code
+          cp sdk/ui/js/pocket-custom.js sdk/ui/types/custom.d.ts sdk/ui/widgets/bar-chart.js out/custom-surface-contract/
+          cp apps/custom-chart/application.js contracts/custom-surface-v0.json out/custom-surface-contract/
+          cp scripts/custom_sdk.py out/custom-surface-contract/
+          printf 'hardware=false\npublic_compiler=false\ntrue_polyline=false\nphysical=false\n' > out/custom-surface-contract/scope.txt
+          (cd out/custom-surface-contract && sha256sum *.js *.d.ts *.json *.py *.txt *.log > SHA256SUMS)
+      - name: Upload verifiable software contract evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: f7-custom-surface-${{ github.event.pull_request.head.sha || github.sha }}
+          path: out/custom-surface-contract/
+          if-no-files-found: warn
+          retention-days: 30
