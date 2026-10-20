@@ -118,7 +118,7 @@ test("reentrant-factory-and-privileged-commands-denied", () => {
   for (const name of ["raw","call","createText","destroy","framebuffer","ipc","__pocketCall"])
     assert.equal(s.registry[name],undefined);
   s.registry.register("vendor.command", (_, props) => props);
-  for (const kind of ["native.shell","ipc.command","canvas","arc","polyline","text","image"])
+  for (const kind of ["native.shell","ipc.command","canvas","arc","text","image"])
     assert.throws(() => s.registry.mount("vendor.command",1,rect,[rectangle({kind})],1), /PRIMITIVE/);
   assert.equal(s.calls.length,0);
 });

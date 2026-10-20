@@ -12,6 +12,7 @@ typedef struct {
     PocketSceneEngine engine;
     PocketInputInteractionBridge input;
     PocketScene scene;
+    PocketDrawFrame drawing;
     MediaStore media;
     PocketDisplayBackend display;
     PocketEngineFrame frame;

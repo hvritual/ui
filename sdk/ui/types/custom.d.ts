@@ -9,7 +9,10 @@ declare global {
     kind: "line"; x1: number; y1: number; x2: number; y2: number;
     thickness: number; styleRef: number;
   }
-  type PocketCustomPrimitive = PocketCustomRectangle | PocketCustomLine;
+  interface PocketCustomPolyline {
+    kind:"polyline"; points: readonly {x:number;y:number}[]; styleRef:number;
+  }
+  type PocketCustomPrimitive = PocketCustomRectangle | PocketCustomLine | PocketCustomPolyline;
   type PocketCustomFactory<P> = (size: PocketCustomSize, props: P) => readonly PocketCustomPrimitive[];
   interface PocketCustomInstance<P> {
     readonly primitiveCount: number;

@@ -63,4 +63,4 @@ python3 scripts/public_sdk.py pack --example custom-chart \
 
 The contract CI records source and unit-test hashes. The existing Coffee workflow runs the production ELF tests on the exact PR head and uploads `out/public-sdk/` evidence. Unit fixtures, Node bridges and synthetic pixel-checker tests are not production rendering evidence. Missing Linux file primitives, licensed resources, production binaries or baseline evidence fail the gates; Windows without Linux/WSL cannot satisfy the full codec/runtime gates.
 
-General curve/path/arc support requires F7-02B's versioned, fixed-capacity native drawing protocol in a separate issue/PR. The current contribution does not advance #49's real i.MX6UL 600/800 HIL, #7 performance or #9 signing/release admission.
+The separate [F7-02B development slice](trend-chart.md) adds a bounded native polyline protocol and a developer chart with 1024 samples. Its compilation and physical acceptance are pending the requested ChatGPT cloud environment. General Path/Arc support remains outside that slice. Neither contribution advances #49's general real i.MX6UL 600/800 HIL, #7 performance or #9 signing/release admission.

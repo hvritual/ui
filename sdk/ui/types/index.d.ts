@@ -30,6 +30,9 @@ declare global {
     createButton(parent: PocketHandle, rect: PocketRect, textRef: number, styleRef: number, actionId: number): PocketHandle;
     setText(handle: PocketHandle, textRef: number): number;
     setLayout(handle: PocketHandle, rect: PocketRect): number;
+    /** Bounded v1 polyline. 2..4096 integer pixels, <=262144 pixel surface. */
+    setPolyline(handle: PocketHandle, size: {width:number;height:number},
+      points: readonly {x:number;y:number}[], styleRef: number): number;
     defineTheme(theme: PocketTheme): number;
     styleRule(styleRef: number, backgroundToken: number, foregroundToken: number, radius: number): number;
     selectTheme(themeId: number): number;

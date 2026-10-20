@@ -104,6 +104,13 @@ int pocket_framework_tick(PocketFramework *r,uint64_t ns,int force){
     PocketEngineResource resource;
     if(pocket_scene_engine_api.resource_create(&r->engine,POCKET_SCENE_RESOURCE,&r->scene,sizeof(r->scene),&resource)!=POCKET_ENGINE_OK||
        pocket_scene_engine_api.resource_release(&r->engine,resource)!=POCKET_ENGINE_OK)return fail(r,"SCENE_UPLOAD");
+    if(!pocket_application_drawing(&r->app,&r->scene,&r->drawing)||
+       pocket_scene_engine_api.resource_create(&r->engine,POCKET_DRAW_RESOURCE,&r->drawing,sizeof(r->drawing),&resource)!=POCKET_ENGINE_OK||
+       pocket_scene_engine_api.resource_release(&r->engine,resource)!=POCKET_ENGINE_OK)return fail(r,"DRAWING_UPLOAD");
+    /* Bind drawing textures after new scene owners exist; resource updates can
+     * invalidate the scene cache without altering the frozen PSC1 wire. */
+    if(r->drawing.count&&(pocket_scene_engine_api.resource_create(&r->engine,POCKET_SCENE_RESOURCE,&r->scene,sizeof(r->scene),&resource)!=POCKET_ENGINE_OK||
+       pocket_scene_engine_api.resource_release(&r->engine,resource)!=POCKET_ENGINE_OK))return fail(r,"DRAWING_BIND");
     if(r->media.root&&(!r->last_media_ns||ns-r->last_media_ns>=500000000ULL)){
         (void)media_store_poll(&r->media);r->last_media_ns=ns;
         /* Bad updates retain the current image set, not a runtime failure. */

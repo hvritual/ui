@@ -7,6 +7,8 @@ on:
       - 'sdk/ui/**'
       - 'apps/sdk-demo/**'
       - 'apps/custom-chart/**'
+      - 'apps/trend-chart/**'
+      - 'hosts/linux/engine/drawing*.h'
       - 'scripts/public_sdk.py'
       - 'scripts/public-sdk.mk'
       - 'docs/public-sdk.md'
@@ -20,6 +22,8 @@ on:
       - 'sdk/ui/**'
       - 'apps/sdk-demo/**'
       - 'apps/custom-chart/**'
+      - 'apps/trend-chart/**'
+      - 'hosts/linux/engine/drawing*.h'
       - 'scripts/public_sdk.py'
       - 'scripts/public-sdk.mk'
       - 'docs/public-sdk.md'
@@ -53,6 +57,7 @@ jobs:
           cp apps/sdk-demo/application.js apps/sdk-demo/manifest.json out/public-sdk-contract/
           cp scripts/public_sdk.py docs/public-sdk.md out/public-sdk-contract/
           cp --parents sdk/ui/js/pocket-custom.js sdk/ui/types/custom.d.ts apps/custom-chart/*.js apps/custom-chart/manifest.json docs/custom-components.md tests/sdk/test_* out/public-sdk-contract/
+          cp --parents apps/trend-chart/*.js apps/trend-chart/manifest.json hosts/linux/engine/drawing*.h out/public-sdk-contract/
           printf 'real_renderer_test=separate-canonical-coffee-workflow\nphysical=false\nproduction_authentication=false\n' > out/public-sdk-contract/scope.txt
           (cd out/public-sdk-contract && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
       - name: Preserve bounded contract and source evidence

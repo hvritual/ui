@@ -37,9 +37,25 @@
     function prepare(factory, bounds, props) {
       const list = factory(Object.freeze({width:bounds.width, height:bounds.height}), props);
       reject(Array.isArray(list) && list.length >= 1 && list.length <= LIMIT, "PRIMITIVE_BUDGET");
+      let pointBudget=4096;
       // Copy every record before any host mutation; callers cannot retain mutable geometry.
       return Array.from(list, primitive => {
         reject(primitive && typeof primitive === "object", "PRIMITIVE");
+        if(primitive.kind === "polyline") {
+          exact(primitive,["kind","points","styleRef"]);
+          reject(typeof ui.setPolyline === "function", "DRAW_HOST_REQUIRED");
+          reject(bounds.width<=1024 && bounds.height<=800 && bounds.width*bounds.height<=262144,
+            "SURFACE_BUDGET");
+          const points=primitive.points;
+          reject(Array.isArray(points) && points.length>=2 && points.length<=pointBudget,"POINT_BUDGET");
+          pointBudget-=points.length;
+          const copied=Array.from(points,p=>{
+            exact(p,["x","y"]);
+            return Object.freeze({x:integer(p.x,0,bounds.width-1),y:integer(p.y,0,bounds.height-1)});
+          });
+          return Object.freeze({kind:"polyline",styleRef:integer(primitive.styleRef,1,65535),
+            geometry:Object.freeze({x:0,y:0,width:bounds.width,height:bounds.height}),points:Object.freeze(copied)});
+        }
         let x, y, width, height;
         if (primitive.kind === "rectangle") {
           exact(primitive, ["kind", "x", "y", "width", "height", "styleRef"]);
@@ -85,7 +101,11 @@
           let bounds = box(rect);
           let records = prepare(factory, bounds, props);
           const root = ui.createView(parent, bounds, backgroundStyleRef);
-          const handles = records.map(p => ui.createView(root, p.geometry, p.styleRef));
+          const handles = records.map(p => {
+            const handle=ui.createView(root,p.geometry,p.kind==="polyline"?backgroundStyleRef:p.styleRef);
+            if(p.kind==="polyline")ui.setPolyline(handle,p.geometry,p.points,p.styleRef);
+            return handle;
+          });
           let failed = false;
           // Native owner/page teardown remains authoritative. No independent destroy or handles.
           return Object.freeze({
@@ -99,7 +119,10 @@
                   p.kind === records[i].kind && p.styleRef === records[i].styleRef), "TOPOLOGY");
                 try {
                   ui.setLayout(root, nextBounds);
-                  next.forEach((p, i) => ui.setLayout(handles[i], p.geometry));
+                  next.forEach((p, i) => {
+                    ui.setLayout(handles[i], p.geometry);
+                    if(p.kind==="polyline")ui.setPolyline(handles[i],p.geometry,p.points,p.styleRef);
+                  });
                   ui.invalidateLayout();
                 } catch (error) {
                   // No rollback command exists. Never reuse a partially failed or stale instance.

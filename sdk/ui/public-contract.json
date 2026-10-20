@@ -48,6 +48,11 @@
     "lifetime": "parent-page-owned",
     "trust": "trusted-development-only"
   },
+  "drawing_protocol": {
+    "version":1,"primitive":"polyline","max_points":4096,"max_surfaces":4,
+    "max_pixels_per_surface":262144,"stroke_width":1,"style":"theme-background-token",
+    "resource":"PDW1","scene_wire":"PSC1-unchanged","trust":"trusted-development-only"
+  },
   "field_policy": {
     "catalog_text_refs": "0..65535",
     "action_id": "1..4095",
@@ -55,7 +60,7 @@
   },
   "unsupported": [
     "direct-native-call",
-    "arbitrary-custom-draw-path-arc-polyline",
+    "arbitrary-custom-draw-path-arc",
     "compiler",
     "TS-execution",
     "arbitrary-dynamic-text",

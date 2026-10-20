@@ -1,4 +1,5 @@
 #include "scene_runtime.h"
+#include "drawing_raster.h"
 #include "../media/store.h"
 #include "../text-input/input_font.h"
 #include "private_scene_guest.generated.h"
@@ -116,10 +117,49 @@ static PocketEngineStatus render(void *p,PocketEngineFrame *out) {
 static void put32(uint8_t *p,uint32_t v) {
     p[0]=(uint8_t)v;p[1]=(uint8_t)(v>>8);p[2]=(uint8_t)(v>>16);p[3]=(uint8_t)(v>>24);
 }
+static PocketEngineStatus upload_drawing(PocketSceneEngine *e,const void *data,size_t length,
+                                        PocketEngineResource *out) {
+    if(!data||length!=sizeof(PocketDrawFrame)||!out)return POCKET_ENGINE_INVALID_ARGUMENT;
+    const PocketDrawFrame *f=data;
+    if(f->version!=POCKET_DRAW_VERSION||f->count>POCKET_DRAW_SURFACES)return POCKET_ENGINE_INVALID_ARGUMENT;
+    for(uint32_t i=0;i<f->count;i++) {
+        if(!pocket_draw_valid(&f->surfaces[i]))return POCKET_ENGINE_INVALID_ARGUMENT;
+        for(uint32_t j=0;j<i;j++)if(f->surfaces[i].id==f->surfaces[j].id)return POCKET_ENGINE_INVALID_ARGUMENT;
+    }
+    for(unsigned j=0;j<POCKET_DRAW_SURFACES;j++) {
+        int keep=0;
+        for(uint32_t i=0;i<f->count;i++)if(f->surfaces[i].id==e->drawing[j].id)keep=1;
+        if(!keep)memset(&e->drawing[j],0,sizeof(e->drawing[j]));
+    }
+    for(uint32_t i=0;i<f->count;i++) {
+        const PocketDrawSurface *s=&f->surfaces[i];
+        unsigned slot=POCKET_DRAW_SURFACES;
+        for(unsigned j=0;j<POCKET_DRAW_SURFACES;j++)if(e->drawing[j].id==s->id){slot=j;break;}
+        if(slot==POCKET_DRAW_SURFACES)for(unsigned j=0;j<POCKET_DRAW_SURFACES;j++)if(!e->drawing[j].id){slot=j;break;}
+        if(slot==POCKET_DRAW_SURFACES)return POCKET_ENGINE_RESOURCE_EXHAUSTED;
+        if(e->drawing[slot].id==s->id&&e->drawing[slot].revision==s->revision&&
+           e->drawing[slot].width==s->width&&e->drawing[slot].height==s->height&&e->drawing[slot].color==s->color)continue;
+        const size_t pixels=(size_t)s->width*s->height*4U,n=POCKET_DRAW_WIRE_HEADER+pixels;
+        uint8_t *packet=malloc(n);
+        if(!packet)return POCKET_ENGINE_RESOURCE_EXHAUSTED;
+        const uint32_t header[]={POCKET_DRAW_WIRE_MAGIC,POCKET_DRAW_VERSION,(uint32_t)s->id,
+          (uint32_t)(s->id>>32),s->width,s->height,s->revision,0};
+        for(unsigned j=0;j<8;j++)put32(packet+j*4,header[j]);
+        int ok=pocket_draw_raster(s,packet+POCKET_DRAW_WIRE_HEADER,pixels)&&pocket_runtime_resource_pack(packet,n)==1;
+        free(packet);
+        if(!ok)return POCKET_ENGINE_BACKEND_FAILED;
+        e->drawing[slot].id=s->id;e->drawing[slot].revision=s->revision;
+        e->drawing[slot].width=s->width;e->drawing[slot].height=s->height;e->drawing[slot].color=s->color;
+        e->drawing_uploads++;e->drawing_points+=s->count;
+        e->previous_length=0; /* Rebind retained texture nodes even when PSC1 geometry is unchanged. */
+    }
+    *out=(PocketEngineResource){1,e->generation};return POCKET_ENGINE_OK;
+}
 static PocketEngineStatus upload(void *p,uint32_t kind,const void *data,size_t length,
                                 PocketEngineResource *out) {
     PocketSceneEngine *e=p;
     if(!e||!e->opened)return POCKET_ENGINE_LIFECYCLE_ERROR;
+    if(kind==POCKET_DRAW_RESOURCE)return upload_drawing(e,data,length,out);
     if(kind!=POCKET_SCENE_RESOURCE)return POCKET_ENGINE_UNSUPPORTED;
     if(!data||length!=sizeof(PocketScene)||!out)return POCKET_ENGINE_INVALID_ARGUMENT;
     const PocketScene *s=data;
