@@ -3,10 +3,12 @@
 const W=ui.__viewport.w,H=ui.__viewport.h;
 if(W!==1024||(H!==600&&H!==800)||!ui.loadFontAtlas(__pak))throw Error('SCENE_BOOT');
 let records=new Map(),textures=[],ready=true,locale=0,order='',inputGlyphs=null,inputTransfer=null,inputOffset=0;
+const drawingTextures=new Map();
+const retiredDrawingTextures=[];
 function node(type,parent){const n=ui.createNode(type);ui.setProp(n,24,1);ui.insertBefore(parent,n,0);return n;}
 function geom(n,x,y,w,h){ui.setProp(n,28,x);ui.setProp(n,25,y);ui.setProp(n,1,w);ui.setProp(n,2,h);}
 function rgbaAlpha(c,a){return (((Math.floor((c>>>24)*a/256)&255)<<24)|(c&0xffffff))>>>0;}
-function remove(r){for(const n of [r.label,r.image,r.fill,r.box])if(n){ui.removeChild(r.root,n);ui.destroyNode(n);}ui.removeChild(1,r.root);ui.destroyNode(r.root);}
+function remove(r){for(const n of [r.label,r.image,...(r.drawing||[]),r.fill,r.box])if(n){ui.removeChild(r.root,n);ui.destroyNode(n);}ui.removeChild(1,r.root);ui.destroyNode(r.root);}
 function inputRef(ref){return ref>65535&&inputGlyphs&&inputGlyphs.has(ref-65536);}
 function textFor(ref){if(inputRef(ref))return String.fromCharCode(ref-65536);const t=POCKET_TEXT_CATALOG[locale][ref];if(typeof t!=='string')throw Error('SCENE_TEXT_REF');return t;}
 function inputFont(buffer){
@@ -52,6 +54,7 @@ function apply(s){
  locale=s.locale;
  const keep=new Set(s.nodes.map(r=>r[0]));
  for(const [id,r] of records)if(!keep.has(id)){remove(r);records.delete(id);}
+ for(const [id,d] of drawingTextures)if(!keep.has(id)){for(const t of d.tiles)ui.freeTexture(t.texture);drawingTextures.delete(id);}
  ui.setProp(1,64,s.bg);
  for(const v of s.nodes){
   const [id,kind,x,y,w,h,cx,cy,cw,ch,bg,fg,radius,alpha,ref,image,value,min,max]=v;
@@ -66,7 +69,8 @@ function apply(s){
    records.set(id,r);
   }
   const previous=r.previous;
-  if(previous&&r.locale===locale&&v.every((value,i)=>previous[i]===value))continue;
+  const drawing=drawingTextures.get(id);
+  if(previous&&r.locale===locale&&r.drawingRevision===(drawing?drawing.revision:0)&&v.every((value,i)=>previous[i]===value))continue;
   // Reassert scissor when restyling a retained wrapper. Moving content must
   // never retain a previous un-clipped paint state outside the layout clip.
   ui.setProp(r.root,30,1);
@@ -77,6 +81,16 @@ function apply(s){
   geom(r.box,dx,dy,w,h);ui.setProp(r.box,64,rgbaAlpha(bg,alpha));ui.setProp(r.box,68,radius);
   if(r.fill){geom(r.fill,dx,dy,w*(value-min)/(max-min),h);ui.setProp(r.fill,64,rgbaAlpha(fg,alpha));ui.setProp(r.fill,68,radius);}
   if(r.image){geom(r.image,dx,dy,w,h);if(r.imageRef!==image)ui.setImage(r.image,textures[image-1]);r.imageRef=image;}
+  if(drawing){
+   if(!r.drawing)r.drawing=[];
+   for(let i=0;i<drawing.tiles.length;i++){
+    const t=drawing.tiles[i];
+    if(!r.drawing[i])r.drawing[i]=node(2,r.root);
+    geom(r.drawing[i],dx+t.x,dy+t.y,t.width,t.height);ui.setImage(r.drawing[i],t.texture);
+   }
+   while(r.drawing.length>drawing.tiles.length){const n=r.drawing.pop();ui.removeChild(r.root,n);ui.destroyNode(n);}
+  }else if(r.drawing){for(const n of r.drawing){ui.removeChild(r.root,n);ui.destroyNode(n);}r.drawing=[];}
+  r.drawingRevision=drawing?drawing.revision:0;
   if(r.label){const tx=kind===5?16:0,ty=kind===5?Math.max(0,(h-36)/2):0;
    geom(r.label,dx+tx,dy+ty,Math.max(0,w-tx),h);ui.setProp(r.label,96,rgbaAlpha(fg,alpha));
    ui.setProp(r.label,97,inputRef(ref)?1:0);
@@ -85,6 +99,7 @@ function apply(s){
  }
  const nextOrder=s.nodes.map(r=>r[0]).join(',');
  if(order!==nextOrder){for(const v of s.nodes){const r=records.get(v[0]);ui.removeChild(1,r.root);ui.insertBefore(1,r.root,0);}order=nextOrder;}
+ for(const texture of retiredDrawingTextures)ui.freeTexture(texture);retiredDrawingTextures.length=0;
  ready=!!s.ready;return 1;
 }
 function images(buffer){
@@ -116,9 +131,37 @@ function scenePacket(buffer){
  }
  validate(s);return s;
 }
+function drawingPacket(buffer){
+ if(buffer.byteLength<32)return -1;
+ const d=new DataView(buffer),id=d.getUint32(8,true)+4294967296*d.getUint32(12,true),
+   w=d.getUint32(16,true),h=d.getUint32(20,true),revision=d.getUint32(24,true);
+ if(d.getUint32(4,true)!==1||!Number.isSafeInteger(id)||id<1||!revision||
+    !w||w>1024||!h||h>800||w*h>262144||d.getUint32(28,true)!==0||buffer.byteLength!==32+w*h*4)return -1;
+ if(!drawingTextures.has(id)&&drawingTextures.size>=4)return -1;
+ // The pinned Core admits only power-of-two textures of at most 512 per axis.
+ // Up to four image quads cover a surface; owner clipping trims zero padding.
+ const tiles=[],src=new Uint8Array(buffer,32);
+ function power2(n){let p=1;while(p<n)p*=2;return p;}
+ try{
+  for(let y=0;y<h;y+=512)for(let x=0;x<w;x+=512){
+   const rw=Math.min(512,w-x),rh=Math.min(512,h-y),tw=power2(rw),th=power2(rh);
+   const bytes=new Uint8Array(tw*th*4);
+   for(let row=0;row<rh;row++)bytes.set(src.subarray(((y+row)*w+x)*4,((y+row)*w+x+rw)*4),row*tw*4);
+   const texture=ui.uploadTexture(bytes.buffer,tw,th,3);
+   if(texture<0)throw Error('DRAWING_TEXTURE_BUDGET');
+   tiles.push({texture,x,y,width:tw,height:th});
+  }
+ }catch(e){for(const t of tiles)ui.freeTexture(t.texture);return -1;}
+ const old=drawingTextures.get(id);
+ drawingTextures.set(id,{tiles,revision:old?old.revision+1:1});
+ // The following scene upload binds the new texture before its first render.
+ if(old)for(const t of old.tiles)retiredDrawingTextures.push(t.texture);
+ return 1;
+}
 globalThis.onResourcePack=function(buffer){
  if(buffer===null)return ready?1:0;
  if(!(buffer instanceof ArrayBuffer))return -1;
+ if(buffer.byteLength>=4&&new DataView(buffer).getUint32(0,true)===0x31574450)return drawingPacket(buffer);
  if(buffer.byteLength>=4&&new DataView(buffer).getUint32(0,true)===0x31464950)return inputChunk(buffer);
  if(buffer.byteLength>=4&&new DataView(buffer).getUint32(0,true)===0x31435350){
   let s;try{s=scenePacket(buffer);}catch(e){return -1;}

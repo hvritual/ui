@@ -252,6 +252,9 @@ done:
         if(package_path)fprintf(report,"\"%s\"",package_info.sha256);else fputs("null",report);
         fprintf(report,",\"application_heap_limit\":%zu,\"application_capabilities\":%u,\"package_bytes\":%zu",
                 applied_policy.heap_bytes,applied_policy.capabilities,package_info.container_bytes);
+        fprintf(report,",\"drawing_surfaces\":%u,\"drawing_points\":%u,\"drawing_commits\":%llu,\"drawing_uploads\":%llu,\"drawing_uploaded_points\":%llu",
+                stats.drawing_surfaces,stats.drawing_points,(unsigned long long)stats.drawing_commits,
+                (unsigned long long)r->engine.drawing_uploads,(unsigned long long)r->engine.drawing_points);
         fprintf(report,",\"ipc_development\":%s,\"ipc_command_capable\":%s,\"ipc_ready\":%s,\"ipc_status\":%d,\"ipc_requests\":%llu,\"ipc_messages\":%llu,\"ipc_failures\":%llu,\"ipc_pending\":%u,\"ipc_subscriptions\":%u",
                 stats.ipc_configured?"true":"false",stats.ipc_command_capable?"true":"false",stats.ipc_ready?"true":"false",
                 stats.ipc_status,(unsigned long long)stats.ipc_requests,(unsigned long long)stats.ipc_messages,

@@ -6,9 +6,13 @@ on:
     paths:
       - 'sdk/ui/**'
       - 'apps/sdk-demo/**'
+      - 'apps/custom-chart/**'
+      - 'apps/trend-chart/**'
+      - 'hosts/linux/engine/drawing*.h'
       - 'scripts/public_sdk.py'
       - 'scripts/public-sdk.mk'
       - 'docs/public-sdk.md'
+      - 'docs/custom-components.md'
       - 'tests/sdk/**'
       - '.github/workflows/f7-public-sdk.yml'
       - '.github/workflows/coffee.yml'
@@ -17,9 +21,13 @@ on:
     paths:
       - 'sdk/ui/**'
       - 'apps/sdk-demo/**'
+      - 'apps/custom-chart/**'
+      - 'apps/trend-chart/**'
+      - 'hosts/linux/engine/drawing*.h'
       - 'scripts/public_sdk.py'
       - 'scripts/public-sdk.mk'
       - 'docs/public-sdk.md'
+      - 'docs/custom-components.md'
       - 'tests/sdk/**'
       - '.github/workflows/f7-public-sdk.yml'
       - '.github/workflows/coffee.yml'
@@ -48,8 +56,10 @@ jobs:
           cp sdk/ui/js/pocket-ui.js sdk/ui/types/index.d.ts sdk/ui/public-contract.json out/public-sdk-contract/
           cp apps/sdk-demo/application.js apps/sdk-demo/manifest.json out/public-sdk-contract/
           cp scripts/public_sdk.py docs/public-sdk.md out/public-sdk-contract/
+          cp --parents sdk/ui/js/pocket-custom.js sdk/ui/types/custom.d.ts apps/custom-chart/*.js apps/custom-chart/manifest.json docs/custom-components.md tests/sdk/test_* out/public-sdk-contract/
+          cp --parents apps/trend-chart/*.js apps/trend-chart/manifest.json hosts/linux/engine/drawing*.h out/public-sdk-contract/
           printf 'real_renderer_test=separate-canonical-coffee-workflow\nphysical=false\nproduction_authentication=false\n' > out/public-sdk-contract/scope.txt
-          (cd out/public-sdk-contract && sha256sum *.js *.ts *.json *.py *.md *.txt *.log > SHA256SUMS)
+          (cd out/public-sdk-contract && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
       - name: Preserve bounded contract and source evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

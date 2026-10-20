@@ -54,6 +54,29 @@
     setLayout(component, box) {
       return send("component.layout", [integer(component, 1, Number.MAX_SAFE_INTEGER, "HANDLE"), ...rect(box)]);
     },
+    setPolyline(component, size, points, styleRef) {
+      integer(component,1,Number.MAX_SAFE_INTEGER,"HANDLE");
+      const width=integer(size && size.width,1,1024,"DRAW_WIDTH");
+      const height=integer(size && size.height,1,800,"DRAW_HEIGHT");
+      if(width*height>262144 || !Array.isArray(points) || points.length<2 || points.length>4096)
+        throw Error("POCKET_UI_DRAW_BUDGET");
+      integer(styleRef,1,65535,"STYLE");
+      const chunks=[];
+      let chunk="";
+      for(let i=0;i<points.length;i++) {
+        const p=points[i];
+        if(!p || typeof p!=="object" || Object.keys(p).length!==2 ||
+           !Object.prototype.hasOwnProperty.call(p,"x") || !Object.prototype.hasOwnProperty.call(p,"y"))
+          throw Error("POCKET_UI_DRAW_POINT");
+        const x=integer(p.x,0,width-1,"DRAW_X"),y=integer(p.y,0,height-1,"DRAW_Y");
+        chunk+=x.toString(16).padStart(4,"0")+y.toString(16).padStart(4,"0");
+        if(chunk.length===4096 || i===points.length-1){chunks.push(chunk);chunk="";}
+      }
+      send("draw.begin",[component,1,width,height,points.length,styleRef]);
+      let offset=0;
+      for(const text of chunks){send("draw.points",[component,offset,text]);offset+=text.length/8;}
+      return send("draw.commit",[component]);
+    },
     defineTheme(theme) {
       if (!theme || typeof theme !== "object" || !theme.colors || typeof theme.colors !== "object" ||
           Array.isArray(theme.colors)) throw Error("POCKET_UI_INVALID_THEME");

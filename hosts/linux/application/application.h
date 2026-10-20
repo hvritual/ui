@@ -8,6 +8,7 @@
 #include "../ui/interaction.h"
 #include "../ui/reactive.h"
 #include "../ui/model.h"
+#include "../engine/drawing.h"
 #include "../text-input/keyboard.h"
 
 /* Engine-neutral, experimental application host. Payloads are trusted local
@@ -33,6 +34,8 @@ typedef struct {
     unsigned ipc_configured,ipc_ready,ipc_command_capable,ipc_pending,ipc_subscriptions;
     uint64_t ipc_requests,ipc_messages,ipc_failures;
     int ipc_status;
+    unsigned drawing_surfaces,drawing_points;
+    uint64_t drawing_commits;
 } PocketApplicationStats;
 int pocket_application_open(PocketApplication *application, unsigned height,
                             unsigned item_count, const char *source, size_t length);
@@ -51,6 +54,7 @@ PocketInteractionRuntime *pocket_application_interaction(PocketApplication *appl
 int pocket_application_prepare_input(PocketApplication *application);
 int pocket_application_step(PocketApplication *application, uint64_t monotonic_ms);
 int pocket_application_scene(PocketApplication *application, PocketScene *scene);
+int pocket_application_drawing(PocketApplication *,const PocketScene *,PocketDrawFrame *);
 int pocket_application_stats(const PocketApplication *application, PocketApplicationStats *stats);
 int pocket_application_keyboard_snapshot(const PocketApplication *application, PocketKeyboardSnapshot *snapshot);
 int pocket_application_keyboard_input_snapshot(const PocketApplication *,PocketKeyboardInputSnapshot *);

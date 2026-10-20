@@ -28,6 +28,12 @@ typedef struct {
     uint32_t count;
 } Collection;
 typedef struct { uint64_t id; PocketComponentHandle root; int keyboard; } Overlay;
+typedef struct {
+    PocketComponentHandle owner;
+    PocketDrawSurface live,staged;
+    uint32_t style_ref,staged_style,received;
+    int staging;
+} Drawing;
 struct Application {
     PocketProgram program;
     PocketApplicationPolicy policy;
@@ -56,6 +62,7 @@ struct Application {
     unsigned queue_count, phase, disposing, dirty;
     Collection lists[LISTS];
     Overlay layers[OVERLAYS];
+    Drawing drawing[POCKET_DRAW_SURFACES];
     uint64_t next_list, next_binding, now;
     uint64_t previous_ime_commits,previous_ime_batches;
     unsigned height, media_ready;
@@ -349,6 +356,60 @@ static int ipc_command(Application *a,const char *op,size_t n,const PocketProgra
     }
     return ipc_reply(a,reply,POCKET_IPC_INVALID,0);
 }
+static Drawing *drawing_for(Application *a,PocketComponentHandle owner,int allocate) {
+    Drawing *available=NULL;
+    for(unsigned i=0;i<POCKET_DRAW_SURFACES;i++) {
+        Drawing *d=&a->drawing[i];PocketComponentSnapshot snapshot;
+        if(d->owner.slot&&pocket_component_snapshot(&a->components,d->owner,&snapshot)!=POCKET_COMPONENT_OK)
+            memset(d,0,sizeof(*d));
+        if(same(d->owner,owner))return d;
+        if(!d->owner.slot&&!available)available=d;
+    }
+    if(allocate&&available){available->owner=owner;return available;}
+    return NULL;
+}
+static int hex_digit(char c) {
+    return c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:-1;
+}
+static int drawing_command(Application *a,const char *op,size_t n,const PocketProgramValue *args) {
+    int64_t v[6]={0};PocketComponentHandle owner;PocketComponentSnapshot component_snapshot;
+    if(!n||!numbers(1,args,v)||!component(a,v[0],&owner)||
+       pocket_component_snapshot(&a->components,owner,&component_snapshot)!=POCKET_COMPONENT_OK||
+       component_snapshot.kind!=POCKET_COMPONENT_VIEW)return 0;
+    if(!strcmp(op,"draw.begin")) {
+        if(n!=6||!numbers(n,args,v)||v[1]!=POCKET_DRAW_VERSION||!between(v[2],1,1024)||
+           !between(v[3],1,800)||v[2]*v[3]>POCKET_DRAW_PIXELS||!between(v[4],2,POCKET_DRAW_POINTS)||
+           !between(v[5],1,65535))return 0;
+        Drawing *d=drawing_for(a,owner,1);
+        if(!d||d->staging||d->live.revision==UINT32_MAX)return 0;
+        d->staged=(PocketDrawSurface){.revision=d->live.revision+1,.width=(uint32_t)v[2],
+            .height=(uint32_t)v[3],.count=(uint32_t)v[4]};
+        d->staged_style=(uint32_t)v[5];d->received=0;d->staging=1;return 1;
+    }
+    Drawing *d=drawing_for(a,owner,0);
+    if(!d||!d->staging)return 0;
+    if(!strcmp(op,"draw.points")) {
+        if(n!=3||!numbers(2,args,v)||v[1]!=d->received||args[2].kind!=POCKET_PROGRAM_TEXT||
+           !args[2].length||args[2].length>4096||args[2].length%8)return 0;
+        const size_t count=args[2].length/8;
+        if(count>d->staged.count-d->received)return 0;
+        PocketDrawPoint points[512];
+        for(size_t i=0;i<count;i++) {
+            unsigned x=0,y=0;
+            for(unsigned j=0;j<8;j++) {
+                int digit=hex_digit(args[2].text[i*8+j]);if(digit<0)return 0;
+                if(j<4)x=(x<<4)|(unsigned)digit;else y=(y<<4)|(unsigned)digit;
+            }
+            if(x>=d->staged.width||y>=d->staged.height)return 0;
+            points[i]=(PocketDrawPoint){(uint16_t)x,(uint16_t)y};
+        }
+        memcpy(d->staged.points+d->received,points,count*sizeof(points[0]));
+        d->received+=(uint32_t)count;return 1;
+    }
+    if(strcmp(op,"draw.commit")||n!=1||d->received!=d->staged.count)return 0;
+    d->live=d->staged;d->style_ref=d->staged_style;d->staging=0;
+    a->dirty=1;a->stats.drawing_commits++;return 1;
+}
 static int command(void *context, const char *op, size_t n, const PocketProgramValue *args, PocketProgramValue *reply) {
     Application *a = context;
     int64_t v[POCKET_PROGRAM_ARGUMENT_LIMIT] = {0};
@@ -358,6 +419,7 @@ static int command(void *context, const char *op, size_t n, const PocketProgramV
     if (a->phase == 2) return 0;
     *reply = (PocketProgramValue){.kind=POCKET_PROGRAM_INTEGER, .integer=1};
     if (!(a->policy.capabilities & POCKET_APP_CAP_CORE)) return fail(a,"APPLICATION_CAPABILITY_CORE");
+    if(!strncmp(op,"draw.",5))return drawing_command(a,op,n,args);
     if (!strncmp(op,"keyboard.",9) && !(a->policy.capabilities & POCKET_APP_CAP_ASCII_KEYBOARD))
         return fail(a,"APPLICATION_CAPABILITY_KEYBOARD");
     if (!strcmp(op,"component.image") && !(a->policy.capabilities & POCKET_APP_CAP_IMAGES))
@@ -698,10 +760,39 @@ int pocket_application_scene(PocketApplication *out, PocketScene *scene) {
     }
     return 1;
 }
+int pocket_application_drawing(PocketApplication *out,const PocketScene *scene,PocketDrawFrame *frame) {
+    Application *a=out?out->impl:NULL;
+    if(!a||a->error||!scene||!frame)return 0;
+    memset(frame,0,sizeof(*frame));frame->version=POCKET_DRAW_VERSION;
+    for(unsigned i=0;i<POCKET_DRAW_SURFACES;i++) {
+        Drawing *d=&a->drawing[i];PocketComponentSnapshot c;PocketUiSnapshot node;
+        if(!d->owner.slot)continue;
+        if(pocket_component_snapshot(&a->components,d->owner,&c)!=POCKET_COMPONENT_OK){memset(d,0,sizeof(*d));continue;}
+        if(!d->live.revision)continue;
+        if(pocket_ui_snapshot(&a->tree,c.root,&node)!=POCKET_UI_OK)return 0;
+        for(uint32_t j=0;j<scene->count;j++)if(scene->records[j].id==node.stable_id) {
+            const PocketSceneRecord *r=&scene->records[j];PocketResolvedStyle style;
+            if(r->bounds.width!=(int)d->live.width||r->bounds.height!=(int)d->live.height||
+               pocket_style_resolve(&a->styles,d->style_ref,0,NULL,&style)!=POCKET_STYLE_OK)return 0;
+            PocketDrawSurface *s=&frame->surfaces[frame->count++];*s=d->live;s->id=node.stable_id;
+            uint32_t color=(uint32_t)style.fields[POCKET_STYLE_BACKGROUND];
+            s->color=(color&0xffffffU)|((((color>>24)*r->opacity_256/256U)&255U)<<24);
+            break;
+        }
+    }
+    return 1;
+}
 int pocket_application_stats(const PocketApplication *out, PocketApplicationStats *stats) {
     const Application *a=out?out->impl:NULL; PocketNavigationPage page;
     if (!a || a->error || !stats || pocket_navigation_top(&a->navigation,&page)!=POCKET_NAV_OK) return 0;
     *stats=a->stats; stats->page=(unsigned)page.route_id;
+    stats->drawing_surfaces=stats->drawing_points=0;
+    for(unsigned i=0;i<POCKET_DRAW_SURFACES;i++)if(a->drawing[i].live.revision){
+        PocketComponentSnapshot c;
+        if(pocket_component_snapshot(&a->components,a->drawing[i].owner,&c)==POCKET_COMPONENT_OK){
+            stats->drawing_surfaces++;stats->drawing_points+=a->drawing[i].live.count;
+        }
+    }
     PocketIpcClientStats ipc={0};
     stats->ipc_status=(int)a->ipc_status;
     if(a->ipc.impl && pocket_ipc_client_stats(&a->ipc,&ipc)==POCKET_IPC_OK){
