@@ -92,7 +92,7 @@ jobs:
           python3 scripts/ime.py prepare
       - name: Full framework Native and ARM integration
         run: make test-keyboard-layouts test-framework test-framework-arm test-framework-sanitize verify-framework
-      - name: Real public SDK example on production Native and ARM UI Runtime
+      - name: Counter and custom chart on identical production Native and ARM UI Runtime
         run: make -f scripts/public-sdk.mk test-public-sdk-runtime
       - name: Independent Service IPC processes with the same production UI ELF
         run: make test-ipc-framework test-ipc-framework-arm verify-ipc-framework

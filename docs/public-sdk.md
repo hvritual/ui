@@ -40,4 +40,4 @@ The loader's format_version=1, runtime_api=1 and sdk_api=1 are distinct native f
 
 The code checks a source-boundary subset to catch mistakes; it is not a security sandbox against a malicious app. The native policy remains authoritative. No existing Coffee/control-panel/IPC application is rewritten or used as substitute test evidence. No device-control, network, OTA, renderer, evdev, IME, firmware or BSP modifications are part of this deliverable.
 
-F7-02 will decide safe custom draw and reusable components, F8 #41 owns Simulator/Inspector, #9 owns signing/release, #49 owns independent real 600/800 HIL gates. All remain open.
+F7-02A #88 adds the optional [PocketCustom Surface v0](custom-components.md) module and independent bar-chart example. It maps bounded rectangles and axis lines to public Views, with fixed topology and at most 32 primitives per instance. Arbitrary DrawList/Polyline/Path/Arc support requires the separate F7-02B protocol work. F8 #41 owns Simulator/Inspector, #9 owns signing/release, #49 owns independent real 600/800 HIL gates. These remain separate acceptance claims.

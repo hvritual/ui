@@ -39,6 +39,15 @@
   "runtime_grants": [
     "ui.core"
   ],
+  "custom_surface": {
+    "version": "0-experimental",
+    "max_primitives": 32,
+    "max_factories": 32,
+    "primitives": ["rectangle", "axis-line"],
+    "updates": "fixed-topology-geometry",
+    "lifetime": "parent-page-owned",
+    "trust": "trusted-development-only"
+  },
   "field_policy": {
     "catalog_text_refs": "0..65535",
     "action_id": "1..4095",
@@ -46,7 +55,7 @@
   },
   "unsupported": [
     "direct-native-call",
-    "custom-draw",
+    "arbitrary-custom-draw-path-arc-polyline",
     "compiler",
     "TS-execution",
     "arbitrary-dynamic-text",

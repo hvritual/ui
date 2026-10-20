@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""F7-01 experimental Public UI SDK verification and development .pui packaging.
+"""Experimental Public UI SDK and bounded custom component .pui verification.
 
 Reuses the existing exact R3 builder and REAL native/ARM ui-framework runtimes.
 Neither this checker nor a SHA256 manifest authenticates publisher identity.
@@ -24,6 +24,11 @@ TYPES = ROOT / "sdk/ui/types/index.d.ts"
 CONTRACT = ROOT / "sdk/ui/public-contract.json"
 APP = ROOT / "apps/sdk-demo/application.js"
 MANIFEST = ROOT / "apps/sdk-demo/manifest.json"
+CUSTOM = ROOT / "sdk/ui/js/pocket-custom.js"
+CUSTOM_TYPES = ROOT / "sdk/ui/types/custom.d.ts"
+CHART = ROOT / "apps/custom-chart/bar-chart.js"
+CUSTOM_APP = ROOT / "apps/custom-chart/application.js"
+CUSTOM_MANIFEST = ROOT / "apps/custom-chart/manifest.json"
 NATIVE_HEADER = ROOT / "hosts/linux/package/package.h"
 TARGETS = ("imx6ul-1024x600", "imx6ul-1024x800")
 
@@ -58,9 +63,16 @@ def read_json(path):
     return json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=pairs)
 
 
-def check() -> dict:
+def example_sources(example):
+    reject(example in ("counter", "custom-chart"), "unknown public example")
+    return ((APP, MANIFEST, ()) if example == "counter" else
+            (CUSTOM_APP, CUSTOM_MANIFEST, (CUSTOM, CHART)))
+
+
+def check(example="counter") -> dict:
+    app_path, manifest_path, modules = example_sources(example)
     contract = read_json(CONTRACT)
-    manifest = read_json(MANIFEST)
+    manifest = read_json(manifest_path)
     reject(contract.get("schema") == 1 and contract.get("name") == "pocket.ui"
            and contract.get("status") == "experimental-software-only", "public contract version")
     reject(contract.get("sdk_facade_version") == "0.1-experimental"
@@ -88,7 +100,7 @@ def check() -> dict:
            and manifest.get("authentication") == "none"
            and manifest["budgets"]["heap_bytes"] == 2097152, "manifest exceeds F7-01 public contract")
     sdk = FACADE.read_text(encoding="utf-8")
-    application = APP.read_text(encoding="utf-8")
+    application = app_path.read_text(encoding="utf-8")
     declaration = TYPES.read_text(encoding="utf-8")
     reject(sdk.count('global.__pocketCall') == 2, "SDK must own single native bridge binding/check")
     reject('global.PocketApplication = {' in sdk and 'global, "PocketUI"' in sdk,
@@ -103,25 +115,35 @@ def check() -> dict:
         r"(?:hosts/linux|scene_guest|pocket_runtime\.c)"
     )
     for token in forbidden:
-        reject(re.search(token, application) is None, "application crosses private API: " + token)
+        for source in (application, *(p.read_text(encoding="utf-8") for p in modules)):
+            reject(re.search(token, source) is None, "application crosses private API: " + token)
     reject("interface PocketUIContext" in declaration and "interface PocketApp" in declaration,
            "missing matching public type declarations")
-    bundle = sdk + "\n" + application + "\n"
+    if example == "custom-chart":
+        reject(contract.get("custom_surface") == {
+            "version": "0-experimental", "max_primitives": 32, "max_factories": 32,
+            "primitives": ["rectangle", "axis-line"], "updates": "fixed-topology-geometry",
+            "lifetime": "parent-page-owned", "trust": "trusted-development-only"
+        }, "unsupported custom surface contract")
+        reject("interface PocketCustomRegistry" in CUSTOM_TYPES.read_text(encoding="utf-8"),
+               "missing custom surface declarations")
+    bundle = "\n".join(p.read_text(encoding="utf-8") for p in (FACADE, *modules, app_path)) + "\n"
     reject("\x00" not in bundle and 0 < len(bundle.encode("utf-8")) <= pui.SOURCE_LIMIT,
            "bundled application exceeds runtime source budget")
     return {
-        "scope": "F7-01-experimental-public-facade",
+        "scope": "F7-01-experimental-public-facade" if not modules else "F7-02A-bounded-custom-surface",
         "sdk_version": contract["sdk_facade_version"],
         "runtime_api": 1, "sdk_api": 1, "format_version": 1,
         "targets": list(TARGETS), "capabilities": ["ui.core"],
         "source": {str(p.relative_to(ROOT)): digest(p)
-                   for p in (FACADE, TYPES, CONTRACT, APP, MANIFEST)},
+                   for p in (FACADE, TYPES, CONTRACT, app_path, manifest_path, *modules,
+                             *((CUSTOM_TYPES,) if modules else ()))},
         "authenticated": False, "physical_hardware": False, "production_admission": False,
     }
 
 
-def assemble(assets_dir: Path):
-    check()
+def assemble(assets_dir: Path, example="counter"):
+    check(example)
     reject(assets_dir.is_dir() and not assets_dir.is_symlink(), "assets directory not admitted")
     source_names = {p.name for p in assets_dir.iterdir()}
     allowed = set(pui.FILES)
@@ -130,8 +152,9 @@ def assemble(assets_dir: Path):
     return source_names
 
 
-def packaged(assets_dir: Path) -> bytes:
-    names = assemble(assets_dir)
+def packaged(assets_dir: Path, example="counter") -> bytes:
+    names = assemble(assets_dir, example)
+    app_path, _, modules = example_sources(example)
     with tempfile.TemporaryDirectory(prefix="pocket-public-sdk-") as temp:
         tmp = Path(temp)
         for name in names:
@@ -139,11 +162,12 @@ def packaged(assets_dir: Path) -> bytes:
             reject(original.is_file() and not original.is_symlink()
                    and original.stat().st_size <= pui.MAX_BYTES, "untrusted asset " + name)
             if name == "application.js":
-                content = FACADE.read_text() + "\n" + APP.read_text() + "\n"
+                content = "\n".join(p.read_text(encoding="utf-8") for p in
+                                    (FACADE, *modules, app_path)) + "\n"
                 (tmp / name).write_text(content, encoding="utf-8")
             else:
                 shutil.copyfile(original, tmp / name)
-        result = pui.build(read_json(MANIFEST), tmp)
+        result = pui.build(read_json(example_sources(example)[1]), tmp)
         for target in TARGETS:
             verification = pui.verify(result, target, allow_unsigned=True)
             reject(verification["authenticated"] is False
@@ -152,8 +176,8 @@ def packaged(assets_dir: Path) -> bytes:
         return result
 
 
-def save_package(assets: Path, output: Path) -> dict:
-    payload = packaged(assets)
+def save_package(assets: Path, output: Path, example="counter") -> dict:
+    payload = packaged(assets, example)
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("xb") as stream:
         stream.write(payload)
@@ -175,23 +199,89 @@ def invoke(cmd, log, expected=0):
     return result.stdout
 
 
-def integration(native: Path, arm: Path, assets: Path, destination: Path) -> dict:
-    check()
+def chart_pixels(output: Path, height: int) -> dict:
+    """Check actual production pixels against independently specified demo geometry.
+
+    This does not render or replace the engine. All six bars, empty space, axes,
+    and the moved surface must agree in both snapshots; blank/stale frames fail.
+    """
+    snapshots = []
+    for filename, values, left, top, width, plot_height in (
+        ("first.ppm", [20, 45, 70, 35, 85, 55], 64, 160, 896, height - 240),
+        ("last.ppm", [80, 30, 50, 90, 25, 65], 96, 176, 832, height - 272),
+    ):
+        data = (output / filename).read_bytes()
+        header = re.match(rb"P6\s+1024\s+" + str(height).encode() + rb"\s+255\r?\n", data)
+        reject(header is not None, "invalid real snapshot dimensions/header")
+        pixels = data[header.end():]
+        reject(len(pixels) == 1024 * height * 3, "invalid real snapshot size")
+
+        def pixel(x, y):
+            at = (y * 1024 + x) * 3
+            return pixels[at:at + 3]
+
+        step = (width - 32) // 6
+        for i, value in enumerate(values):
+            bar_height = ((plot_height - 32) * value + 50) // 100
+            x = left + 24 + i * step + (step - 4) // 2
+            y = top + 8 + plot_height - 32 - bar_height
+            reject(pixel(x, y + bar_height // 2) == bytes.fromhex("2a7f98"), "missing real chart bar")
+            reject(pixel(x, y - 3) == bytes.fromhex("f0dfc8"), "bar exceeds expected geometry")
+        reject(pixel(left + 16, top + 12) == bytes.fromhex("65564c") and
+               pixel(left + width // 2, top + plot_height - 16) == bytes.fromhex("65564c"),
+               "missing real axis lines")
+        reject(pixel(65, 161) == bytes.fromhex("f0dfc8" if filename == "first.ppm" else "faf8f4"),
+               "surface did not move/clear")
+        snapshots.append(digest(output / filename))
+    reject(snapshots[0] != snapshots[1], "chart geometry did not change")
+    return {"bars_per_snapshot": 6, "axis_lines_per_snapshot": 2, "updated": True}
+
+
+def integration(native: Path, arm: Path, assets: Path, destination: Path, example="counter",
+                baseline: Path | None = None) -> dict:
+    check(example)
     reject(not destination.exists(), "output already exists; test evidence must not be overwritten")
     for executable in (native, arm):
         reject(executable.is_file() and not executable.is_symlink(), "missing production ELF")
+    reject(not git("status", "--porcelain", "--untracked-files=all"),
+           "production integration requires a clean committed source checkout")
+    asset_hashes = {name: digest(assets / name) for name in sorted(assemble(assets, example))
+                    if name != "application.js"}
+    baseline_report = None
+    if example == "custom-chart":
+        reject(baseline is not None, "custom chart requires counter baseline evidence")
+        baseline_report = read_json(baseline)
+        reject(baseline_report.get("example") == "counter" and
+               baseline_report.get("source_commit") == git("rev-parse", "HEAD") and
+               baseline_report.get("executables") == {"native": digest(native), "arm": digest(arm)} and
+               baseline_report.get("assets") == asset_hashes and
+               set(baseline_report.get("runs", {})) == {"native-600", "native-800", "arm-600", "arm-800"},
+               "custom chart must reuse exact counter production binaries and source commit")
     destination.mkdir(parents=True, exist_ok=False)
-    package = destination / "sdk-example.pui"
-    package_report = save_package(assets, package)
+    package = destination / ("sdk-example.pui" if example == "counter" else "custom-chart.pui")
+    package_report = save_package(assets, package, example)
     result = {"schema": 1, "scope": "same-production-runtime-real-application",
               "source_commit": git("rev-parse", "HEAD"),
               "source_tree": git("rev-parse", "HEAD^{tree}"),
-              "sdk_source": check()["source"], "package": package_report,
+              "sdk_source": check(example)["source"], "package": package_report, "example": example,
+              "assets": asset_hashes,
+              "test_source": {str(p.relative_to(ROOT)): digest(p) for p in
+                              (Path(__file__), *sorted((ROOT / "tests/sdk").glob("test_*")))},
               "executables": {}, "runs": {},
               "physical_hardware": False, "production_admission": False}
+    if baseline_report is not None:
+        result["counter_baseline_sha256"] = digest(baseline)
     for mode, executable in (("native", native), ("arm", arm)):
         result["executables"][mode] = digest(executable)
         launcher = [] if mode == "native" else ["qemu-arm", "-cpu", "cortex-a7", "-L", "/usr/arm-linux-gnueabihf"]
+        if example == "custom-chart":
+            denied_log = destination / (mode + "-unsigned-denied.log")
+            denied = invoke([*launcher, executable, "--headless", "--profile", TARGETS[0],
+                             "--package", package, "--output", destination / (mode + "-denied")],
+                            denied_log, expected=1)
+            reject("FRAMEWORK_PACKAGE_REJECTED error=PUI_UNSIGNED" in denied,
+                   "production did not reject unsigned custom package")
+            result.setdefault("unsigned_denials", {})[mode] = digest(denied_log)
         for target in TARGETS:
             name = mode + "-" + target.rsplit("x", 1)[1]
             output = destination / name
@@ -220,6 +310,10 @@ def integration(native: Path, arm: Path, assets: Path, destination: Path) -> dic
                 "log": digest(log), "page": report.get("application_page", 0),
                 "presents": report["presents"], "package_admitted": True
             }
+            if example == "custom-chart":
+                reject(report.get("application_selection") == 1, "custom chart did not update")
+                result["runs"][name]["pixels"] = chart_pixels(output, int(target.rsplit("x", 1)[1]))
+        reject(digest(executable) == result["executables"][mode], "runtime ELF changed during integration")
     # Same layout/target must rasterize byte-identically in native and ARM paths.
     for suffix in ("600", "800"):
         for key in ("first", "last"):
@@ -233,7 +327,7 @@ def integration(native: Path, arm: Path, assets: Path, destination: Path) -> dic
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("check")
+    contract_check = commands.add_parser("check")
     pack = commands.add_parser("pack")
     pack.add_argument("--assets", type=Path, required=True)
     pack.add_argument("--output", type=Path, required=True)
@@ -242,13 +336,16 @@ def main():
     acceptance.add_argument("--native", type=Path, required=True)
     acceptance.add_argument("--arm", type=Path, required=True)
     acceptance.add_argument("--output", type=Path, required=True)
+    acceptance.add_argument("--baseline-evidence", type=Path)
+    for command in (contract_check, pack, acceptance):
+        command.add_argument("--example", choices=("counter", "custom-chart"), default="counter")
     opts = parser.parse_args()
     if opts.command == "check":
-        result = check()
+        result = check(opts.example)
     elif opts.command == "pack":
-        result = save_package(opts.assets, opts.output)
+        result = save_package(opts.assets, opts.output, opts.example)
     else:
-        result = integration(opts.native, opts.arm, opts.assets, opts.output)
+        result = integration(opts.native, opts.arm, opts.assets, opts.output, opts.example, opts.baseline_evidence)
     print(json.dumps(result, sort_keys=True))
 
 
