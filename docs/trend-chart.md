@@ -4,12 +4,11 @@ Implementation is prepared on `feat/f7-02b-thousand-point-charts`, following the
 separate F7-02A slice in PR #90. **Cloud compilation, real runtime integration,
 artifact delivery and physical verification are not yet accepted.**
 
-The requested build environment is ChatGPT cloud; local work is source development
-and verification using cloud-built artifacts. GitHub Actions is not a replacement
-for that required build provenance. The existing ChatGPT cloud conversation failed
-with `systemError`; creating its requested replacement returned
-`ChatGPT Work Cloud is not available for this account`. No local native build or
-new physical application run has been used to bypass this requirement.
+The user authorized GitHub Actions cloud builds on 2026-10-20. Local work is
+source development and verification of downloaded artifacts; no local native
+build substitutes for cloud provenance. The exact-PR-head Coffee workflow owns
+the canonical Native/ARM and static-board build, retaining the existing pinned
+dependencies, licensed assets and regression gates.
 
 ## Developer experience
 
@@ -70,9 +69,9 @@ existing loader, heap, command/fuel and fixed diagnostic-log policies preserved.
 
 ## Cloud build and admission checklist
 
-From the exact committed checkout, in ChatGPT's Linux build environment:
+From the exact committed checkout, in GitHub Actions' Linux build environment:
 
-1. Read AGENTS.md, the cloud runtime skill and the existing Coffee workflow.
+1. Read AGENTS.md and the existing Coffee workflow.
 2. Run its pinned prerequisite, original renderer, asset and full Framework gates.
 3. Run `make -f scripts/public-sdk.mk test-public-sdk`, including negative SDK
    cases and the real native C raster unit.
@@ -94,7 +93,6 @@ From the exact committed checkout, in ChatGPT's Linux build environment:
    opt-in and physical mode. Collect its report, output pixels, CPU/RSS and logs.
    Never count Node mocks or C unit tests as this physical evidence.
 
-Acceptance remains blocked until the specified cloud environment is available,
-the source compiles and these actual artifact/runtime checks pass. No completion,
+Acceptance requires the source to compile and these actual artifact/runtime checks to pass. No completion,
 merge, general performance admission, #49 HIL closure or production authentication
 is implied by the development tests.

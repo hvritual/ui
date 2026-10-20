@@ -80,6 +80,33 @@ static int source_cases(const char *assets){
         memcpy(script,source.data,source.length);memcpy(script+source.length,invalid[i],strlen(invalid[i])+1);
         PocketApplication app={0};CHECK(!pocket_application_open(&app,600,8,script,length));CHECK(!app.impl);free(script);
     }
+    const char *draw_bad[]={
+      "__pocketCall('draw.begin',x,2,64,64,2,4);",
+      "__pocketCall('draw.begin',x,1,64,64,4097,4);",
+      "__pocketCall('draw.begin',x,1,1024,800,2,4);",
+      "__pocketCall('draw.begin',x,1,64,64,2,4);__pocketCall('draw.commit',x);",
+      "__pocketCall('draw.begin',x,1,64,64,2,4);__pocketCall('draw.begin',x,1,64,64,2,4);",
+      "__pocketCall('draw.begin',x,1,64,64,2,4);__pocketCall('draw.points',x,1,'0000000000010001');",
+      "__pocketCall('draw.begin',x,1,64,64,2,4);__pocketCall('draw.points',x,0,'0000000000400001');",
+      "__pocketCall('draw.begin',x,1,64,64,2,4);__pocketCall('draw.points',x,0,'000000000001gggg');",
+      "__pocketCall('draw.begin',x,1,64,64,2,4);__pocketCall('draw.points',x,0,'0000000000010001');__pocketCall('draw.points',x,0,'0000000000010001');",
+      "__pocketCall('draw.begin',x,1,64,64,2,4);__pocketCall('draw.points',x,0,'000000000001000100020002');",
+      "__pocketCall('draw.begin',x,1,64,64,NaN,4);",
+      "__pocketCall('draw.unknown',x);",
+      "__pocketCall('navigation.push',2,x);__pocketCall('navigation.pop');__pocketCall('draw.begin',x,1,64,64,2,4);",
+      "const t=__pocketCall('component.create',2,x,0,0,64,64,1,5001,0);__pocketCall('draw.begin',t,1,64,64,2,4);",
+      "for(let j=0;j<5;j++){const t=__pocketCall('component.create',1,x,0,0,64,64,1,0,0);__pocketCall('draw.begin',t,1,64,64,2,4);__pocketCall('draw.points',t,0,'0000000000010001');__pocketCall('draw.commit',t);}"
+    };
+    for(unsigned i=0;i<sizeof(draw_bad)/sizeof(draw_bad[0]);i++) {
+        const char *prefix="\nconst initial=PocketApplication.start;PocketApplication.start=function(c){initial(c);const x=__pocketCall('component.create',1,0,0,0,64,64,1,0,0);";
+        const char *suffix="return true;};";
+        size_t length=source.length+strlen(prefix)+strlen(draw_bad[i])+strlen(suffix);
+        char *script=malloc(length+1);CHECK(script);
+        memcpy(script,source.data,source.length);strcpy(script+source.length,prefix);
+        strcat(script,draw_bad[i]);strcat(script,suffix);
+        PocketApplication app={0};CHECK(!pocket_application_open(&app,600,8,script,length));CHECK(!app.impl);free(script);
+    }
+    puts("DRAWING_NATIVE_NEGATIVE_OK version budget chunks bounds stale-owner wrong-owner NaN");
     /* An event callback cannot mutate native UI while the dispatcher borrows it. */
     const char *tail="\nPocketApplication.event=function(){__pocketCall('layout.invalidate');return 1;};";
     size_t length=source.length+strlen(tail);char *script=malloc(length+1);CHECK(script);

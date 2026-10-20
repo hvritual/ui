@@ -98,6 +98,8 @@ jobs:
         run: make test-ipc-framework test-ipc-framework-arm verify-ipc-framework
       - name: Framework static board package and fail-closed HIL checker
         run: make build-board-framework test-board-framework-package test-board-framework-verifier
+      - name: Test and bundle exact static ARM 1024-point chart for board verification
+        run: python3 scripts/trend_package.py
       - name: Static IPC board diagnostic package with the shipped launcher
         run: make build-board-ipc test-board-ipc-package
       - name: Verify per-language software evidence and generate support report
@@ -146,6 +148,17 @@ jobs:
         with:
           name: f7-public-real-app-${{ github.event.pull_request.head.sha || github.sha }}
           path: out/public-sdk/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload tested compact trend chart board bundle
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: f7-trend-board-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            out/public-sdk/trend-board.tar.gz
+            out/public-sdk/trend-board.sha256
           if-no-files-found: warn
           retention-days: 30
 
