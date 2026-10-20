@@ -8,6 +8,7 @@ test-public-sdk:
 	node tests/sdk/test_public_ui.cjs
 	node tests/sdk/test_custom_ui.cjs
 	node tests/sdk/test_trend_ui.cjs
+	node tests/sdk/test_drawing_adapter.cjs
 	mkdir -p out/public-sdk-contract
 	$(CC) -std=c11 -Wall -Wextra -Werror -Wpedantic -O2 -I. tests/sdk/test_drawing.c -o out/public-sdk-contract/test-drawing
 	out/public-sdk-contract/test-drawing

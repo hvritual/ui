@@ -27,6 +27,8 @@ def main():
     (stage/"ui-framework").chmod(0o755)
     shutil.copy2(out/"static-trend/trend-chart.pui",stage/"trend-chart.pui")
     shutil.copy2(out/"static-trend/evidence.json",stage/"software-evidence.json")
+    shutil.copy2(root/"scripts/device/run-trend.sh",stage/"run-chart.sh")
+    (stage/"run-chart.sh").chmod(0o755)
     (stage/"elf.txt").write_text(elf,encoding="utf-8")
     manifest={"schema":1,"source_commit":sdk.git("rev-parse","HEAD"),"source_tree":sdk.git("rev-parse","HEAD^{tree}"),
               "build_environment":"GitHub Actions ubuntu-22.04","physical_hardware":False,

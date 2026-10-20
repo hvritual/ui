@@ -1,7 +1,8 @@
 /* Developer application. 1024 distinct samples, 1023 rendered segments per update. */
 (function(){
   "use strict";
-  const count=1024,base=0xfffaf8f4;
+  // Public theme colors use the pinned Core's packed 0xAABBGGRR representation.
+  const count=1024,base=0xfff4f8fa;
   let chart,ticks=0,updates=0,targetHeight;
   function option(phase) {
     const data=Array.from({length:count},(_,i)=>{
@@ -15,7 +16,7 @@
     start(ui,target){
       targetHeight=target.height;
       ui.defineTheme({id:1,foregroundToken:2,fontSize:22,colors:{
-        "1":base,"2":0xff332b26,"3":0xfff0dfc8,"4":0xff2a7f98,"5":0xff65564c
+        "1":base,"2":0xff262b33,"3":0xffc8dff0,"4":0xff987f2a,"5":0xff4c5665
       }});
       ui.styleRule(1,1,2,0);ui.styleRule(2,3,2,0);ui.styleRule(4,4,2,0);ui.styleRule(5,5,2,0);
       ui.selectTheme(1);

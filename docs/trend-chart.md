@@ -45,7 +45,10 @@ native application owns at most four drawing surfaces, each at most 262144 pixel
 width <=1024 and height <=800. Coordinates are integer local pixels inside that
 surface. Stroke width is one pixel; arbitrary Path, Arc, shader and arbitrary
 native extension support are not claimed. Stroke color resolves an existing
-theme background token through the supplied style ref.
+theme background token through the supplied style ref. Theme colors use the
+pinned Core's packed `0xAABBGGRR` representation. The adapter tiles the raster into
+at most four power-of-two textures (each axis <=512), retaining exact pixel
+coordinates through owner clipping; this is texture storage, not geometry binning.
 
 The facade sends versioned `draw.begin`, sequential fixed-size `draw.points`
 chunks and `draw.commit`. Every chunk is checked natively. Until a complete commit,

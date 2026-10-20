@@ -8,7 +8,7 @@ int main(void) {
     uint8_t pixels[256];assert(pocket_draw_raster(s,pixels,sizeof(pixels)));
     for(unsigned y=0;y<8;y++)for(unsigned x=0;x<8;x++) {
         const uint8_t *p=pixels+(y*8+x)*4;
-        if(x==y)assert(p[0]==0x12&&p[1]==0x34&&p[2]==0x56&&p[3]==255);
+        if(x==y)assert(p[0]==0x56&&p[1]==0x34&&p[2]==0x12&&p[3]==255);
         else assert(!p[0]&&!p[1]&&!p[2]&&!p[3]);
     }
     s->points[1]=(PocketDrawPoint){8,7};assert(!pocket_draw_valid(s));

@@ -23,8 +23,9 @@ static inline int pocket_draw_raster(const PocketDrawSurface *s,uint8_t *rgba,si
         int error=dx+dy;
         for(;;) {
             size_t at=((size_t)y*s->width+(unsigned)x)*4U;
-            rgba[at]=(uint8_t)(s->color>>16);rgba[at+1]=(uint8_t)(s->color>>8);
-            rgba[at+2]=(uint8_t)s->color;rgba[at+3]=(uint8_t)(s->color>>24);
+            /* Theme/Core colors are packed ABGR; PSM_8888 byte order is RGBA. */
+            rgba[at]=(uint8_t)s->color;rgba[at+1]=(uint8_t)(s->color>>8);
+            rgba[at+2]=(uint8_t)(s->color>>16);rgba[at+3]=(uint8_t)(s->color>>24);
             if(x==tx&&y==ty)break;
             const int twice=2*error;
             if(twice>=dy){error+=dy;x+=sx;}

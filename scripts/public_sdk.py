@@ -237,12 +237,12 @@ def chart_pixels(output: Path, height: int) -> dict:
             bar_height = ((plot_height - 32) * value + 50) // 100
             x = left + 24 + i * step + (step - 4) // 2
             y = top + 8 + plot_height - 32 - bar_height
-            reject(pixel(x, y + bar_height // 2) == bytes.fromhex("2a7f98"), "missing real chart bar")
-            reject(pixel(x, y - 3) == bytes.fromhex("f0dfc8"), "bar exceeds expected geometry")
-        reject(pixel(left + 16, top + 12) == bytes.fromhex("65564c") and
-               pixel(left + width // 2, top + plot_height - 16) == bytes.fromhex("65564c"),
+            reject(pixel(x, y + bar_height // 2) == bytes.fromhex("987f2a"), "missing real chart bar")
+            reject(pixel(x, y - 3) == bytes.fromhex("c8dff0"), "bar exceeds expected geometry")
+        reject(pixel(left + 16, top + 12) == bytes.fromhex("4c5665") and
+               pixel(left + width // 2, top + plot_height - 16) == bytes.fromhex("4c5665"),
                "missing real axis lines")
-        reject(pixel(65, 161) == bytes.fromhex("f0dfc8" if filename == "first.ppm" else "faf8f4"),
+        reject(pixel(65, 161) == bytes.fromhex("c8dff0" if filename == "first.ppm" else "f4f8fa"),
                "surface did not move/clear")
         snapshots.append(digest(output / filename))
     reject(snapshots[0] != snapshots[1], "chart geometry did not change")
@@ -330,7 +330,7 @@ def integration(native: Path, arm: Path, assets: Path, destination: Path, exampl
             output = destination / name
             log = destination / (name + ".log")
             invoke([*launcher, executable, "--headless", "--profile", target,
-                    "--package", package, "--allow-unsigned-package", "--seconds", "1",
+                    "--package", package, "--allow-unsigned-package", "--seconds", "5" if example=="trend-chart" else "1",
                     "--output", output], log)
             report = read_json(output / "report.json")
             reject(report.get("commit") == result["source_commit"] and report.get("profile") == target
